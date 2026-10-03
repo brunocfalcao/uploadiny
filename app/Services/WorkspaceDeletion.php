@@ -1,0 +1,96 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Project;
+use App\UploadChunk;
+use App\UploadImage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RuntimeException;
+use Throwable;
+
+class WorkspaceDeletion
+{
+    public function project(Project $project): void
+    {
+        $this->remove(function () use ($project): array {
+            $locked = Project::query()->lockForUpdate()->findOrFail($project->id);
+            $images = $locked->images()->lockForUpdate()->get();
+
+            return [$images, function () use ($locked, $images): void {
+                $locked->images()->delete();
+                UploadChunk::where(function ($query) use ($locked, $images): void {
+                    $query->whereIn('id', $images->pluck('chunk_id'))->orWhere('upload_project_id', $locked->id);
+                })->whereDoesntHave('images')->delete();
+                $locked->delete();
+            }];
+        });
+    }
+
+    public function image(UploadImage $image): void
+    {
+        $this->remove(function () use ($image): array {
+            $locked = UploadImage::query()->lockForUpdate()->findOrFail($image->id);
+
+            return [collect([$locked]), function () use ($locked): void {
+                $locked->delete();
+                UploadChunk::whereKey($locked->chunk_id)->whereDoesntHave('images')->delete();
+            }];
+        });
+    }
+
+    public function chunk(UploadChunk $chunk): void
+    {
+        $this->remove(function () use ($chunk): array {
+            $locked = UploadChunk::query()->lockForUpdate()->findOrFail($chunk->id);
+            abort_unless($locked->status === 'uploading', 409, 'Completed chunks cannot be cancelled.');
+            $images = $locked->images()->lockForUpdate()->get();
+
+            return [$images, function () use ($locked): void {
+                $locked->images()->delete();
+                $locked->delete();
+            }];
+        });
+    }
+
+    private function remove(\Closure $operation): void
+    {
+        $disk = Storage::disk('local');
+        $staged = [];
+        try {
+            DB::transaction(function () use ($operation, $disk, &$staged): void {
+                [$images, $deleteRecords] = $operation();
+                foreach ($images as $image) {
+                    foreach (array_filter([$image->path, $image->annotated_path]) as $path) {
+                        if (! $disk->exists($path)) {
+                            continue;
+                        }
+                        $temporaryPath = 'deleting/'.Str::uuid().'/'.basename($path);
+                        if (! $disk->move($path, $temporaryPath)) {
+                            throw new RuntimeException('The image files could not be removed. Nothing was deleted.');
+                        }
+                        $staged[$path] = $temporaryPath;
+                    }
+                }
+                $deleteRecords();
+            });
+        } catch (Throwable $error) {
+            foreach ($staged as $path => $temporaryPath) {
+                if (! $disk->move($temporaryPath, $path)) {
+                    throw new RuntimeException('Deletion failed and an image file could not be restored.', previous: $error);
+                }
+            }
+            throw $error;
+        }
+        foreach ($staged as $temporaryPath) {
+            if (! $disk->delete($temporaryPath)) {
+                throw new RuntimeException('The records were removed, but a staged image file could not be removed.');
+            }
+            $disk->deleteDirectory(dirname($temporaryPath));
+        }
+    }
+}

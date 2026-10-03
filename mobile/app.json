@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "Uploadiny",
+    "slug": "uploadiny",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "uploadiny",
+    "ios": {
+      "supportsTablet": false,
+      "buildNumber": "5",
+      "bundleIdentifier": "test.uploadiny.app"
+    },
+    "plugins": [
+      "./plugins/with-scene-lifecycle",
+      "./plugins/with-uploadiny-share-extension",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "extensionBundleIdentifier": "test.uploadiny.app.share",
+            "activationRule": {
+              "supportsAttachmentsWithMaxCount": 1000,
+              "supportsFileWithMaxCount": 1000,
+              "supportsImageWithMaxCount": 1000,
+              "supportsMovieWithMaxCount": 1000
+            }
+          }
+        }
+      ]
+    ]
+  }
+}

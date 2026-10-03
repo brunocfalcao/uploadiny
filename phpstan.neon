@@ -1,0 +1,13 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/nesbot/carbon/extension.neon
+
+parameters:
+    paths:
+        - app
+        - bootstrap/app.php
+        - bootstrap/providers.php
+        - config
+        - database/migrations
+        - routes
+    level: 6
