@@ -4,17 +4,19 @@ declare(strict_types=1);
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChunkController;
+use App\Http\Controllers\DeviceAccessController;
 use App\Http\Controllers\ImageController;
 use App\Http\Controllers\ProjectController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
-    Route::post('/login', [AuthController::class, 'store'])->name('login.store');
+    Route::post('/login', [AuthController::class, 'store'])->middleware('throttle:login')->name('login.store');
 });
 Route::middleware('auth')->group(function (): void {
     Route::get('/', [ProjectController::class, 'index'])->name('projects.index');
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
+    Route::delete('/device-access', [DeviceAccessController::class, 'destroy'])->name('device-access.destroy');
     Route::post('/projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::get('/projects/{project}/latest-chunk', [AgentController::class, 'latest'])->name('projects.latest');
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');

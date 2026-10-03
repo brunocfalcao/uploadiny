@@ -29,16 +29,21 @@ class ImageController extends Controller
     {
         $path = Storage::disk('local')->path($image->path);
         abort_unless(is_file($path), 404);
-        $headers = ['Content-Type' => $image->mime_type, 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff'];
+        $headers = ['Content-Type' => $image->mime_type, 'X-Content-Type-Options' => 'nosniff'];
+        $response = $request->routeIs('images.preview') ? response()->file($path, $headers) : response()->download($path, $image->name, $headers);
+        $response->headers->set('Cache-Control', 'private, no-store');
 
-        return $request->routeIs('images.preview') ? response()->file($path, $headers) : response()->download($path, $image->name, $headers);
+        return $response;
     }
 
     public function annotated(UploadImage $image): BinaryFileResponse
     {
         abort_unless($image->annotated_path && Storage::disk('local')->exists($image->annotated_path), 404);
 
-        return response()->download(Storage::disk('local')->path($image->annotated_path), pathinfo($image->name, PATHINFO_FILENAME).'-annotated.png', ['Content-Type' => 'image/png', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff']);
+        $response = response()->download(Storage::disk('local')->path($image->annotated_path), pathinfo($image->name, PATHINFO_FILENAME).'-annotated.png', ['Content-Type' => 'image/png', 'X-Content-Type-Options' => 'nosniff']);
+        $response->headers->set('Cache-Control', 'private, no-store');
+
+        return $response;
     }
 
     public function update(ImageFeedbackRequest $request, UploadImage $image): JsonResponse

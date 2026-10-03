@@ -14,7 +14,14 @@ to `https://uploadiny.com/api`.
 - Browser and Share Extension uploads create a draft chunk, append each image,
   and publish only after every expected image arrives.
 - Originals and annotated PNGs are private. Browser image routes require an
-  authenticated session; API routes require the configured bearer credential.
+  authenticated session; `/api` accepts only Laravel Sanctum bearer tokens,
+  never a browser session or a global static key.
+- The Share Extension signs in once over HTTPS and stores only its limited
+  `projects:read`/`uploads:write` token in the device-only Keychain. It never
+  stores a password or embeds a usable credential in the app.
+- The coding-agent token is separate and read-only for project feedback. The
+  workspace can revoke iPhone access, and the private `uploadiny:agent-token`
+  command rotates or revokes agent access without exposing the token in output.
 - Projects retain current images when images are moved. Deleting a project
   removes only the images still assigned to it.
 - Feedback stores normalized drawings, comments, annotated images, and a
@@ -59,7 +66,7 @@ For iPhone source checks, run these from `mobile/`:
 ```sh
 npm ci
 npm run typecheck
-node --test scripts/scene-lifecycle.test.js
+npm run test:share-extension
 npx expo-doctor
 ```
 
@@ -71,5 +78,5 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The iOS marketing version is `0.1.0`. Each signed device installation must
-increment `mobile/app.json` `ios.buildNumber`.
+The iOS marketing version is `0.1.1`; this security release is build `6`.
+Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

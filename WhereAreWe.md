@@ -113,3 +113,27 @@ use `file` / `file` / `sync` drivers.
   deprecations.
 - The iPhone release build advances from build 4 to build 5. The tracked Share
   Extension configuration remains the authority for its production API URL.
+
+
+## 2026-10-04 — 0.1.1 bearer-token and iPhone credential security
+
+- `/api` uses Laravel Sanctum bearer authentication with session guards disabled.
+  iPhone tokens can list projects and upload; coding-agent tokens can read
+  projects, feedback, and private images. Each scope rejects the other role’s
+  operations. The retired global upload key has no compatibility path.
+- The iPhone obtains its short-lived limited token from an HTTPS sign-in endpoint.
+  The Share Extension clears the password, persists only that token in a
+  `WhenUnlockedThisDeviceOnly` Keychain item, rejects redirects, and removes its
+  credential when a request returns 401. The release build no longer embeds a
+  usable credential in its plist or build settings.
+- Website login and device-token attempts are rate limited with normalized,
+  bounded credential keys. Existing website sessions and Bruno’s current
+  password remain unchanged. The password strength is an accepted residual
+  risk until Bruno elects to change it.
+- The workspace has a `Revoke iPhone access` action, and the private
+  `uploadiny:agent-token` command issues, rotates, or revokes the separate
+  coding-agent token without printing it.
+- Regression coverage exercises direct issued bearer tokens, legacy/wrong/
+  revoked/expired rejection, ability separation, token replacement isolation,
+  malformed throttled credential input, private download headers, and the
+  native Keychain/HTTPS/no-redirect/no-embedded-token source contract.

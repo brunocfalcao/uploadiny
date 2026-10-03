@@ -13,7 +13,7 @@
                 <p class="sidebar-empty">Create a project to start collecting feedback.</p>
             @endforelse
         </nav>
-        <div class="sidebar-footer"><span>Bruno’s workspace</span><form method="POST" action="{{ route('logout') }}">@csrf<button type="submit" class="text-button">Sign out</button></form></div>
+        <div class="sidebar-footer"><span>Bruno’s workspace</span><form method="POST" action="{{ route('device-access.destroy') }}">@csrf @method('DELETE')<button type="submit" class="text-button">Revoke iPhone access</button></form><form method="POST" action="{{ route('logout') }}">@csrf<button type="submit" class="text-button">Sign out</button></form></div>
     </aside>
     <main class="main-content">
         <header class="workspace-header">

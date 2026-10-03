@@ -22,8 +22,6 @@
     <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>UploadinyServerURL</key>
     <string>https://uploadiny.com/api</string>
-    <key>UploadinyUploadToken</key>
-    <string>$(UPLOADINY_UPLOAD_TOKEN)</string>
     <key>NSExtension</key>
     <dict>
       <key>NSExtensionAttributes</key>

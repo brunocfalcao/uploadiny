@@ -10,7 +10,6 @@ DERIVED_DATA="$HOME/Library/Developer/Xcode/DerivedData/UploadinyDevice"
 APP="$DERIVED_DATA/Build/Products/Release-iphoneos/Uploadiny.app"
 EXTENSION_PLIST="$APP/PlugIns/expo-sharing-extension.appex/Info.plist"
 MOBILE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROJECT_ROOT="$(cd "$MOBILE_ROOT/.." && pwd)"
 BUILD_LOG="$(mktemp)"
 
 cleanup() {
@@ -18,15 +17,6 @@ cleanup() {
 }
 
 trap cleanup EXIT
-
-if [[ -z "${UPLOADINY_UPLOAD_TOKEN:-}" && -f "$PROJECT_ROOT/.env" ]]; then
-  UPLOADINY_UPLOAD_TOKEN="$(sed -n 's/^UPLOADINY_UPLOAD_TOKEN=//p' "$PROJECT_ROOT/.env" | tail -1)"
-fi
-
-if [[ -z "${UPLOADINY_UPLOAD_TOKEN:-}" ]]; then
-  echo "UPLOADINY_UPLOAD_TOKEN is not configured."
-  exit 1
-fi
 
 cd "$MOBILE_ROOT"
 npx expo prebuild --platform ios --no-install
@@ -37,13 +27,18 @@ cd "$MOBILE_ROOT/ios"
 if ! xcodebuild -workspace Uploadiny.xcworkspace -scheme Uploadiny -configuration Release \
   -destination "platform=iOS,id=$DESTINATION_ID" -allowProvisioningUpdates \
   -derivedDataPath "$DERIVED_DATA" DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic \
-  UPLOADINY_UPLOAD_TOKEN="$UPLOADINY_UPLOAD_TOKEN" build >"$BUILD_LOG" 2>&1; then
-  tail -80 "$BUILD_LOG" | sed -E 's/(UPLOADINY_UPLOAD_TOKEN( =|=) )[A-Za-z0-9._-]+/\1[redacted]/g'
+  build >"$BUILD_LOG" 2>&1; then
+  tail -80 "$BUILD_LOG"
   exit 1
 fi
 
-if [[ "$(plutil -extract UploadinyUploadToken raw "$EXTENSION_PLIST")" != "$UPLOADINY_UPLOAD_TOKEN" ]]; then
-  echo "The Share Extension credential was not embedded correctly."
+if plutil -extract UploadinyUploadToken raw "$EXTENSION_PLIST" >/dev/null 2>&1; then
+  echo "The Share Extension contains an embedded credential."
+  exit 1
+fi
+
+if [[ "$(plutil -extract UploadinyServerURL raw "$EXTENSION_PLIST")" != "https://uploadiny.com/api" ]]; then
+  echo "The Share Extension is not configured for the production HTTPS API."
   exit 1
 fi
 

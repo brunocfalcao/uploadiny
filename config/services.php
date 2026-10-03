@@ -36,7 +36,7 @@ return [
     ],
 
     'uploadiny' => [
-        'upload_token' => env('UPLOADINY_UPLOAD_TOKEN'),
+        'device_token_expiration_days' => (int) env('UPLOADINY_DEVICE_TOKEN_EXPIRATION_DAYS', 90),
         'vision_key' => env('OPENAI_API_KEY'),
         'vision_model' => env('UPLOADINY_VISION_MODEL', 'gpt-4.1-nano'),
     ],

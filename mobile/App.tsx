@@ -4,7 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 const steps = [
   ['1', 'Share a file'],
-  ['2', 'Choose Uploadiny and a project'],
+  ['2', 'Sign in once, then choose a project'],
   ['3', 'Your images arrive as one feedback chunk'],
 ] as const;
 

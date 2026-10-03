@@ -11,6 +11,7 @@ use App\Services\VisionDescription;
 use App\Services\WorkspaceDeletion;
 use App\UploadChunk;
 use App\UploadImage;
+use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -27,7 +28,7 @@ class WorkspaceTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['services.uploadiny.upload_token' => 'workspace-test-token', 'services.uploadiny.vision_key' => 'test-vision-key']);
+        config(['services.uploadiny.vision_key' => 'test-vision-key']);
     }
 
     private function prepare(): User
@@ -38,6 +39,11 @@ class WorkspaceTest extends TestCase
         $this->actingAs($user);
 
         return $user;
+    }
+
+    private function agentToken(User $user): string
+    {
+        return $user->createToken('workspace-agent', UploadinyTokenAbility::agent())->plainTextToken;
     }
 
     private function upload(Project $project, int $count = 1): TestResponse
@@ -63,7 +69,8 @@ class WorkspaceTest extends TestCase
         $this->patchJson(route('images.update', $image), [])->assertUnauthorized();
         $this->getJson('/api/projects')->assertUnauthorized()->assertExactJson(['message' => 'Unauthenticated.']);
         $this->withHeader('Authorization', 'Bearer wrong-token')->getJson(route('api.images.download', $image))->assertUnauthorized();
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.images.download', $image))->assertDownload($image->name);
+        $agent = $this->agentToken(User::factory()->create());
+        $this->withToken($agent)->getJson(route('api.images.download', $image))->assertDownload($image->name);
         $this->assertSame('private', Storage::disk('local')->get($image->path));
     }
 
@@ -95,10 +102,10 @@ class WorkspaceTest extends TestCase
 
     public function test_latest_chunk_contains_the_whole_latest_group_and_one_image_is_also_a_chunk(): void
     {
-        $this->prepare();
+        $user = $this->prepare();
         $project = Project::factory()->create(['slug' => 'chunk-taxiny']);
         $other = Project::factory()->create(['slug' => 'chunk-other']);
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk', null);
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk', null);
         $first = $this->upload($project, 2)->assertCreated()->assertJsonCount(2, 'images');
         $this->upload($other, 3)->assertCreated();
         $latest = $this->upload($project, 3)->assertCreated()->assertJsonCount(3, 'images');
@@ -126,7 +133,7 @@ class WorkspaceTest extends TestCase
 
     public function test_saved_feedback_is_returned_to_the_agent_and_stale_edits_cannot_overwrite_it(): void
     {
-        $this->prepare();
+        $user = $this->prepare();
         $project = Project::factory()->create(['slug' => 'annotated-taxiny']);
         $uploaded = $this->upload($project)->assertCreated()->json('images.0');
         $image = UploadImage::where('uuid', $uploaded['id'])->sole();
@@ -140,7 +147,7 @@ class WorkspaceTest extends TestCase
         $this->assertSame($png, Storage::disk('local')->get($image->annotated_path));
         $this->patchJson(route('images.update', $image), $payload + [])->assertConflict();
         $this->assertSame('Fix the save button alignment', $image->fresh()->comments);
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations.0.tool', 'arrow')->assertJsonPath('chunk.images.0.comments', 'Fix the save button alignment');
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations.0.tool', 'arrow')->assertJsonPath('chunk.images.0.comments', 'Fix the save button alignment');
         $this->getJson(route('api.images.annotated', $image))->assertDownload('upload-1-annotated.png');
         $invalid = $payload;
         $invalid['revision'] = 1;
@@ -187,7 +194,7 @@ class WorkspaceTest extends TestCase
 
     public function test_moving_an_image_preserves_its_feedback_and_original_chunk_without_exposing_other_projects(): void
     {
-        $this->prepare();
+        $user = $this->prepare();
         $source = Project::factory()->create(['slug' => 'move-source']);
         $target = Project::factory()->create(['slug' => 'move-target']);
         $upload = $this->upload($source, 2)->assertCreated();
@@ -201,7 +208,7 @@ class WorkspaceTest extends TestCase
         $this->assertSame($target->id, $image->project_id);
         $this->assertSame($chunkId, $image->chunk_id);
         $this->assertSame('Preserve this feedback', $image->comments);
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.projects.latest', $target))->assertJsonPath('chunk.id', $upload->json('id'))->assertJsonCount(1, 'chunk.images');
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $target))->assertJsonPath('chunk.id', $upload->json('id'))->assertJsonCount(1, 'chunk.images');
         $this->getJson(route('api.projects.latest', $source))->assertJsonCount(1, 'chunk.images')->assertJsonPath('chunk.images.0.id', $upload->json('images.1.id'));
         Queue::assertPushed(DescribeUploadImage::class, 2);
     }
@@ -232,11 +239,11 @@ class WorkspaceTest extends TestCase
 
     public function test_fifty_images_publish_as_one_chunk_only_after_the_group_is_complete(): void
     {
-        $this->prepare();
+        $user = $this->prepare();
         $project = Project::factory()->create(['slug' => 'fifty-images']);
         $draft = $this->postJson(route('chunks.start', $project), ['image_count' => 50])->assertCreated();
         $chunk = UploadChunk::where('uuid', $draft->json('id'))->sole();
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk', null);
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk', null);
         $this->postJson(route('chunks.complete', $chunk))->assertConflict();
         for ($i = 0; $i < 50; $i++) {
             $this->postJson(route('chunks.append', $chunk), ['file' => UploadedFile::fake()->image("batch-{$i}.png", 10, 10)])->assertCreated()->assertJsonPath('received_images', $i + 1);
@@ -254,7 +261,7 @@ class WorkspaceTest extends TestCase
 
     public function test_cancelled_drafts_remove_their_files_without_changing_the_latest_published_chunk(): void
     {
-        $this->prepare();
+        $user = $this->prepare();
         $project = Project::factory()->create(['slug' => 'cancel-draft']);
         $published = $this->upload($project)->assertCreated();
         $draft = $this->postJson(route('chunks.start', $project), ['image_count' => 2])->assertCreated();
@@ -262,7 +269,7 @@ class WorkspaceTest extends TestCase
         $this->postJson(route('chunks.append', $chunk), ['file' => UploadedFile::fake()->image('partial.png')])->assertCreated();
         $image = $chunk->images()->sole();
         Storage::disk('local')->assertExists($image->path);
-        $this->withHeader('Authorization', 'Bearer workspace-test-token')->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.id', $published->json('id'));
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.id', $published->json('id'));
         $this->deleteJson(route('chunks.cancel', $chunk))->assertOk();
         $this->assertDatabaseMissing('upload_chunks', ['id' => $chunk->id]);
         $this->assertDatabaseMissing('upload_images', ['id' => $image->id]);
