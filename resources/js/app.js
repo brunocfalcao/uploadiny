@@ -1,7 +1,17 @@
 import './bootstrap';
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
-import { drawAnnotation, positionOnCanvas } from './drawing';
+import {
+    annotationContainsPoint,
+    commitDrawingHistory,
+    drawAnnotation,
+    normalizedStrokeWidth,
+    positionOnCanvas,
+    redoDrawingHistory,
+    resetDrawingHistory,
+    restoreCancelledErase,
+    undoDrawingHistory,
+} from './drawing';
 import { drawingShortcutAction } from './drawing-shortcuts';
 
 const workspace = document.querySelector('[data-workspace]');
@@ -16,9 +26,14 @@ if (workspace) {
     let active = null;
     let source = null;
     let strokes = [];
+    let undo = [];
     let redo = [];
     let draft = null;
     let tool = 'pen';
+    let eraseStart = null;
+    let drawingPointer = null;
+    let zoom = 1;
+    let fitView = true;
     let dirty = false;
     let saving = false;
     let loading = false;
@@ -27,6 +42,9 @@ if (workspace) {
     let loadGeneration = 0;
     const canvas = document.getElementById('annotation-canvas');
     const ctx = canvas.getContext('2d');
+    const stage = document.getElementById('canvas-stage');
+    const ink = document.getElementById('drawing-color');
+    const thickness = document.getElementById('drawing-width');
     const message = document.getElementById('workspace-message');
     const comments = document.getElementById('image-comments');
     const saveState = document.getElementById('save-state');
@@ -146,8 +164,9 @@ if (workspace) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
         [...strokes, ...(draft ? [draft] : [])].forEach(stroke => drawAnnotation(ctx, stroke, canvas.width, canvas.height));
-        document.getElementById('undo-drawing').disabled = !strokes.length;
-        document.getElementById('redo-drawing').disabled = !redo.length;
+        document.getElementById('undo-drawing').disabled = saving || !undo.length;
+        document.getElementById('redo-drawing').disabled = saving || !redo.length;
+        document.getElementById('clear-drawing').disabled = saving || !strokes.length;
     }
     function leaveEditor() {
         if (saving) { notify('Wait for your feedback to finish saving.'); return false; }
@@ -168,7 +187,7 @@ if (workspace) {
             const data = await request(`/images/${id}`);
             if (generation !== loadGeneration) return;
             active = data; dirty = false; source = null;
-            strokes = structuredClone(data.annotations); redo = []; draft = null;
+            ({ strokes, undo, redo } = resetDrawingHistory(data.annotations)); draft = null; eraseStart = null; zoom = 1; fitView = true;
             comments.value = data.comments;
             saveState.textContent = '';
             document.getElementById('editor-name').textContent = data.name;
@@ -191,6 +210,8 @@ if (workspace) {
                 canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
                 canvas.hidden = false;
                 document.getElementById('save-feedback').disabled = false;
+                document.getElementById('canvas-dimensions').textContent = `${image.naturalWidth} × ${image.naturalHeight}`;
+                sizeCanvas();
                 repaint();
             };
             image.onerror = () => {
@@ -223,45 +244,119 @@ if (workspace) {
             }, 3000);
         }
     }
+    const toolHints = { pen: 'Pen: draw freely on the image.', arrow: 'Arrow: drag to point at a detail.', line: 'Line: drag to draw a straight line.', rectangle: 'Rectangle: drag around an area.', ellipse: 'Ellipse: drag to circle an area.', eraser: 'Eraser: drag over a mark to remove it. Undo restores it.' };
     document.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => {
+        if (draft || eraseStart) return;
         tool = button.dataset.tool;
+        canvas.dataset.tool = tool;
+        document.getElementById('canvas-tool-hint').textContent = toolHints[tool];
         document.querySelectorAll('[data-tool]').forEach(entry => { entry.classList.toggle('active', entry === button); entry.setAttribute('aria-pressed', entry === button ? 'true' : 'false'); });
     }));
-    canvas.addEventListener('pointerdown', event => {
-        if (!source || saving || event.button !== 0) return;
-        event.preventDefault(); canvas.setPointerCapture(event.pointerId);
+    function updateInkControls() {
+        const preview = document.getElementById('stroke-preview');
+        preview.style.width = `${thickness.value}px`;
+        preview.style.height = `${thickness.value}px`;
+        preview.style.backgroundColor = ink.value;
+        document.getElementById('drawing-width-value').textContent = `${thickness.value} px`;
+        document.querySelectorAll('[data-color]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.color === ink.value)));
+    }
+    ink.addEventListener('input', updateInkControls);
+    thickness.addEventListener('input', updateInkControls);
+    document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => { ink.value = button.dataset.color; updateInkControls(); }));
+    updateInkControls();
+
+    function sizeCanvas() {
+        if (!source) return;
+        const padding = window.innerWidth <= 760 ? 48 : 72;
+        const fit = Math.min(1, Math.max(1, stage.clientWidth - padding) / canvas.width, Math.max(1, stage.clientHeight - padding) / canvas.height);
+        if (fitView) zoom = fit;
+        canvas.style.width = `${canvas.width * zoom}px`;
+        document.getElementById('canvas-zoom').textContent = `${Math.round(zoom * 100)}%`;
+        document.getElementById('zoom-out').disabled = zoom <= .1;
+        document.getElementById('zoom-in').disabled = zoom >= 4;
+    }
+    function changeZoom(next) {
+        if (!source || draft || eraseStart) return;
+        const oldWidth = canvas.getBoundingClientRect().width;
+        const centerX = stage.scrollLeft + stage.clientWidth / 2;
+        const centerY = stage.scrollTop + stage.clientHeight / 2;
+        fitView = false;
+        zoom = Math.max(.1, Math.min(4, next));
+        sizeCanvas();
+        const ratio = canvas.getBoundingClientRect().width / oldWidth;
+        stage.scrollLeft = centerX * ratio - stage.clientWidth / 2;
+        stage.scrollTop = centerY * ratio - stage.clientHeight / 2;
+    }
+    document.getElementById('zoom-out').addEventListener('click', () => changeZoom(zoom / 1.25));
+    document.getElementById('zoom-in').addEventListener('click', () => changeZoom(zoom * 1.25));
+    document.getElementById('zoom-fit').addEventListener('click', () => { if (!source || draft || eraseStart) return; fitView = true; sizeCanvas(); stage.scrollTop = 0; stage.scrollLeft = 0; });
+    new ResizeObserver(sizeCanvas).observe(stage);
+
+    function commitStrokes(next) {
+        ({ strokes, undo, redo } = commitDrawingHistory({ strokes, undo, redo }, next));
+        setDirty();
+        repaint();
+    }
+    function eraseAt(event) {
         const point = positionOnCanvas(event, canvas);
-        draft = { tool, color: document.getElementById('drawing-color').value, width: 0.003, points: [point, { ...point }] };
+        const tolerance = 10 * canvas.width / canvas.getBoundingClientRect().width;
+        strokes = strokes.filter(stroke => !annotationContainsPoint(stroke, point, canvas.width, canvas.height, tolerance));
+        repaint();
+    }
+    canvas.addEventListener('pointerdown', event => {
+        if (!source || saving || draft || eraseStart || event.button !== 0) return;
+        event.preventDefault(); canvas.setPointerCapture(event.pointerId);
+        drawingPointer = event.pointerId;
+        if (tool === 'eraser') { eraseStart = restoreCancelledErase(strokes); eraseAt(event); return; }
+        const point = positionOnCanvas(event, canvas);
+        draft = { tool, color: ink.value, width: normalizedStrokeWidth(thickness.value, canvas.width), points: [point, { ...point }] };
         repaint();
     });
     canvas.addEventListener('pointermove', event => {
+        if (event.pointerId !== drawingPointer) return;
+        if (eraseStart) { eraseAt(event); return; }
         if (!draft) return;
         const point = positionOnCanvas(event, canvas);
         if (draft.tool === 'pen') draft.points.push(point); else draft.points[1] = point;
         repaint();
     });
-    canvas.addEventListener('pointerup', () => { if (draft) { strokes.push(draft); draft = null; redo = []; setDirty(); repaint(); } });
-    canvas.addEventListener('pointercancel', () => { draft = null; repaint(); });
-    document.getElementById('undo-drawing').addEventListener('click', () => { if (!saving && strokes.length) { redo.push(strokes.pop()); setDirty(); repaint(); } });
-    document.getElementById('redo-drawing').addEventListener('click', () => { if (!saving && redo.length) { strokes.push(redo.pop()); setDirty(); repaint(); } });
-    document.getElementById('clear-drawing').addEventListener('click', () => { if (!saving && strokes.length) { strokes = []; redo = []; setDirty(); repaint(); } });
+    canvas.addEventListener('pointerup', event => {
+        if (event.pointerId !== drawingPointer) return;
+        drawingPointer = null;
+        if (eraseStart) {
+            const before = eraseStart; eraseStart = null;
+            if (before.length !== strokes.length) {
+                ({ strokes, undo, redo } = commitDrawingHistory({ strokes: before, undo, redo }, strokes));
+                setDirty();
+            }
+            repaint();
+        } else if (draft) {
+            const stroke = draft; draft = null;
+            commitStrokes([...strokes, stroke]);
+        }
+    });
+    canvas.addEventListener('pointercancel', event => { if (event.pointerId !== drawingPointer) return; drawingPointer = null; if (eraseStart) strokes = restoreCancelledErase(eraseStart); eraseStart = null; draft = null; repaint(); });
+    document.getElementById('undo-drawing').addEventListener('click', () => { if (!saving && !draft && !eraseStart && undo.length) { ({ strokes, undo, redo } = undoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('redo-drawing').addEventListener('click', () => { if (!saving && !draft && !eraseStart && redo.length) { ({ strokes, undo, redo } = redoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('clear-drawing').addEventListener('click', () => { if (!saving && !draft && !eraseStart && strokes.length) commitStrokes([]); });
     document.addEventListener('keydown', event => {
-        const action = drawingShortcutAction(event, { active, source, saving, draft, modalOpen: dialog.open });
+        const action = drawingShortcutAction(event, { active, source, saving, draft: draft || eraseStart, modalOpen: dialog.open });
         if (!action) return;
         event.preventDefault();
         document.getElementById(`${action}-drawing`).click();
     });
     comments.addEventListener('input', setDirty);
     document.getElementById('save-feedback').addEventListener('click', async () => {
-        if (!active || saving) return;
+        if (!active || saving || draft || eraseStart) return;
         saving = true;
+        repaint();
         const button = document.getElementById('save-feedback'); button.disabled = true;
         comments.disabled = true; saveState.textContent = 'Saving…';
         try {
             const data = await request(`/images/${active.id}`, { method: 'PATCH', body: JSON.stringify({ comments: comments.value, annotations: strokes, revision: active.revision, annotated_image: strokes.length && source ? canvas.toDataURL('image/png') : null }) });
             active.revision = data.revision; dirty = false; saveState.textContent = 'Saved';
         } catch (error) { saveState.textContent = 'Not saved'; notify(error.message, true); }
-        finally { saving = false; button.disabled = false; comments.disabled = false; }
+        finally { saving = false; button.disabled = false; comments.disabled = false; repaint(); }
     });
     document.getElementById('retry-description').addEventListener('click', async event => {
         if (!active) return;

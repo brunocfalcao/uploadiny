@@ -78,5 +78,5 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The iOS marketing version is `0.1.1`; this security release is build `6`.
+The iOS marketing version is `0.1.2`; this annotation-canvas release is build `7`.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -166,6 +166,25 @@ class WorkspaceTest extends TestCase
         Queue::assertPushed(DescribeUploadImage::class, 1);
     }
 
+    public function test_line_and_ellipse_feedback_preserves_tool_color_and_thickness(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'shape-feedback']);
+        $uploaded = $this->upload($project)->assertCreated()->json('images.0');
+        $image = UploadImage::where('uuid', $uploaded['id'])->sole();
+        $png = UploadedFile::fake()->image('shapes.png', 30, 20)->getContent();
+        $annotations = [
+            ['tool' => 'line', 'color' => '#3b82f6', 'width' => 0.0001, 'points' => [['x' => 0.8, 'y' => 0.9], ['x' => 0.2, 'y' => 0.1]]],
+            ['tool' => 'ellipse', 'color' => '#16a34a', 'width' => 0.1, 'points' => [['x' => 0.1, 'y' => 0.2], ['x' => 0.9, 'y' => 0.8]]],
+        ];
+        $this->assertSame([], $image->annotations);
+
+        $this->patchJson(route('images.update', $image), ['comments' => 'Two marked areas', 'annotations' => $annotations, 'revision' => 0, 'annotated_image' => 'data:image/png;base64,'.base64_encode($png)])->assertOk();
+        $this->assertSame($annotations, $image->fresh()->annotations);
+        $this->assertSame($png, Storage::disk('local')->get($image->fresh()->annotated_path));
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations', $annotations);
+    }
+
     public function test_abandoned_draft_cleanup_preserves_completed_chunks_and_never_reuses_names(): void
     {
         $this->prepare();

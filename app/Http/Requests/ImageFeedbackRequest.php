@@ -19,7 +19,7 @@ class ImageFeedbackRequest extends FormRequest
         return [
             'comments' => ['present', 'nullable', 'string', 'max:50000'],
             'annotations' => ['present', 'array', 'max:1000'],
-            'annotations.*.tool' => ['required', 'in:pen,arrow,rectangle'],
+            'annotations.*.tool' => ['required', 'in:pen,arrow,line,rectangle,ellipse'],
             'annotations.*.color' => ['required', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'annotations.*.width' => ['required', 'numeric', 'min:0.0001', 'max:0.1'],
             'annotations.*.points' => ['required', 'array', 'min:2', 'max:10000'],

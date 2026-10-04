@@ -137,3 +137,17 @@ use `file` / `file` / `sync` drivers.
   revoked/expired rejection, ability separation, token replacement isolation,
   malformed throttled credential input, private download headers, and the
   native Keychain/HTTPS/no-redirect/no-embedded-token source contract.
+
+
+## 2026-10-04 — 0.1.2 annotation canvas release
+
+- The editor groups pen, arrow, line, rectangle, ellipse and whole-mark eraser
+  tools with adjustable thickness, preset/custom colors, actual-scale zoom and
+  fit-to-canvas. The image stays centered on a scrollable canvas; drawings retain
+  normalized coordinates and the original image remains untouched.
+- Undo/redo now restores complete drawing states, including erasing and clearing.
+  Existing Cmd/Ctrl shortcuts remain active outside editable fields.
+- Persistent drawing-state coverage proves erase/undo/redo, clear/undo,
+  cancelled-eraser restoration, history reset when switching images, and stable
+  normalized coordinates/thickness across zoom and resize. Shape geometry and
+  server persistence remain covered separately.

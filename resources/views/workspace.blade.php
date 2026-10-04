@@ -59,13 +59,44 @@
             <div class="editor-header"><button type="button" class="button" id="close-editor">Back to project</button><h2 id="editor-name"></h2><a class="button" id="download-original">Download original</a></div>
             <div class="editor-body">
                 <div class="drawing-workspace">
-                    <div class="drawing-toolbar" role="toolbar" aria-label="Drawing tools">
-                        <button type="button" class="tool active" data-tool="pen" aria-pressed="true">Draw</button><button type="button" class="tool" data-tool="arrow" aria-pressed="false">Arrow</button><button type="button" class="tool" data-tool="rectangle" aria-pressed="false">Box</button>
-                        <label class="color-label">Color<input type="color" id="drawing-color" value="#ef4444"></label>
-                        <button type="button" class="tool" id="undo-drawing" title="Undo drawing (⌘Z / Ctrl+Z)" aria-keyshortcuts="Meta+Z Control+Z">Undo</button><button type="button" class="tool" id="redo-drawing" title="Redo drawing (⌘⇧Z / Ctrl+Shift+Z)" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y">Redo</button><button type="button" class="tool" id="clear-drawing">Clear drawings</button>
+                    <div class="drawing-toolbar" role="group" aria-label="Annotation controls">
+                        <div class="drawing-toolbar-row">
+                            <div class="tool-group" role="group" aria-label="Drawing tools">
+                                <button type="button" class="tool active" data-tool="pen" aria-pressed="true" title="Pen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z"/><path d="m14 5 5 5"/></svg><span>Pen</span></button>
+                                <button type="button" class="tool" data-tool="arrow" aria-pressed="false" title="Arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20 20 4M8 4h12v12"/></svg><span>Arrow</span></button>
+                                <button type="button" class="tool" data-tool="line" aria-pressed="false" title="Line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20 20 4"/><circle cx="4" cy="20" r="1"/><circle cx="20" cy="4" r="1"/></svg><span>Line</span></button>
+                                <button type="button" class="tool" data-tool="rectangle" aria-pressed="false" title="Rectangle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1"/></svg><span>Rectangle</span></button>
+                                <button type="button" class="tool" data-tool="ellipse" aria-pressed="false" title="Ellipse"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg><span>Ellipse</span></button>
+                                <button type="button" class="tool" data-tool="eraser" aria-pressed="false" title="Eraser — remove a whole mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5a2 2 0 0 1 0 3L11 21H7l-5-5a2 2 0 0 1 0-3L13 3a2 2 0 0 1 3 0Z"/><path d="m7 8 9 9M11 21h11"/></svg><span>Eraser</span></button>
+                            </div>
+                            <div class="tool-group history-tools" role="group" aria-label="Drawing history">
+                                <button type="button" class="tool history-tool" id="undo-drawing" disabled title="Undo (⌘Z / Ctrl+Z)" aria-keyshortcuts="Meta+Z Control+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14"/></svg><span>Undo</span></button>
+                                <button type="button" class="tool history-tool" id="redo-drawing" disabled title="Redo (⌘⇧Z / Ctrl+Shift+Z)" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14"/></svg><span>Redo</span></button>
+                                <button type="button" class="tool history-tool" id="clear-drawing" disabled title="Clear all drawings — you can undo this"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg><span>Clear all</span></button>
+                            </div>
+                        </div>
+                        <div class="drawing-toolbar-row drawing-options">
+                            <div class="stroke-control"><label for="drawing-width">Thickness</label><span id="stroke-preview" aria-hidden="true"></span><input type="range" id="drawing-width" min="2" max="24" value="6" step="1"><output id="drawing-width-value" for="drawing-width">6 px</output></div>
+                            <div class="color-control" role="group" aria-label="Ink color"><span>Color</span>
+                                <button type="button" class="color-swatch" data-color="#ef4444" style="--swatch: #ef4444" title="Red" aria-label="Red ink" aria-pressed="true"></button>
+                                <button type="button" class="color-swatch" data-color="#f59e0b" style="--swatch: #f59e0b" title="Amber" aria-label="Amber ink" aria-pressed="false"></button>
+                                <button type="button" class="color-swatch" data-color="#16a34a" style="--swatch: #16a34a" title="Green" aria-label="Green ink" aria-pressed="false"></button>
+                                <button type="button" class="color-swatch" data-color="#3b82f6" style="--swatch: #3b82f6" title="Blue" aria-label="Blue ink" aria-pressed="false"></button>
+                                <button type="button" class="color-swatch" data-color="#8b5cf6" style="--swatch: #8b5cf6" title="Purple" aria-label="Purple ink" aria-pressed="false"></button>
+                                <button type="button" class="color-swatch" data-color="#182337" style="--swatch: #182337" title="Dark ink" aria-label="Dark ink" aria-pressed="false"></button>
+                                <button type="button" class="color-swatch" data-color="#ffffff" style="--swatch: #ffffff" title="White" aria-label="White ink" aria-pressed="false"></button>
+                                <label class="custom-color" title="Choose a custom ink color"><input type="color" id="drawing-color" value="#ef4444" aria-label="Custom ink color"></label>
+                            </div>
+                            <div class="zoom-controls" role="group" aria-label="Canvas zoom">
+                                <button type="button" class="tool icon-tool" id="zoom-out" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+                                <output id="canvas-zoom" aria-live="polite">100%</output>
+                                <button type="button" class="tool icon-tool" id="zoom-in" aria-label="Zoom in" title="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button>
+                                <button type="button" class="tool fit-tool" id="zoom-fit" title="Fit the image to the canvas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg><span>Fit</span></button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="canvas-stage"><canvas id="annotation-canvas" aria-label="Draw on this image with your pointer"></canvas><p id="image-load-error" class="error-message" hidden></p></div>
-                    <p class="canvas-hint">Draw directly on the image. Your original stays intact.</p>
+                    <div class="canvas-stage" id="canvas-stage"><div class="canvas-bed"><canvas id="annotation-canvas" aria-label="Draw on this image with your pointer"></canvas></div><p id="image-load-error" class="error-message" hidden></p></div>
+                    <div class="canvas-footer"><p id="canvas-tool-hint">Pen: draw freely on the image.</p><span id="canvas-dimensions"></span><span class="original-hint">Original preserved</span></div>
                 </div>
                 <aside class="feedback-panel">
                     <label class="qr-field-label" for="image-comments">Your feedback</label><p class="muted">What is wrong? What should improve?</p><textarea class="qr-field qr-field-default qr-textarea" id="image-comments" rows="9" placeholder="Describe the changes you want…"></textarea>
