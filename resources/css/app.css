@@ -405,7 +405,12 @@ progress { accent-color: var(--accent); flex: 1; }
 .handle-w { left: -6px; top: calc(50% - 6px); cursor: ew-resize; }
 .callout-target, .callout-grip { touch-action: none; }
 
-.recording-thumbnail { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; color: #51617a; background: #eaf0f8; font-size: 12px; font-weight: 600; }
+.recording-thumbnail { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; color: #51617a; background: #eaf0f8; font-size: 12px; font-weight: 600; }
+.recording-placeholder { display: grid; justify-items: center; gap: 12px; }
+.recording-thumbnail > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.recording-thumbnail.has-recording-frame .recording-placeholder { display: none; }
+.recording-thumbnail.has-recording-frame .recording-play-badge { position: absolute; bottom: 0; left: 0; }
+.stack-recording-preview { display: block; width: 100%; height: 100%; }
 .recording-thumbnail svg { width: 48px; height: 48px; }
 .video-workspace { overflow: hidden; border: 1px solid #cdd8e8; border-radius: 14px; background: white; }
 .video-stage { display: flex; align-items: center; justify-content: center; min-height: 320px; background: #111827; }

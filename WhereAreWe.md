@@ -260,3 +260,14 @@ use `file` / `file` / `sync` drivers.
 - iOS version 0.1.4 build 9 keeps the production HTTPS endpoint and limited
   Keychain-held device credential contract. The source tag and signed device
   build use the same version and build metadata.
+
+
+## 2026-10-04 — 0.1.5 build 10 recording first-frame previews
+
+- Recording cards and stacked gallery layers lazily render a cached JPEG of
+  the recording's first frame from the existing private preview route. The
+  feedback player uses the same frame while loading and clears late results
+  after switching files or leaving the editor.
+- Codec, network, and frame-extraction failures retain the recording fallback;
+  playback does not start during extraction. The native app is rebuilt as
+  version 0.1.5 build 10 for this product release.

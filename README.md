@@ -78,5 +78,5 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The iOS marketing version is `0.1.4`; this release build is `9`.
+The iOS marketing version is `0.1.5`; this release build is `10`.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

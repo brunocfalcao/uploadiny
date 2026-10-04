@@ -14,9 +14,11 @@ import {
 } from './drawing';
 import { createCalloutEditor } from './callout-editor';
 import { drawingShortcutAction } from './drawing-shortcuts';
+import { enhanceRecordingPreviews, setRecordingPoster } from './recording-previews';
 
 const workspace = document.querySelector('[data-workspace]');
 if (workspace) {
+    enhanceRecordingPreviews(workspace);
     const config = JSON.parse(document.getElementById('workspace-config').textContent);
     const token = document.querySelector('meta[name="csrf-token"]').content;
     const dialog = document.getElementById('project-dialog');
@@ -223,7 +225,7 @@ if (workspace) {
         clearTimeout(pollTimer);
         if (invalidate) loadGeneration++;
         calloutEditor.reset();
-        video.pause(); video.removeAttribute('src'); video.load();
+        video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load();
         active = null; source = null; dirty = false;
         document.getElementById('editor').hidden = true;
         document.getElementById('gallery').hidden = false;
@@ -270,6 +272,8 @@ if (workspace) {
             document.getElementById('vision-section').hidden = recording;
             document.getElementById('video-load-error').hidden = true;
             if (recording) {
+                video.removeAttribute('poster');
+                setRecordingPoster(video, data.preview_url, () => generation === loadGeneration && active?.id === id);
                 video.src = data.preview_url; video.load(); syncRecordingControls();
                 if (playRecording) video.play().catch(() => { /* Browsers may require another tap on Play. */ });
                 document.getElementById('save-feedback').disabled = false;
