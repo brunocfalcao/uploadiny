@@ -101,7 +101,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     signOutButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
     signOutButton.addTarget(self, action: #selector(signOut), for: .touchUpInside)
     signOutButton.isHidden = true
-    uploadButton.setTitle("Upload images", for: .normal)
+    uploadButton.setTitle("Upload files", for: .normal)
     uploadButton.setTitleColor(.white, for: .normal)
     uploadButton.backgroundColor = UIColor(red: 51 / 255, green: 72 / 255, blue: 216 / 255, alpha: 1)
     var uploadConfiguration = UIButton.Configuration.filled()
@@ -218,7 +218,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     serverURL = base
     providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
     if providers.isEmpty {
-      showError("No images were included in this share.")
+      showError("No images or recordings were included in this share.")
       return false
     }
     return true
@@ -253,7 +253,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           self.titleLabel.text = "No projects found"
           self.titleLabel.textAlignment = .center
           self.detailLabel.textAlignment = .center
-          self.detailLabel.text = "Please create a project on uploadiny.com,\nthen share your images again."
+          self.detailLabel.text = "Please create a project on uploadiny.com,\nthen share your files again."
           self.table.isHidden = true
           self.uploadButton.isHidden = true
           self.preferredContentSize = CGSize(width: 0, height: 360)
@@ -262,8 +262,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.titleLabel.text = "Choose a project"
         self.titleLabel.textAlignment = .left
         self.detailLabel.textAlignment = .left
-        self.detailLabel.text = "\(self.providers.count) image\(self.providers.count == 1 ? "" : "s") will stay together in one feedback group."
-        self.uploadButton.setTitle("Upload \(self.providers.count) image\(self.providers.count == 1 ? "" : "s")", for: .normal)
+        self.detailLabel.text = "\(self.providers.count) file\(self.providers.count == 1 ? "" : "s") will stay together in one feedback group."
+        self.uploadButton.setTitle("Upload \(self.providers.count) file\(self.providers.count == 1 ? "" : "s")", for: .normal)
         self.tableHeight.constant = min(320, CGFloat(self.projects.count) * 88)
         self.table.isHidden = false
         self.uploadButton.isHidden = false
@@ -431,16 +431,17 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   private func prepareProvider(at index: Int) {
     guard index < providers.count else {
-      do { try uploadChunk() } catch { showError("The images could not be prepared for upload.") }
+      do { try uploadChunk() } catch { showError("The files could not be prepared for upload.") }
       return
     }
     let provider = providers[index]
-    let identifiers = provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: .image) == true }
+    let movies = provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: .movie) == true }
+    let identifiers = movies.isEmpty ? provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: .image) == true } : movies
     loadRepresentation(provider: provider, identifiers: identifiers, typeIndex: 0, providerIndex: index)
   }
 
   private func loadRepresentation(provider: NSItemProvider, identifiers: [String], typeIndex: Int, providerIndex: Int) {
-    guard typeIndex < identifiers.count else { showError("One of the shared images could not be read. No chunk was uploaded."); return }
+    guard typeIndex < identifiers.count else { showError("One of the shared files could not be read. No chunk was uploaded."); return }
     let identifier = identifiers[typeIndex]
     provider.loadFileRepresentation(forTypeIdentifier: identifier) { [weak self] fileURL, _ in
       guard let self else { return }
@@ -473,12 +474,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
               self.preparedFiles.append(SharedFile(url: copyURL, name: copiedName, mime: mime))
             }
             self.prepareProvider(at: providerIndex + 1)
-          } catch { self.showError("One of the images could not be prepared. No chunk was uploaded.") }
+          } catch { self.showError("One of the files could not be prepared. No chunk was uploaded.") }
         }
       } catch {
         DispatchQueue.main.async {
           guard !self.didClose else { return }
-          self.showError("One of the images could not be prepared. No chunk was uploaded.")
+          self.showError("One of the files could not be prepared. No chunk was uploaded.")
         }
       }
     }
@@ -527,7 +528,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func uploadFile(at index: Int) {
     guard !didClose, let base = serverURL, let draftID else { return }
     guard index < preparedFiles.count else { completeChunk(); return }
-    detailLabel.text = "Uploading image \(index + 1) of \(preparedFiles.count)"
+    detailLabel.text = "Uploading file \(index + 1) of \(preparedFiles.count)"
     let file = preparedFiles[index]
     let boundary = "Uploadiny-\(UUID().uuidString)"
     do {
@@ -552,7 +553,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           self.uploadFile(at: index + 1)
         }
       }.resume()
-    } catch { showError("An image could not be prepared. The incomplete group was not published.") }
+    } catch { showError("A file could not be prepared. The incomplete group was not published.") }
   }
 
   private func multipartBody(file: SharedFile, boundary: String) throws -> URL {
@@ -601,7 +602,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.spinner.stopAnimating()
         self.spinner.isHidden = true
         self.titleLabel.text = "Uploaded to \(self.selectedProject?.name ?? "project")"
-        self.detailLabel.text = result.images.prefix(3).map { $0.name }.joined(separator: "\n") + (result.images.count > 3 ? "\n+ \(result.images.count - 3) more images" : "") + "\nTap anywhere to close"
+        self.detailLabel.text = result.images.prefix(3).map { $0.name }.joined(separator: "\n") + (result.images.count > 3 ? "\n+ \(result.images.count - 3) more files" : "") + "\nTap anywhere to close"
         self.titleLabel.textAlignment = .center
         self.detailLabel.textAlignment = .center
         self.closeButton.setTitle("Done", for: .normal)
@@ -619,7 +620,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       if let errors = result["errors"] as? [String: [String]], let message = errors.sorted(by: { $0.key < $1.key }).first?.value.first { return message }
       if let message = result["message"] as? String { return message }
     }
-    return "An image could not be uploaded. The incomplete group was not published."
+    return "A file could not be uploaded. The incomplete group was not published."
   }
 
   private func cancelDraft(completion: @escaping () -> Void = {}) {

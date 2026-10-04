@@ -66,3 +66,39 @@ test('normalized geometry and thickness stay stable across canvas zoom and resiz
     assert.deepEqual(positionOnCanvas({ clientX: 600, clientY: 1050 }, canvas), { x: .5, y: .5 });
     assert.equal(normalizedStrokeWidth(12, 500), .024);
 });
+
+
+test('callout rectangles resize independently and remain within image edges', async () => {
+    const { createCallout, changeCalloutBox, calloutBox } = await import('./callouts.js');
+    for (const point of [{ x: 0, y: 0 }, { x: 1, y: 1 }]) {
+        const mark = createCallout(point, '#ef4444', .004);
+        for (const part of ['target', 'note']) {
+            const box = calloutBox(mark, part);
+            assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1 && box.y + box.height <= 1);
+        }
+    }
+    const mark = createCallout({ x: .5, y: .5 }, '#ef4444', .004);
+    const resized = changeCalloutBox(mark, 'target', 'se', { x: .1, y: .2 });
+    assert.ok(Math.abs(resized.points[1].x - .75) < 1e-12);
+    assert.ok(Math.abs(resized.points[1].y - .74) < 1e-12);
+    assert.deepEqual(resized.points.slice(2), mark.points.slice(2));
+    const moved = changeCalloutBox(mark, 'note', 'move', { x: -2, y: -2 });
+    assert.deepEqual(moved.points[2], { x: 0, y: 0 });
+    assert.deepEqual(moved.points.slice(0, 2), mark.points.slice(0, 2));
+    assert.equal(mark.points[2].x, .27);
+});
+
+test('callout text color and geometry undo and redo together without sharing mutable snapshots', async () => {
+    const { createCallout, changeCalloutBox } = await import('./callouts.js');
+    const mark = createCallout({ x: .5, y: .5 }, '#ef4444', .004);
+    const changed = changeCalloutBox(mark, 'note', 'e', { x: .1, y: 0 });
+    changed.text = '<script>literal feedback</script>'; changed.color = '#16a34a';
+    let history = commitDrawingHistory(resetDrawingHistory([mark]), [changed]);
+    history = undoDrawingHistory(history);
+    assert.deepEqual(history.strokes, [mark]);
+    history = redoDrawingHistory(history);
+    assert.deepEqual(history.strokes, [changed]);
+    changed.text = 'Mutated outside history';
+    assert.equal(history.strokes[0].text, '<script>literal feedback</script>');
+    assert.equal(annotationContainsPoint(history.strokes[0], { x: .5, y: .5 }, 500, 900), true);
+});

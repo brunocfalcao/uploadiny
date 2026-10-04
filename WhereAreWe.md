@@ -151,3 +151,112 @@ use `file` / `file` / `sync` drivers.
   cancelled-eraser restoration, history reset when switching images, and stable
   normalized coordinates/thickness across zoom and resize. Shape geometry and
   server persistence remain covered separately.
+
+
+## 2026-10-04 — callouts and recording support
+
+- Annotation creates a target rectangle, connected arrow and editable text box.
+  Both boxes move and resize independently, share the selected ink color, and
+  participate in undo/redo. Callout text and geometry persist for the agent;
+  the annotated PNG includes the text.
+- Website and native sharing accept MP4/MOV/M4V recordings alongside images
+  in one upload chunk. Videos stay private, play with native browser controls,
+  support range requests for seeking, and accept written timestamped feedback.
+  Videos skip the still-image description workflow. Existing API names remain
+  compatible; each entry adds media_type, and videos use not_applicable for
+  description_status. Unsupported browser codecs offer original download.
+- Immediate checks: local mocked-API canvas creation/text/width/height/color/
+  undo/redo/export and synthetic MP4 play/pause/seek/comment save; PHP mixed
+  chunks/private range responses/agent feedback; Vite, JS tests, PHPStan,
+  mobile TypeScript/security contracts and native Swift typecheck.
+- Release coverage still needs persistent callout geometry/history cases:
+  edge placement, independent target/text-box resize and movement, clamping,
+  pointer cancellation, text/color undo, reopen/edit/export, and escaped text.
+  Physical iPhone mixed screenshot/recording sharing and Safari playback of
+  an actual iPhone recording remain unverified.
+
+
+## 2026-10-04 — 0.1.3 build 8 deployment
+
+- Deployed the current workspace to uploadiny.com and installed the signed
+  0.1.3 build 8 on Bruno's paired physical iPhone. App-list and surviving
+  process evidence confirm the installed version and launch.
+- Production smoke verified a mixed screenshot/MP4 chunk, private video range
+  requests, phone/agent ability separation, authenticated editor/player markup,
+  callout text persistence, annotated PNG download and recording feedback.
+  Only the release-created project, tokens and session were removed afterward.
+- Website source and asset hashes match the deployment manifest. Production
+  queue worker reloaded the new code. Existing data, account, credentials and
+  private originals remain in place. No migrations were added.
+- Targeted PHP checks: 28 tests / 419 assertions. JS: 12 tests. PHPStan, Pint,
+  PHP Insights and Composer advisory checks pass. Native Swift typecheck,
+  TypeScript, native contract checks and signed device build/install pass.
+- Deployment uses uncommitted workspace source based on v0.1.2; no Git commit,
+  tag or push was requested. .deployment.json records exact per-file hashes.
+  Physical Share Sheet interaction and Safari playback of an actual iPhone
+  recording remain Bruno-owned acceptance checks.
+
+
+## 2026-10-04 — website playback buttons
+
+- Recording cards expose Play recording; the video panel adds a prominent
+  Play/Pause/Replay button while retaining native timeline, volume and
+  fullscreen controls. A browser that blocks playback after opening the
+  card can start it through the dedicated player button.
+- Local synthetic-video verification covers visible Play/Pause labels and
+  playback state, seeking, written feedback and switching back to an image.
+  Desktop/mobile player layouts were inspected.
+
+
+## 2026-10-04 — chunk gallery, navigation and transfers
+
+- One gallery card represents each upload chunk. Its latest file is the cover;
+  stacked layers and a file count indicate additional files. Chunk cards sit
+  together in a responsive grid.
+- The editor provides first/previous/next/last navigation within the chunk.
+  Switching images or recordings, returning to the project, and transferring
+  files saves pending annotations and comments first. A failed save keeps the
+  current file open with its feedback intact.
+- Copy or move an individual file into another existing chunk, including a
+  chunk in another project. Moves retain originals and feedback; copies own
+  independent original/annotated files and retain comments, annotations and
+  descriptions. Failed copy transactions remove only newly copied files.
+  Empty source chunks are hidden from the gallery and destination chooser.
+- Validation: PHP suite 36 tests / 493 assertions; JS suite 12 tests; PHPStan,
+  Pint, PHP Insights thresholds and Composer advisory checks. Built frontend
+  fixture checks cover navigation, image/video feedback retention and failed
+  saves. Desktop/mobile gallery and editor layouts inspected using synthetic
+  screenshots. Real Safari interaction remains Bruno-owned acceptance.
+- Website-only update; the installed iPhone app remains 0.1.3 build 8.
+- Production smoke passed: mixed screenshot/recording chunks, private video
+  seeking, cross-project copy/move, independent copies surviving deletion of
+  their source, preserved callout/comments, stacked cards and hidden empty
+  source chunks. Only temporary smoke projects, tokens and session were
+  removed. Deployed file hashes match the deployment manifest.
+
+
+## 2026-10-04 — stale login recovery
+
+- Reproduced a stale-token login POST returning Laravel's bare 419 page.
+  Fresh production login forms reach credential validation; cookies are
+  secure and login responses are private/no-cache. The screenshot alone
+  does not establish why Bruno's token became stale.
+- Browser login POSTs with a rejected security token now redirect with 303
+  to a fresh sign-in form and a clear expiry message. Credentials are not
+  retried or flashed. CSRF validation remains active; JSON login requests
+  and other forms keep their existing 419 response.
+- New regression tests enable real CSRF middleware behavior, cover stale
+  form recovery, valid-token authentication and unchanged rejection for
+  JSON/other forms. Login/security checks: 11 tests / 95 assertions;
+  Pint, PHPStan and PHP Insights thresholds pass.
+
+
+## 2026-10-04 — 0.1.4 build 9 public-source release
+
+- The versioned public source includes private screenshot and recording upload
+  chunks, callouts, chunk navigation and transfers, stale-login recovery, and
+  the refined Latest uploads gallery. The newest completed upload is clearly
+  marked while each card is headed by its date.
+- iOS version 0.1.4 build 9 keeps the production HTTPS endpoint and limited
+  Keychain-held device credential contract. The source tag and signed device
+  build use the same version and build metadata.

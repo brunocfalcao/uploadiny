@@ -5,7 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 const steps = [
   ['1', 'Share a file'],
   ['2', 'Sign in once, then choose a project'],
-  ['3', 'Your images arrive as one feedback chunk'],
+  ['3', 'Your screenshots and recordings arrive as one feedback chunk'],
 ] as const;
 
 export default function App() {
@@ -24,7 +24,7 @@ export default function App() {
             <Text style={styles.eyebrow}>IPHONE → UPLOAD INBOX</Text>
             <Text style={styles.title}>Share it.{`\n`}Keep the context.</Text>
             <Text style={styles.subtitle}>
-              Share images into a project. Draw, comment, and give your coding agent the whole feedback group.
+              Share screenshots and recordings into a project. Draw, comment, and give your coding agent the whole feedback group.
             </Text>
           </View>
 

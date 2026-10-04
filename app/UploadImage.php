@@ -45,6 +45,11 @@ class UploadImage extends Model
         return ['annotations' => 'array', 'size' => 'integer', 'feedback_revision' => 'integer'];
     }
 
+    public function isVideo(): bool
+    {
+        return str_starts_with($this->mime_type, 'video/');
+    }
+
     public function getRouteKeyName(): string
     {
         return 'uuid';
@@ -68,6 +73,7 @@ class UploadImage extends Model
      *     name: string,
      *     original_name: string,
      *     mime_type: string,
+     *     media_type: string,
      *     size: int,
      *     image_url: string,
      *     annotated_image_url: string|null,
@@ -88,6 +94,7 @@ class UploadImage extends Model
             'name' => $this->name,
             'original_name' => $this->original_name,
             'mime_type' => $this->mime_type,
+            'media_type' => $this->isVideo() ? 'video' : 'image',
             'size' => $this->size,
             'image_url' => route('api.images.download', $this),
             'annotated_image_url' => $this->annotated_path ? route('api.images.annotated', $this) : null,

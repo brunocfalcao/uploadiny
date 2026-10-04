@@ -46,7 +46,8 @@ class ChunkStorage
                             'uuid' => $uuid, 'project_id' => $project->id, 'name' => $name,
                             'original_name' => $file->getClientOriginalName(), 'path' => $path,
                             'mime_type' => $file->getMimeType() ?? 'application/octet-stream', 'size' => $file->getSize(),
-                            'annotations' => [], 'comments' => '', 'description_status' => 'pending',
+                            'annotations' => [], 'comments' => '',
+                            'description_status' => str_starts_with($file->getMimeType() ?? '', 'video/') ? 'not_applicable' : 'pending',
                         ]);
                     }
                     if (! Storage::disk('local')->put('.uploadiny-sequence', (string) $sequence)) {

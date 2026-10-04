@@ -19,10 +19,25 @@ use Illuminate\Support\Facades\DB;
 
 class ChunkController extends Controller
 {
+    public function index(): JsonResponse
+    {
+        $projects = Project::query()->pluck('name', 'id');
+        $chunks = UploadChunk::query()->where('status', 'complete')->with('images:id,chunk_id,project_id')->orderByDesc('id')->get();
+        $destinations = $chunks->flatMap(static fn (UploadChunk $chunk) => $chunk->images->pluck('project_id')->unique()->map(static fn (int $projectId): array => [
+            'chunk_id' => $chunk->uuid,
+            'project_id' => $projectId,
+            'project_name' => $projects[$projectId],
+            'uploaded_at' => $chunk->created_at->toIso8601String(),
+            'file_count' => $chunk->images->where('project_id', $projectId)->count(),
+        ]))->values();
+
+        return response()->json(['destinations' => $destinations]);
+    }
+
     public function store(ChunkUploadRequest $request, Project $project, ChunkStorage $storage): JsonResponse
     {
         $chunk = $storage->store($project, $request->file('files'));
-        foreach ($chunk->images as $image) {
+        foreach ($chunk->images->where('description_status', 'pending') as $image) {
             DescribeUploadImage::dispatch($image->id)->afterCommit();
         }
 
@@ -57,7 +72,7 @@ class ChunkController extends Controller
 
             return $locked->load('images');
         });
-        foreach ($completed->images as $image) {
+        foreach ($completed->images->where('description_status', 'pending') as $image) {
             DescribeUploadImage::dispatch($image->id)->afterCommit();
         }
 

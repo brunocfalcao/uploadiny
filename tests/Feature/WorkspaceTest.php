@@ -185,6 +185,148 @@ class WorkspaceTest extends TestCase
         $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations', $annotations);
     }
 
+    public function test_callout_text_and_both_boxes_are_saved_for_the_agent_and_incomplete_boxes_are_rejected(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'callout-feedback']);
+        $uploaded = $this->upload($project)->assertCreated()->json('images.0');
+        $image = UploadImage::where('uuid', $uploaded['id'])->sole();
+        $png = UploadedFile::fake()->image('callout.png', 30, 20)->getContent();
+        $callout = ['tool' => 'callout', 'text' => "Add a checkbox here.\nKeep the link separate.", 'color' => '#16a34a', 'width' => 0.003, 'points' => [['x' => 0.1, 'y' => 0.4], ['x' => 0.8, 'y' => 0.5], ['x' => 0.2, 'y' => 0.1], ['x' => 0.7, 'y' => 0.3]]];
+        $payload = ['comments' => '', 'annotations' => [$callout], 'revision' => 0, 'annotated_image' => 'data:image/png;base64,'.base64_encode($png)];
+        $this->assertSame([], $image->annotations);
+
+        $invalid = $payload;
+        array_pop($invalid['annotations'][0]['points']);
+        $this->patchJson(route('images.update', $image), $invalid)->assertUnprocessable()->assertJsonValidationErrors('annotations.0.points.3');
+        $this->assertSame([], $image->fresh()->annotations);
+        $this->patchJson(route('images.update', $image), $payload)->assertOk();
+        $this->assertSame([$callout], $image->fresh()->annotations);
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations.0', $callout);
+    }
+
+    public function test_recordings_share_a_chunk_with_images_and_keep_private_playback_and_text_feedback(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'mixed-recording-feedback']);
+        $phoneToken = $user->createToken('recording-phone', UploadinyTokenAbility::phone())->plainTextToken;
+        $this->withToken($phoneToken);
+        $draft = $this->postJson(route('api.chunks.start', $project), ['image_count' => 2])->assertCreated();
+        $chunk = UploadChunk::where('uuid', $draft->json('id'))->sole();
+        $this->assertSame('uploading', $chunk->status);
+        $this->postJson(route('api.chunks.append', $chunk), ['file' => UploadedFile::fake()->image('screen.png')])->assertCreated();
+        $this->postJson(route('api.chunks.append', $chunk), ['file' => UploadedFile::fake()->createWithContent('recording.mov', str_repeat('v', 2048))->mimeType('video/quicktime')])->assertCreated();
+        $this->postJson(route('api.chunks.complete', $chunk))->assertOk()->assertJsonPath('images.1.media_type', 'video')->assertJsonPath('images.1.description_status', 'not_applicable');
+        $recording = $chunk->images()->where('name', 'upload-2.mov')->sole();
+        $still = $chunk->images()->where('name', 'upload-1.png')->sole();
+        Storage::disk('local')->assertExists($recording->path);
+        Queue::assertPushed(DescribeUploadImage::class, fn ($job): bool => $job->imageId === $still->id);
+        Queue::assertNotPushed(DescribeUploadImage::class, fn ($job): bool => $job->imageId === $recording->id);
+        $this->get(route('projects.show', $project))->assertSee('Screen recording')->assertSee('recording-player', false);
+        $this->get(route('images.preview', $recording))->assertOk()->assertHeader('Content-Type', 'video/quicktime')->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->get(route('images.preview', $recording), ['Range' => 'bytes=0-9'])->assertStatus(206)->assertHeader('Content-Range', 'bytes 0-9/2048');
+        $this->assertSame('', $recording->comments);
+        $this->patchJson(route('images.update', $recording), ['comments' => 'At 00:03 the next button stops responding.', 'annotations' => [], 'revision' => 0])->assertOk()->assertJsonPath('revision', 1);
+        $this->assertSame('At 00:03 the next button stops responding.', $recording->fresh()->comments);
+        $this->assertSame('', $still->fresh()->comments);
+        $this->postJson(route('images.describe', $recording))->assertUnprocessable();
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders()->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertOk()->assertJsonPath('chunk.images.1.media_type', 'video')->assertJsonPath('chunk.images.1.comments', 'At 00:03 the next button stops responding.');
+        $this->getJson(route('api.images.download', $recording))->assertDownload('upload-2.mov');
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders()->actingAs($user->fresh(), 'web');
+        $this->postJson(route('chunks.store', $project), ['files' => [UploadedFile::fake()->create('recording.mp4', 1, 'video/mp4')]])->assertCreated()->assertJsonPath('images.0.media_type', 'video');
+        $this->postJson(route('chunks.store', $project), ['files' => [UploadedFile::fake()->create('unsafe.html', 1, 'text/html')]])->assertUnprocessable()->assertJsonValidationErrors('files.0');
+        $this->assertSame(2, $chunk->images()->count());
+    }
+
+    public function test_copying_to_another_chunk_keeps_independent_originals_and_feedback(): void
+    {
+        $this->prepare();
+        $sourceProject = Project::factory()->create(['slug' => 'copy-source-chunk']);
+        $targetProject = Project::factory()->create(['slug' => 'copy-target-chunk']);
+        $sourceResponse = $this->upload($sourceProject)->assertCreated();
+        $targetResponse = $this->upload($targetProject)->assertCreated();
+        $source = UploadImage::where('uuid', $sourceResponse->json('images.0.id'))->sole();
+        $target = UploadChunk::where('uuid', $targetResponse->json('id'))->sole();
+        $raster = UploadedFile::fake()->image('marked.png')->getContent();
+        $annotations = [['tool' => 'arrow', 'color' => '#ef4444', 'width' => 0.003, 'points' => [['x' => 0.1, 'y' => 0.2], ['x' => 0.8, 'y' => 0.7]]]];
+        Storage::disk('local')->put('annotations/copy-source.png', $raster);
+        $source->update(['annotations' => $annotations, 'comments' => 'Keep this note with the image', 'annotated_path' => 'annotations/copy-source.png', 'description_status' => 'ready', 'description' => 'A screenshot']);
+        $original = Storage::disk('local')->get($source->path);
+        $this->assertSame(1, $target->images()->count());
+
+        $response = $this->postJson(route('images.transfer-chunk', $source), ['action' => 'copy', 'chunk_id' => $target->uuid, 'project_id' => $targetProject->id])->assertOk()->assertJsonPath('image.name', 'upload-3.png');
+        $copy = UploadImage::where('uuid', $response->json('image.id'))->sole();
+        $this->assertSame($target->id, $copy->chunk_id);
+        $this->assertSame($targetProject->id, $copy->project_id);
+        $this->assertSame($annotations, $copy->annotations);
+        $this->assertSame('Keep this note with the image', $copy->comments);
+        $this->assertSame('A screenshot', $copy->description);
+        $this->assertNotSame($source->path, $copy->path);
+        $this->assertNotSame($source->annotated_path, $copy->annotated_path);
+        $this->assertSame($original, Storage::disk('local')->get($copy->path));
+        $this->assertSame($raster, Storage::disk('local')->get($copy->annotated_path));
+        $this->assertSame($sourceProject->id, $source->fresh()->project_id);
+        $this->deleteJson(route('images.destroy', $source))->assertOk();
+        Storage::disk('local')->assertExists([$copy->path, $copy->annotated_path]);
+        $this->assertSame(2, $target->images()->count());
+        $this->get(route('projects.show', $targetProject))->assertSee('has-stack', false)->assertSee('upload-3.png')->assertSee('2 files');
+    }
+
+    public function test_failed_chunk_copy_removes_new_files_and_preserves_source_feedback(): void
+    {
+        $this->prepare();
+        $project = Project::factory()->create(['slug' => 'chunk-copy-rollback']);
+        $first = $this->upload($project)->assertCreated();
+        $second = $this->upload($project)->assertCreated();
+        $source = UploadImage::where('uuid', $first->json('images.0.id'))->sole();
+        $target = UploadChunk::where('uuid', $second->json('id'))->sole();
+        Storage::disk('local')->put('annotations/rollback-source.png', 'marked screenshot');
+        $source->update(['comments' => 'Keep the original note', 'annotated_path' => 'annotations/rollback-source.png']);
+        $before = Storage::disk('local')->allFiles();
+        $original = Storage::disk('local')->get($source->path);
+        $this->assertSame(1, $target->images()->count());
+        UploadImage::creating(function (UploadImage $candidate) use ($target): void {
+            if ($candidate->chunk_id === $target->id && $candidate->name === 'upload-3.png') {
+                throw new \RuntimeException('Simulated copy database failure');
+            }
+        });
+
+        $this->postJson(route('images.transfer-chunk', $source), ['action' => 'copy', 'chunk_id' => $target->uuid, 'project_id' => $project->id])->assertStatus(500);
+
+        $this->assertSame($before, Storage::disk('local')->allFiles());
+        $this->assertSame($original, Storage::disk('local')->get($source->path));
+        $this->assertSame('marked screenshot', Storage::disk('local')->get($source->annotated_path));
+        $this->assertSame('Keep the original note', $source->fresh()->comments);
+        $this->assertSame(1, $target->images()->count());
+        $this->assertSame('2', Storage::disk('local')->get('.uploadiny-sequence'));
+    }
+
+    public function test_moving_to_a_chunk_preserves_file_feedback_and_rejects_draft_destinations(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'move-between-chunks']);
+        $first = $this->upload($project)->assertCreated();
+        $second = $this->upload($project)->assertCreated();
+        $image = UploadImage::where('uuid', $first->json('images.0.id'))->sole();
+        $image->update(['comments' => 'Preserve this feedback']);
+        $before = $image->path;
+        $draft = UploadChunk::create(['status' => 'uploading', 'upload_project_id' => $project->id, 'expected_images' => 1]);
+        $this->postJson(route('images.transfer-chunk', $image), ['action' => 'move', 'chunk_id' => $draft->uuid, 'project_id' => $project->id])->assertUnprocessable();
+        $this->assertSame($first->json('id'), $image->fresh()->chunk->uuid);
+        $this->postJson(route('images.transfer-chunk', $image), ['action' => 'move', 'chunk_id' => $second->json('id'), 'project_id' => $project->id])->assertOk();
+        $this->assertSame($second->json('id'), $image->fresh()->chunk->uuid);
+        $this->assertSame('Preserve this feedback', $image->fresh()->comments);
+        $this->assertSame($before, $image->fresh()->path);
+        Storage::disk('local')->assertExists($before);
+        $this->getJson(route('chunks.index'))->assertOk()->assertJsonCount(1, 'destinations')->assertJsonPath('destinations.0.file_count', 2);
+        $this->get(route('projects.show', $project))->assertSee('has-stack', false)->assertSee('upload-2.png')->assertDontSee('upload-1.png');
+        $phone = $user->createToken('transfer-phone-rejection', UploadinyTokenAbility::phone())->plainTextToken;
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders()->withToken($phone)->postJson(route('images.transfer-chunk', $image), ['action' => 'copy', 'chunk_id' => $second->json('id'), 'project_id' => $project->id])->assertUnauthorized();
+    }
+
     public function test_abandoned_draft_cleanup_preserves_completed_chunks_and_never_reuses_names(): void
     {
         $this->prepare();

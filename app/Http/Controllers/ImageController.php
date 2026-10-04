@@ -6,8 +6,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ImageFeedbackRequest;
 use App\Http\Requests\MoveImageRequest;
+use App\Http\Requests\TransferChunkImageRequest;
 use App\Jobs\DescribeUploadImage;
 use App\Project;
+use App\Services\ChunkTransfer;
 use App\Services\WorkspaceDeletion;
 use App\UploadImage;
 use Illuminate\Http\JsonResponse;
@@ -49,6 +51,9 @@ class ImageController extends Controller
     public function update(ImageFeedbackRequest $request, UploadImage $image): JsonResponse
     {
         $data = $request->validated();
+        if ($image->isVideo() && ($data['annotations'] !== [] || isset($data['annotated_image']))) {
+            throw ValidationException::withMessages(['annotations' => 'Use written feedback for recordings.']);
+        }
         $raster = null;
         if (is_string($data['annotated_image'] ?? null)) {
             $prefix = 'data:image/png;base64,';
@@ -102,6 +107,13 @@ class ImageController extends Controller
         return response()->json(['project_url' => route('projects.show', $image->fresh()->project)]);
     }
 
+    public function transferChunk(TransferChunkImageRequest $request, UploadImage $image, ChunkTransfer $transfer): JsonResponse
+    {
+        $result = $transfer->transfer($image, $request->string('chunk_id')->toString(), $request->integer('project_id'), $request->string('action')->toString());
+
+        return response()->json(['image' => $result->agentData(), 'project_url' => route('projects.show', $result->project)]);
+    }
+
     public function destroy(UploadImage $image, WorkspaceDeletion $deletion): JsonResponse
     {
         $deletion->image($image);
@@ -111,6 +123,7 @@ class ImageController extends Controller
 
     public function describe(UploadImage $image): JsonResponse
     {
+        abort_if($image->isVideo(), 422, 'Image descriptions are available for still images.');
         $changed = UploadImage::whereKey($image->id)->whereIn('description_status', ['failed', 'ready'])->update(['description_status' => 'pending', 'description_error' => null]);
         if ($changed) {
             DescribeUploadImage::dispatch($image->id);

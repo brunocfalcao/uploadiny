@@ -23,7 +23,7 @@ class DescribeUploadImage implements ShouldQueue
     public function handle(VisionDescription $vision): void
     {
         $image = UploadImage::find($this->imageId);
-        if (! $image || $image->description_status !== 'pending') {
+        if (! $image || $image->isVideo() || $image->description_status !== 'pending') {
             return;
         }
         $image->update(['description_status' => 'processing', 'description_error' => null]);

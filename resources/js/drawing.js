@@ -1,3 +1,5 @@
+import { calloutContainsPoint, drawCallout } from './callouts.js';
+
 export function positionOnCanvas(event, canvas) {
     const rect = canvas.getBoundingClientRect();
     return { x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) };
@@ -44,7 +46,8 @@ export function drawAnnotation(ctx, stroke, width, height) {
     ctx.lineWidth = Math.max(1, stroke.width * width);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (stroke.tool === 'rectangle') ctx.strokeRect(first.x, first.y, last.x - first.x, last.y - first.y);
+    if (stroke.tool === 'callout') drawCallout(ctx, stroke, width, height);
+    else if (stroke.tool === 'rectangle') ctx.strokeRect(first.x, first.y, last.x - first.x, last.y - first.y);
     else if (stroke.tool === 'ellipse') {
         ctx.beginPath();
         ctx.ellipse((first.x + last.x) / 2, (first.y + last.y) / 2, Math.abs(last.x - first.x) / 2, Math.abs(last.y - first.y) / 2, 0, 0, Math.PI * 2);
@@ -74,6 +77,7 @@ function distanceToSegment(point, start, end) {
 }
 
 export function annotationContainsPoint(stroke, point, width, height, tolerance = 8) {
+    if (stroke.tool === 'callout') return calloutContainsPoint(stroke, point);
     const points = stroke.points.map(entry => ({ x: entry.x * width, y: entry.y * height }));
     if (points.length < 2) return false;
     const first = points[0];
