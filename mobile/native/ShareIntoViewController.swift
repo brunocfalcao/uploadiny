@@ -19,8 +19,15 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private let signInButton = UIButton(type: .system)
   private let signOutButton = UIButton(type: .system)
   private let spinner = UIActivityIndicatorView(style: .medium)
+  private let uploadProgress = UIProgressView(progressViewStyle: .default)
+  private weak var currentUploadTask: URLSessionTask?
+  private var uploadTotalBytes: Int64 = 0
+  private var uploadDoneBytes: Int64 = 0
+  private var currentFileBytes: Int64 = 0
+  private var currentFileIndex = 0
   private var projects: [Project] = []
   private var selectedProject: Project?
+  private var projectIsRemembered = false
   private var providers: [NSItemProvider] = []
   private var review = ShareReview()
   private let reviewPanel = UIStackView()
@@ -96,6 +103,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     detailLabel.textColor = SharePalette.secondary
     detailLabel.numberOfLines = 0
     detailLabel.adjustsFontForContentSizeCategory = true
+    uploadProgress.progressTintColor = SharePalette.accent
+    uploadProgress.trackTintColor = SharePalette.line
+    uploadProgress.isHidden = true
+    uploadProgress.accessibilityLabel = "Upload progress"
     let brandIcon = UIImageView(image: UIImage(systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
     brandIcon.tintColor = SharePalette.accentText
     brandIcon.backgroundColor = SharePalette.accent.withAlphaComponent(0.16)
@@ -179,7 +190,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     view.addSubview(footer)
     spinner.color = SharePalette.accentText
     spinner.startAnimating()
-    let stack = UIStackView(arrangedSubviews: [emptyProjectIcon, detailLabel, emailField, passwordField, signInButton, changeProjectButton, reviewPanel, preview, spinner, table, signOutButton])
+    let stack = UIStackView(arrangedSubviews: [emptyProjectIcon, detailLabel, uploadProgress, emailField, passwordField, signInButton, changeProjectButton, reviewPanel, preview, spinner, table, signOutButton])
     stack.axis = .vertical
     stack.alignment = .fill
     stack.spacing = 14
@@ -561,7 +572,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     titleLabel.text = "Share feedback"
     detailLabel.isHidden = true
     changeProjectButton.configuration?.title = project.name
-    changeProjectButton.configuration?.subtitle = "Upload to project"
+    changeProjectButton.configuration?.subtitle = (projectIsRemembered ? "Last project used" : "Upload to project") + " · Tap to change"
     changeProjectButton.accessibilityLabel = "Project: \(project.name). Change project"
     changeProjectButton.isHidden = false
     updateAppendRow()
@@ -771,6 +782,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       DispatchQueue.main.async {
         self.projects = result.projects
         self.spinner.stopAnimating()
+      self.uploadProgress.isHidden = true
         self.spinner.isHidden = true
         self.emailField.isHidden = true
         self.passwordField.isHidden = true
@@ -800,6 +812,11 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.footerSummary.isHidden = true
         self.reviewPanel.isHidden = true
         self.changeProjectButton.isHidden = true
+        // Keep this session's choice if it is still listed, else use the project of the last successful upload.
+        if !self.didClose, let slug = self.selectedProject?.slug ?? UploadinyLastProjectStore.read(),
+           let project = self.projects.first(where: { $0.slug == slug }) {
+          self.selectProject(project, remembered: self.selectedProject == nil)
+        }
       }
     }.resume()
   }
@@ -807,6 +824,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func showSignIn(_ message: String = "Sign in once to give this iPhone limited upload access. Your password is never stored.") {
     DispatchQueue.main.async {
       self.spinner.stopAnimating()
+      self.uploadProgress.isHidden = true
       self.spinner.isHidden = true
       self.emptyProjectIcon.isHidden = true
       self.preview.isHidden = true
@@ -901,6 +919,28 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     return session
   }
 
+  func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+    guard totalBytesExpectedToSend > 0 else { return }
+    let fraction = min(1, Double(totalBytesSent) / Double(totalBytesExpectedToSend))
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.didClose, task === self.currentUploadTask else { return }
+      self.showUploadProgress(index: self.currentFileIndex, fileFraction: fraction)
+    }
+  }
+
+  private func showUploadProgress(index: Int, fileFraction: Double) {
+    let sent = Double(uploadDoneBytes) + Double(currentFileBytes) * fileFraction
+    let overall = Float(min(1, sent / Double(uploadTotalBytes)))
+    uploadProgress.setProgress(overall, animated: true)
+    let percent = Int((overall * 100).rounded())
+    detailLabel.text = "Sending \(index + 1) of \(review.files.count) · \(percent)%"
+    uploadProgress.accessibilityValue = "\(percent) percent"
+  }
+
+  private static func fileBytes(_ url: URL) -> Int64 {
+    Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+  }
+
   func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
     completionHandler(nil)
   }
@@ -944,8 +984,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    let project = projects[indexPath.row]
+    selectProject(projects[indexPath.row], remembered: false)
+  }
+
+  // Same path for a tap on the list and for the remembered project picked on launch.
+  private func selectProject(_ project: Project, remembered: Bool) {
     selectedProject = project
+    projectIsRemembered = remembered
     fetchLastUpload(for: project)
     UISelectionFeedbackGenerator().selectionChanged()
     table.isHidden = true
@@ -984,6 +1029,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     titleLabel.text = "Uploading…"
     detailLabel.isHidden = false
     detailLabel.text = "Keeping your files and feedback together."
+    uploadTotalBytes = max(1, review.files.reduce(Int64(0)) { $0 + Self.fileBytes($1.url) })
+    uploadDoneBytes = 0
+    uploadProgress.setProgress(0, animated: false)
+    uploadProgress.isHidden = false
     spinner.isHidden = false
     spinner.startAnimating()
     do { try uploadChunk() } catch { showError("The feedback group could not be started.") }
@@ -1101,8 +1150,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func uploadFile(at index: Int) {
     guard !didClose, let base = serverURL, let draftID else { return }
     guard index < review.files.count else { completeChunk(); return }
-    detailLabel.text = "Uploading file \(index + 1) of \(review.files.count)"
     let file = review.files[index]
+    currentFileBytes = Self.fileBytes(file.url)
+    currentFileIndex = index
+    showUploadProgress(index: index, fileFraction: 0)
     let boundary = "Uploadiny-\(UUID().uuidString)"
     do {
       let bodyURL = try multipartBody(file: file, boundary: boundary)
@@ -1110,7 +1161,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       request.httpMethod = "POST"
       request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
       let session = secureSession()
-      session.uploadTask(with: request, fromFile: bodyURL) { [weak self] data, response, error in
+      let task = session.uploadTask(with: request, fromFile: bodyURL) { [weak self] data, response, error in
         DispatchQueue.main.async {
           guard let self, !self.didClose else { return }
           try? FileManager.default.removeItem(at: bodyURL)
@@ -1129,9 +1180,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
             return
           }
           self.uploadedImageIDs.append(image.id)
+          self.uploadDoneBytes += self.currentFileBytes
           self.uploadFile(at: index + 1)
         }
-      }.resume()
+      }
+      currentUploadTask = task
+      task.resume()
     } catch { showError("A file could not be prepared. The incomplete group was not published.") }
   }
 
@@ -1165,10 +1219,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         }
         let shared = self.uploadedImageIDs.compactMap { id in result.images.first { $0.id == id } }
         let merged = self.appendingTo != nil && result.id == self.appendingTo
+        if let slug = self.selectedProject?.slug { UploadinyLastProjectStore.write(slug) }
         self.draftID = nil
         let thumbnail = self.review.files.first.flatMap { self.imagePreview($0.url) }
         self.cleanupFiles()
         self.spinner.stopAnimating()
+      self.uploadProgress.isHidden = true
         self.spinner.isHidden = true
         let projectName = self.selectedProject?.name ?? "project"
         self.titleLabel.text = merged ? "Added to the last upload in \(projectName)" : "Uploaded to \(projectName)"
@@ -1230,6 +1286,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       self.previewGeneration += 1
       self.previewGenerator?.cancelAllCGImageGeneration()
       self.spinner.stopAnimating()
+      self.uploadProgress.isHidden = true
       self.spinner.isHidden = true
       self.table.isHidden = true
       self.reviewPanel.isHidden = true
@@ -1512,6 +1569,42 @@ private enum UploadinyAppendPreferenceStore {
     var attributes = query
     attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     attributes[kSecValueData] = Data((enabled ? "1" : "0").utf8)
+    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+  }
+}
+
+// Remembers the slug of the project used by the last successful upload, in its own item.
+private enum UploadinyLastProjectStore {
+  private static let service = UploadinyDeviceTokenStore.service
+  private static let account = "last-project-slug"
+
+  static func read() -> String? {
+    var item: CFTypeRef?
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: service,
+      kSecAttrAccount: account,
+      kSecReturnData: true,
+      kSecMatchLimit: kSecMatchLimitOne,
+    ]
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+          let data = item as? Data,
+          let slug = String(data: data, encoding: .utf8),
+          !slug.isEmpty else { return nil }
+    return slug
+  }
+
+  @discardableResult
+  static func write(_ slug: String) -> Bool {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: service,
+      kSecAttrAccount: account,
+    ]
+    SecItemDelete(query as CFDictionary)
+    var attributes = query
+    attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    attributes[kSecValueData] = Data(slug.utf8)
     return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
   }
 }

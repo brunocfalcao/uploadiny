@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property int $feedback_revision
  * @property array<int, array<string, mixed>>|null $annotations
  * @property string|null $comments
+ * @property Carbon|null $feedback_updated_at
  * @property string|null $annotated_path
  * @property string|null $description
  * @property string $description_status
@@ -38,11 +39,11 @@ class UploadImage extends Model
     /** @use HasFactory<UploadImageFactory> */
     use HasFactory;
 
-    protected $fillable = ['uuid', 'project_id', 'chunk_id', 'name', 'original_name', 'path', 'mime_type', 'size', 'annotations', 'comments', 'description', 'description_status', 'description_error', 'description_model', 'annotated_path', 'feedback_revision'];
+    protected $fillable = ['uuid', 'project_id', 'chunk_id', 'name', 'original_name', 'path', 'mime_type', 'size', 'annotations', 'comments', 'description', 'description_status', 'description_error', 'description_model', 'annotated_path', 'feedback_revision', 'feedback_updated_at'];
 
     protected function casts(): array
     {
-        return ['annotations' => 'array', 'size' => 'integer', 'feedback_revision' => 'integer'];
+        return ['annotations' => 'array', 'size' => 'integer', 'feedback_revision' => 'integer', 'feedback_updated_at' => 'datetime'];
     }
 
     public function isVideo(): bool

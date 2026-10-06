@@ -11,7 +11,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function workspace(t) {
     const previousDocument = globalThis.document;
-    const nodes = new Map(); const timers = new Map(); let timerId = 0;
+    const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0;
+    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
     class Element {
         constructor(id = '', tagName = 'div') {
             Object.assign(this, { id, tagName, value: '', textContent: '', children: [], listeners: {}, dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, parentElement: {}, disabled: false, hidden: false, open: false, clientWidth: 800, clientHeight: 600 });
@@ -40,9 +41,13 @@ function workspace(t) {
     const card = new Element(); card.dataset = { chunkImages: '["one","two","three"]', openImage: 'one', chunk: 'chunk-one' };
     const tool = new Element(); tool.dataset.tool = 'callout';
     const selectTool = new Element(); selectTool.dataset.tool = 'select';
+    document.visibilityState = 'visible';
+    node('workspace').dataset = { latest: 'chunk-one', latestCompleted: 't1', latestCount: '3' };
+    node('workspace-message').hidden = true;
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
-    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? [card] : selector === '[data-tool]' ? [selectTool, tool] : [];
-    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, latest_url: null });
+    const cards = () => node('chunk-list').children.length ? node('chunk-list').children : [card];
+    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : [];
+    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk' });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
     const writes = []; const deletions = []; let respond = async () => {};
@@ -55,9 +60,25 @@ function workspace(t) {
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
         Image: class { naturalWidth = 640; naturalHeight = 480; set src(value) { this.onload(); } },
         Option: class {}, FormData: class {}, structuredClone, clearTimeout: id => timers.delete(id),
-        setTimeout: callback => { timers.set(++timerId, callback); return timerId; }, setInterval() {},
-        location: { reload() {} }, confirm: () => true,
+        setTimeout: callback => { timers.set(++timerId, callback); return timerId; }, setInterval: callback => { intervals.push(callback); return intervals.length; }, clearInterval() {},
+        location: { reload() { reloads++; } }, confirm: () => true,
+        DOMParser: class {
+            parseFromString() {
+                const next = remote.page;
+                return { getElementById: id => id === 'chunk-list' && !next.noList ? { childNodes: next.cards } : null, querySelector: selector => selector === '[data-workspace]' ? { dataset: next.dataset } : selector === '.project-nav' ? { childNodes: ['nav'] } : null };
+            }
+        },
         fetch: async (url, options = {}) => {
+            if (url === '/projects/1/last-chunk') {
+                remote.chunkRequests++;
+                if (remote.chunkResponse) return remote.chunkResponse();
+                return { ok: true, json: async () => ({ chunk: remote.chunk }) };
+            }
+            if (url === '/projects/1') {
+                remote.pageRequests++;
+                if (remote.pageResponse) return remote.pageResponse();
+                return { ok: true, text: async () => '<html></html>' };
+            }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
             const id = url.split('/')[2];
             if (options.method === 'DELETE') { deletions.push(id); delete assets[id]; return { ok: true, json: async () => ({}) }; }
@@ -72,7 +93,15 @@ function workspace(t) {
         },
     });
     return {
-        node, assets, writes, deletions, document, tool, selectTool,
+        node, assets, writes, deletions, document, tool, selectTool, remote, timers,
+        get reloads() { return reloads; },
+        async poll() { intervals[0](); await tick(); },
+        arrive(id = 'chunk-two', count = 1) {
+            const fresh = new Element(); fresh.dataset = { chunkImages: JSON.stringify(['two']), openImage: 'two', chunk: id };
+            remote.chunk = { id, completed_at: 't2', file_count: count };
+            remote.page = { cards: [fresh], dataset: { latest: id, latestCompleted: 't2', latestCount: String(count) } };
+            return fresh;
+        },
         async open() { card.click(); await tick(); assert.equal(node("editor-name").textContent, "one", node("workspace-message").textContent); assert.equal(node("annotation-canvas").hidden, false, node("workspace-message").textContent); },
         async settle() { await tick(); },
         async autosave() { const pending = [...timers.values()]; timers.clear(); for (const callback of pending) callback(); await tick(); },
@@ -326,4 +355,165 @@ test('dragging across the gradient recolours a selected note in one undo step', 
     assert.equal(ui.assets.one.annotations[0].color, '#ff0000');
     ui.node('undo-drawing').click(); await ui.autosave();
     assert.equal(ui.assets.one.annotations[0].color, original);
+});
+
+const arrivalNotice = 'New upload arrived — it will appear when you go back to the project.';
+
+test('polling an unchanged project fetches nothing and shows no notice', async t => {
+    const ui = workspace(t);
+    await ui.poll(); await ui.poll();
+    assert.equal(ui.remote.chunkRequests, 2);
+    assert.equal(ui.remote.pageRequests, 0);
+    assert.equal(ui.node('workspace-message').hidden, true);
+});
+
+test('a new upload refreshes the visible gallery in place, rebinds the new tiles and shows a notice', async t => {
+    const ui = workspace(t);
+    const fresh = ui.arrive('chunk-two', 1);
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.deepEqual(ui.node('chunk-list').children, [fresh]);
+    assert.deepEqual(ui.node('workspace').dataset, { latest: 'chunk-two', latestCompleted: 't2', latestCount: '1' });
+    assert.equal(ui.node('workspace-message').textContent, 'New upload arrived.');
+    assert.equal(ui.node('workspace-message').hidden, false);
+    assert.equal(ui.reloads, 0);
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 1);
+    fresh.click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    ui.timers.forEach(callback => callback());
+});
+
+test('the arrival notice hides itself after a while but not when another message replaced it', async t => {
+    const ui = workspace(t); ui.arrive();
+    await ui.poll();
+    ui.timers.forEach(callback => callback()); ui.timers.clear();
+    assert.equal(ui.node('workspace-message').hidden, true);
+    ui.arrive('chunk-three', 2); await ui.poll();
+    ui.node('workspace-message').textContent = 'Different message';
+    ui.timers.forEach(callback => callback());
+    assert.equal(ui.node('workspace-message').hidden, false);
+});
+
+test('a changed file count or completion time in the same chunk also refreshes the gallery', async t => {
+    const ui = workspace(t);
+    ui.remote.chunk = { id: 'chunk-one', completed_at: 't1', file_count: 4 };
+    ui.remote.page = { cards: [], dataset: { latest: 'chunk-one', latestCompleted: 't1', latestCount: '4' } };
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.node('workspace').dataset.latestCount, '4');
+    ui.remote.chunk = { id: 'chunk-one', completed_at: 't9', file_count: 4 };
+    ui.remote.page = { cards: [], dataset: { latest: 'chunk-one', latestCompleted: 't9', latestCount: '4' } };
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 2);
+    assert.equal(ui.node('workspace').dataset.latestCompleted, 't9');
+});
+
+test('an open editor keeps the gallery untouched, shows one notice and refreshes when it closes', async t => {
+    const ui = workspace(t); await ui.open();
+    const fresh = ui.arrive();
+    ui.type(ui.node('image-comments'), 'Unsaved thoughts');
+    await ui.poll(); await ui.poll();
+    assert.equal(ui.remote.pageRequests, 0);
+    assert.notDeepEqual(ui.node('chunk-list').children, [fresh]);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-one');
+    assert.equal(ui.node('workspace-message').textContent, arrivalNotice);
+    assert.equal(ui.node('image-comments').value, 'Unsaved thoughts');
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    await ui.autosave();
+    ui.node('close-editor').click(); await ui.settle();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.deepEqual(ui.node('chunk-list').children, [fresh]);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
+    assert.equal(ui.node('workspace-message').textContent, 'New upload arrived.');
+    assert.equal(ui.reloads, 0);
+});
+
+test('closing the editor refreshes the gallery without a reload, and reloads only when the refresh fails', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.page = { cards: [], dataset: { latest: 'chunk-one', latestCompleted: 't1', latestCount: '3' } };
+    ui.node('close-editor').click(); await ui.settle();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.reloads, 0);
+    assert.equal(ui.node('workspace-message').hidden, true);
+    await ui.open();
+    ui.remote.pageResponse = async () => ({ ok: false });
+    ui.node('close-editor').click(); await ui.settle();
+    assert.equal(ui.reloads, 1);
+});
+
+test('an open project dialog blocks the swap until the next poll after it clears', async t => {
+    const ui = workspace(t); ui.arrive();
+    ui.node('project-dialog').open = true;
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 0);
+    assert.equal(ui.node('workspace-message').textContent, arrivalNotice);
+    ui.node('project-dialog').open = false;
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
+    assert.equal(ui.node('workspace-message').textContent, 'New upload arrived.');
+});
+
+test('failed polls and failed page fetches stay silent and the next tick retries', async t => {
+    const ui = workspace(t); ui.arrive();
+    ui.remote.chunkResponse = async () => { throw new Error('offline'); };
+    await ui.poll();
+    ui.remote.chunkResponse = async () => ({ ok: false, json: async () => ({ message: 'Server error' }) });
+    await ui.poll();
+    ui.remote.chunkResponse = async () => ({ ok: true, json: async () => { throw new Error('not json'); } });
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 0);
+    ui.remote.chunkResponse = null;
+    ui.remote.pageResponse = async () => ({ ok: false });
+    await ui.poll();
+    ui.remote.pageResponse = async () => { throw new Error('offline'); };
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 2);
+    assert.equal(ui.node('workspace-message').hidden, true);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-one');
+    assert.equal(ui.reloads, 0);
+    ui.remote.pageResponse = null;
+    await ui.poll();
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
+});
+
+test('a page without the upload list (for example a login redirect) is never swapped in', async t => {
+    const ui = workspace(t); ui.arrive();
+    ui.remote.page.noList = true;
+    ui.node('chunk-list').children = ['kept'];
+    await ui.poll();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.deepEqual(ui.node('chunk-list').children, ['kept']);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-one');
+    assert.equal(ui.node('workspace-message').hidden, true);
+    assert.equal(ui.reloads, 0);
+});
+
+test('polling pauses while the tab is hidden and polls immediately when it becomes visible again', async t => {
+    const ui = workspace(t);
+    ui.document.visibilityState = 'hidden';
+    await ui.poll();
+    ui.document.emit('visibilitychange'); await ui.settle();
+    assert.equal(ui.remote.chunkRequests, 0);
+    ui.document.visibilityState = 'visible';
+    ui.document.emit('visibilitychange'); await ui.settle();
+    assert.equal(ui.remote.chunkRequests, 1);
+});
+
+test('overlapping polls never run together and a response that predates a swap is discarded', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.arrive();
+    let release;
+    ui.remote.chunkResponse = () => new Promise(resolve => { release = () => resolve({ ok: true, json: async () => ({ chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 } }) }); });
+    ui.document.emit('visibilitychange');
+    await ui.poll(); await ui.poll();
+    assert.equal(ui.remote.chunkRequests, 1);
+    ui.node('close-editor').click(); await ui.settle();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
+    release(); await ui.settle();
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
+    assert.equal(ui.reloads, 0);
 });

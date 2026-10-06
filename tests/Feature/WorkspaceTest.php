@@ -127,6 +127,45 @@ class WorkspaceTest extends TestCase
         Queue::assertPushed(DescribeUploadImage::class, 9);
     }
 
+    public function test_the_browser_last_chunk_check_requires_a_session_and_matches_the_phone_shape(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'last-taxiny']);
+        $this->app['auth']->forgetGuards();
+        $this->getJson(route('projects.last-chunk', $project))->assertUnauthorized();
+        $this->get(route('projects.last-chunk', $project))->assertRedirect(route('login'));
+        $this->actingAs($user);
+        $this->getJson(route('projects.last-chunk', $project))->assertOk()->assertExactJson(['chunk' => null]);
+        $this->upload($project, 2)->assertCreated();
+        $web = $this->getJson(route('projects.last-chunk', $project))->assertOk()->assertJsonStructure(['chunk' => ['id', 'completed_at', 'file_count']])->assertJsonPath('chunk.file_count', 2);
+        $this->withToken($user->createToken('phone', UploadinyTokenAbility::phone())->plainTextToken)->getJson(route('api.chunks.last', $project))->assertOk()->assertExactJson($web->json());
+    }
+
+    public function test_the_project_page_renders_the_latest_chunk_state_the_browser_compares_against(): void
+    {
+        $user = $this->prepare();
+        $project = Project::factory()->create(['slug' => 'state-taxiny']);
+        $this->get(route('projects.show', $project))->assertOk()
+            ->assertSee('data-latest="" data-latest-completed="" data-latest-count=""', false)
+            ->assertSee(str_replace('/', '\/', route('projects.last-chunk', $project)), false);
+        $this->get(route('projects.index'))->assertOk()->assertSee('"last_chunk_url":null', false);
+
+        $first = $this->upload($project, 2)->assertCreated();
+        $state = $this->getJson(route('projects.last-chunk', $project))->json('chunk');
+        $this->assertSame($first->json('id'), $state['id']);
+        $this->get(route('projects.show', $project))->assertOk()->assertSee(sprintf('data-latest="%s" data-latest-completed="%s" data-latest-count="2"', $state['id'], $state['completed_at']), false)->assertSee('id="chunk-list"', false);
+
+        $this->travel(5)->minutes();
+        $draft = $this->postJson(route('chunks.start', $project), ['image_count' => 1, 'append_to' => $first->json('id')])->assertCreated();
+        $this->postJson(route('chunks.append', $draft->json('id')), ['file' => UploadedFile::fake()->image('later.png', 30, 20)])->assertCreated();
+        $this->postJson(route('chunks.complete', $draft->json('id')))->assertOk();
+        $merged = $this->getJson(route('projects.last-chunk', $project))->json('chunk');
+        $this->assertSame($state['id'], $merged['id']);
+        $this->assertSame(3, $merged['file_count']);
+        $this->assertNotSame($state['completed_at'], $merged['completed_at']);
+        $this->get(route('projects.show', $project))->assertOk()->assertSee(sprintf('data-latest="%s" data-latest-completed="%s" data-latest-count="3"', $merged['id'], $merged['completed_at']), false);
+    }
+
     public function test_invalid_groups_are_rejected_before_any_file_or_chunk_is_saved(): void
     {
         $this->prepare();
@@ -155,7 +194,7 @@ class WorkspaceTest extends TestCase
         $this->assertSame($png, Storage::disk('local')->get($image->annotated_path));
         $this->patchJson(route('images.update', $image), $payload + [])->assertConflict();
         $this->assertSame('Fix the save button alignment', $image->fresh()->comments);
-        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations.0.tool', 'arrow')->assertJsonPath('chunk.images.0.comments', 'Fix the save button alignment');
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.marks.0.tool', 'arrow')->assertJsonPath('chunk.images.0.mark_count', 1)->assertJsonMissingPath('chunk.images.0.annotations')->assertJsonPath('chunk.images.0.comments', 'Fix the save button alignment');
         $this->getJson(route('api.images.annotated', $image))->assertDownload('upload-1-annotated.png');
         $invalid = $payload;
         $invalid['revision'] = 1;
@@ -190,7 +229,7 @@ class WorkspaceTest extends TestCase
         $this->patchJson(route('images.update', $image), ['comments' => 'Two marked areas', 'annotations' => $annotations, 'revision' => 0, 'annotated_image' => 'data:image/png;base64,'.base64_encode($png)])->assertOk();
         $this->assertSame($annotations, $image->fresh()->annotations);
         $this->assertSame($png, Storage::disk('local')->get($image->fresh()->annotated_path));
-        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations', $annotations);
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.marks.0.tool', 'line')->assertJsonPath('chunk.images.0.marks.0.color', '#3b82f6')->assertJsonPath('chunk.images.0.marks.1.tool', 'ellipse')->assertJsonPath('chunk.images.0.marks.1.color', '#16a34a');
     }
 
     public function test_callout_text_and_both_boxes_are_saved_for_the_agent_and_incomplete_boxes_are_rejected(): void
@@ -210,7 +249,7 @@ class WorkspaceTest extends TestCase
         $this->assertSame([], $image->fresh()->annotations);
         $this->patchJson(route('images.update', $image), $payload)->assertOk();
         $this->assertSame([$callout], $image->fresh()->annotations);
-        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.annotations.0', $callout);
+        $this->withToken($this->agentToken($user))->getJson(route('api.projects.latest', $project))->assertJsonPath('chunk.images.0.marks.0.note', $callout['text'])->assertJsonPath('chunk.images.0.marks.0.tool', 'callout');
     }
 
     public function test_recordings_share_a_chunk_with_images_and_keep_private_playback_and_text_feedback(): void

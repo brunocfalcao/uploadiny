@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Services\FeedbackReader;
 use App\Services\RecordingFrames;
 use App\UploadImage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -25,7 +26,7 @@ class GetRecordingFrames extends Tool
 
     protected string $description = 'Inspect a recording as JPEG frames at one to five timestamps in seconds. Defaults to the first frame (0 seconds). Returns timestamped images alongside exact asset feedback. Requires FFmpeg on the server.';
 
-    public function handle(Request $request, RecordingFrames $extractor): Response|ResponseFactory
+    public function handle(Request $request, RecordingFrames $extractor, FeedbackReader $feedback): Response|ResponseFactory
     {
         $data = $request->validate([
             'asset_id' => ['required', 'uuid'], 'timestamps' => ['sometimes', 'array', 'min:1', 'max:5'],
@@ -47,7 +48,7 @@ class GetRecordingFrames extends Tool
                 : 'Could not extract recording frames. Verify FFmpeg is installed and choose timestamps within the recording.');
         }
 
-        $metadata = ['asset' => $image->agentData(), 'frames' => array_map(static fn (array $frame): array => ['timestamp_seconds' => $frame['timestamp_seconds'], 'mime_type' => 'image/jpeg'], $frames)];
+        $metadata = ['asset' => $feedback->image($image), 'frames' => array_map(static fn (array $frame): array => ['timestamp_seconds' => $frame['timestamp_seconds'], 'mime_type' => 'image/jpeg'], $frames)];
         $content = [Response::json($metadata)];
         foreach ($frames as $frame) {
             $content[] = Response::text('Recording frame at '.$frame['timestamp_seconds'].' seconds.');

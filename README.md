@@ -142,16 +142,18 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.7.0`, candidate, not deployed. Its iOS marketing
-version is `0.7.0`; this release build is `16`. The Share Extension adds an
-"Add to the last upload" switch (on by default, remembered in a ThisDeviceOnly
-Keychain item) that merges a later share into the project's last completed
-upload on completion and moves it back to the top. One additive migration adds
-a nullable `upload_chunks.append_to_chunk_id`.
+The release candidate is `v0.8.0`, candidate, not deployed. Its iOS marketing
+version is `0.8.0`; this release build is `17`. Agent payloads (REST and MCP)
+now return compact `marks` instead of raw drawing points, plus
+`feedback_updated_at`/`feedback_settling` so agents wait while feedback is
+still being edited; `list_projects` adds each project's latest chunk. The
+project page refreshes itself when uploads arrive. The Share Extension shows
+byte-accurate upload progress and reopens on the last project used. One
+additive migration adds nullable `upload_images.feedback_updated_at`.
 
-The previous release, `v0.6.0` (`3e71520d12`), completed FAST shipping on
-6 October 2026 at 19:50:36 UTC in 119 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.6.0 build 15
+The previous release, `v0.7.0` (`61fab29b75`), completed FAST shipping on
+6 October 2026 at 20:19:05 UTC in 114 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.7.0 build 16
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

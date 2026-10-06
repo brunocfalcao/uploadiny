@@ -21,7 +21,7 @@ class GetFeedback extends Tool
 {
     protected string $name = 'get_feedback';
 
-    protected string $description = 'Read the latest completed feedback batch for a project canonical, including exact per-asset comments, annotations, revisions, AI descriptions, and authenticated media URLs. An empty project returns chunk: null.';
+    protected string $description = 'Read the latest completed feedback batch for a project canonical, including exact per-asset comments, compact marks (callout notes, tool, colour, area, position; no raw drawing points), revisions, AI descriptions, and authenticated media URLs. Comments and callout notes are the primary instructions; view get_asset variant annotated to see the shapes. If settling is true the owner may still be editing: wait 30-60 seconds and fetch again before acting. Asset order is not the numbering the owner sees; rely on comment text. An empty project returns chunk: null.';
 
     public function handle(Request $request, FeedbackReader $feedback): Response|ResponseFactory
     {

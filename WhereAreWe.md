@@ -1,6 +1,31 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.7.0 candidate, not deployed
+## 2026-10-06 — v0.8.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.8.0 build 17. The Share Extension shows a
+  byte-accurate progress bar ("Sending 1 of 3 · 64%") and preselects the last
+  project uploaded to ("Last project used · Tap to change"), remembered in its
+  own ThisDeviceOnly Keychain item after a confirmed upload. Device acceptance
+  pending.
+- Agent payloads (REST feedback/latest-chunk and every MCP tool, still
+  identical): raw `annotations` points replaced by compact `marks`
+  `{n, tool, color, position, area, note, note_area, from, to}` and
+  `mark_count`; `feedback_updated_at` plus `feedback_settling` (edited in the
+  last 60 seconds) and chunk-level `settling`. `list_projects` adds
+  `latest_chunk`. Browser editor and phone responses keep full annotations.
+  MCP server reports 1.2.0 with updated instructions. Live MCP use needs a
+  descriptive User-Agent; Cloudflare rejects generic library agents with 403.
+- The project page polls `projects.last-chunk` every 8 seconds while visible
+  and swaps in new uploads; with the editor or a dialog open it only notifies
+  and refreshes after returning to the project.
+- Empty workspace card is centred in the free space.
+- One additive migration: nullable `upload_images.feedback_updated_at`.
+
+## 2026-10-06 — v0.7.0 deployed via FAST
+
+- Shipped `61fab29b75` on 2026-10-06 at 20:19:05 UTC in 114 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.7.0
+  build 16 installation and launch.
 
 - Candidate iOS metadata: 0.7.0 build 16. The Share Extension shows "Add to the
   last upload" with the last upload's time and file count; the choice starts

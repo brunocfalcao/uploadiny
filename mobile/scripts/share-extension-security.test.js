@@ -28,6 +28,33 @@ test('the "Add to the last upload" choice lives in its own ThisDeviceOnly Keycha
   assert.equal(swift.match(/UploadinyDeviceTokenStore\.write\(/g).length, 1);
 });
 
+test('the last project slug lives in its own ThisDeviceOnly Keychain item, never holds the token, and is written only after a confirmed upload', () => {
+  const start = swift.indexOf('private enum UploadinyLastProjectStore {');
+  assert.ok(start >= 0, 'The last project must be stored by its dedicated Keychain store');
+  const store = swift.slice(start, swift.indexOf('\n}\n', start));
+  assert.match(store, /account = "last-project-slug"/);
+  assert.match(store, /service = UploadinyDeviceTokenStore\.service/);
+  assert.match(store, /attributes\[kSecAttrAccessible\] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly/);
+  assert.match(store, /kSecValueData\] = Data\(slug\.utf8\)/);
+  assert.doesNotMatch(store, /kSecAttrSynchronizable|AfterFirstUnlock|AccessibleAlways|uploadiny-device-token|\btoken\b/);
+  // Exactly one write site, inside completeChunk after the server confirmed every file.
+  assert.equal(swift.match(/UploadinyLastProjectStore\.write\(/g).length, 1);
+  const complete = swift.slice(swift.indexOf('private func completeChunk()'), swift.indexOf('private func serverError('));
+  const confirmed = complete.indexOf('self.appendingTo != nil || result.images.count == self.review.files.count');
+  const write = complete.indexOf('UploadinyLastProjectStore.write(');
+  assert.ok(confirmed >= 0 && write > confirmed, 'The slug is written only after the upload is confirmed');
+  assert.doesNotMatch(swift.slice(swift.indexOf('didSelectRowAt'), swift.indexOf('private func beginUpload')), /UploadinyLastProjectStore\.write/);
+});
+
+test('the remembered project is preselected through the normal selection path and can still be changed', () => {
+  assert.match(swift, /UploadinyLastProjectStore\.read\(\)/);
+  assert.match(swift, /self\.projects\.first\(where: \{ \$0\.slug == slug \}\)/);
+  assert.match(swift, /selectProject\(projects\[indexPath\.row\], remembered: false\)/);
+  assert.match(swift, /self\.selectProject\(project, remembered: self\.selectedProject == nil\)/);
+  assert.match(swift, /changeProjectButton\.addTarget\(self, action: #selector\(changeProject\)/);
+  assert.match(swift, /Tap to change/);
+});
+
 test('share extension accepts only the production HTTPS API and never follows credential redirects', () => {
   assert.match(swift, /base\.scheme == "https"/);
   assert.match(swift, /base\.host == "uploadiny\.com"/);

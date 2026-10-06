@@ -140,12 +140,12 @@ class McpServerTest extends TestCase
         $beforeUntouched = $untouched->fresh()->getAttributes();
         $callout = ['tool' => 'callout', 'text' => "Change CRUISE to SPEED.\nKeep the indicator.", 'color' => '#ef4444', 'width' => 0.003, 'points' => [['x' => 0.1, 'y' => 0.4], ['x' => 0.4, 'y' => 0.5], ['x' => 0.2, 'y' => 0.1], ['x' => 0.7, 'y' => 0.3]]];
         $png = UploadedFile::fake()->image('mcp-saved-callout.png', 30, 20)->getContent();
-        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.annotations', []);
+        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.marks', []);
 
         $this->actingAs($user)->patchJson(route('images.update', $image), ['comments' => 'image 2', 'annotations' => [$callout], 'revision' => 0, 'annotated_image' => 'data:image/png;base64,'.base64_encode($png)])->assertOk()->assertJsonPath('revision', 1);
         $this->app['auth']->forgetGuards();
-        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.annotations.0', $callout)->assertJsonPath('result.structuredContent.chunk.images.0.comments', 'image 2')->assertJsonPath('result.structuredContent.chunk.images.0.revision', 1);
-        $this->tool('get_asset', ['asset_id' => $image->uuid, 'variant' => 'annotated'])->assertOk()->assertJsonPath('result.structuredContent.asset.annotations.0', $callout)->assertJsonPath('result.content.1.data', base64_encode($png));
+        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.marks.0.note', $callout['text'])->assertJsonPath('result.structuredContent.chunk.images.0.comments', 'image 2')->assertJsonPath('result.structuredContent.chunk.images.0.revision', 1);
+        $this->tool('get_asset', ['asset_id' => $image->uuid, 'variant' => 'annotated'])->assertOk()->assertJsonPath('result.structuredContent.asset.marks.0.note', $callout['text'])->assertJsonPath('result.content.1.data', base64_encode($png));
         $this->assertSame($beforeUntouched, $untouched->fresh()->getAttributes());
     }
 

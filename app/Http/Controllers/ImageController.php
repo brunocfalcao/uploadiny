@@ -79,7 +79,7 @@ class ImageController extends Controller
             }
             $oldPath = $locked->annotated_path;
             try {
-                $locked->update(['annotations' => $data['annotations'], 'comments' => $data['comments'] ?? '', 'annotated_path' => $newPath, 'feedback_revision' => $locked->feedback_revision + 1]);
+                $locked->update(['annotations' => $data['annotations'], 'comments' => $data['comments'] ?? '', 'annotated_path' => $newPath, 'feedback_revision' => $locked->feedback_revision + 1, 'feedback_updated_at' => now()]);
             } catch (\Throwable $error) {
                 if ($newPath && ! $retainDrawing) {
                     Storage::disk('local')->delete($newPath);

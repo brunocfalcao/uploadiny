@@ -711,3 +711,6 @@ input, textarea, select { border-color: #d5d9e2; border-radius: 12px; }
 @media (max-width: 760px) { .empty-projects { margin-top: 16px; padding: 28px 20px; } }
 @media (min-width: 761px) { .drawing-toolbar .tool-group .tool { padding: 7px 9px; gap: 6px; font-size: 12.5px; } .drawing-toolbar .tool-group .tool svg { width: 16px; height: 16px; } }
 @media (min-width: 761px) and (max-width: 1500px) { .drawing-toolbar .tool-group:not(.history-tools) .tool > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; } .drawing-toolbar .tool-group:not(.history-tools) .tool { width: 38px; padding: 0; } }
+.main-content:has(.empty-projects) { display: flex; flex-direction: column; min-height: 100dvh; }
+#gallery:has(.empty-projects) { flex: 1; display: grid; place-items: center; padding-bottom: 8vh; }
+#gallery:has(.empty-projects) .empty-projects { margin: 0; }

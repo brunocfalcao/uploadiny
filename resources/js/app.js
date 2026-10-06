@@ -48,7 +48,8 @@ if (workspace) {
     let saving = false;
     let navigating = false;
     let transferring = false;
-    const chunkGroups = [...document.querySelectorAll('[data-chunk-images]')].map(button => JSON.parse(button.dataset.chunkImages));
+    let chunkGroups = readChunkGroups();
+    function readChunkGroups() { return [...document.querySelectorAll('[data-chunk-images]')].map(button => JSON.parse(button.dataset.chunkImages)); }
     let loading = false;
     let uploadingChunk = null;
     let pollTimer = null;
@@ -259,9 +260,21 @@ if (workspace) {
         if (saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
-        if (leaveEditor()) location.reload();
+        if (!leaveEditor()) return;
+        const announced = arrivalAnnounced; arrivalAnnounced = null;
+        const outcome = await refreshGallery(true);
+        if (outcome === 'failed' || outcome === 'stale') location.reload();
+        else if (announced) notifyTransient('New upload arrived.');
     });
-    document.querySelectorAll('[data-open-image]').forEach(button => button.addEventListener('click', () => openImage(button.dataset.openImage, button.dataset.playRecording === 'true')));
+    const boundTiles = new WeakSet();
+    function bindGallery() {
+        document.querySelectorAll('[data-open-image]').forEach(button => {
+            if (boundTiles.has(button)) return;
+            boundTiles.add(button);
+            button.addEventListener('click', () => openImage(button.dataset.openImage, button.dataset.playRecording === 'true'));
+        });
+    }
+    bindGallery();
     async function openImage(id, playRecording = false) {
         if (saving || navigating || transferring || active?.id === id) return;
         if (draft || eraseStart || calloutEditor.busy()) { notify('Finish your current drawing before switching files.'); return; }
@@ -622,9 +635,67 @@ if (workspace) {
         if (uploadingChunk) fetch(`/chunks/${uploadingChunk}`, { method: 'DELETE', keepalive: true, headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token } }).catch(() => {});
     });
     window.addEventListener('beforeunload', event => { if (dirty || saving || loading || navigating || transferring) { event.preventDefault(); event.returnValue = ''; } });
-    if (config.latest_url) setInterval(async () => {
-        if (active || loading || dialog.open || document.hidden) return;
-        try { const result = await request(config.latest_url); if ((result.chunk?.id || '') !== workspace.dataset.latest) location.reload(); }
-        catch { /* Keep the existing workspace visible during connectivity interruptions. */ }
-    }, 8000);
+    const lastChunkInterval = 8000;
+    const arrivalNotice = 'New upload arrived — it will appear when you go back to the project.';
+    let refreshSequence = 0;
+    let pageVersion = 0;
+    let polling = false;
+    let arrivalAnnounced = null;
+    let noticeTimer = null;
+    function notifyTransient(text) {
+        notify(text);
+        clearTimeout(noticeTimer);
+        noticeTimer = setTimeout(() => { if (message.textContent === text) message.hidden = true; }, 6000);
+    }
+    function galleryBusy() { return Boolean(active) || loading || dialog.open || navigating || transferring || saving; }
+    function pageState(chunk) { return [chunk?.id ?? '', chunk?.completed_at ?? '', String(chunk?.file_count ?? '')].join('|'); }
+    function shownState() { return [workspace.dataset.latest ?? '', workspace.dataset.latestCompleted ?? '', workspace.dataset.latestCount ?? ''].join('|'); }
+    function applyPage(page) {
+        const list = page.getElementById('chunk-list'); const next = page.querySelector('[data-workspace]'); const current = document.getElementById('chunk-list');
+        if (!list || !next || !current) return false;
+        const scroll = window.scrollY;
+        current.replaceChildren(...list.childNodes);
+        const nav = document.querySelector('.project-nav'); const nextNav = page.querySelector('.project-nav');
+        if (nav && nextNav) nav.replaceChildren(...nextNav.childNodes);
+        for (const key of ['latest', 'latestCompleted', 'latestCount']) workspace.dataset[key] = next.dataset[key] ?? '';
+        chunkGroups = readChunkGroups();
+        bindGallery();
+        enhanceRecordingPreviews(current);
+        if (window.scrollY !== scroll) window.scrollTo?.(0, scroll);
+        pageVersion++;
+        if (message.textContent === arrivalNotice) message.hidden = true;
+        return true;
+    }
+    async function refreshGallery(force = false) {
+        const sequence = ++refreshSequence;
+        try {
+            const response = await fetch(config.project_url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+            if (!response.ok) return 'failed';
+            const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+            if (sequence !== refreshSequence) return 'stale';
+            if (!force && galleryBusy()) return 'busy';
+            return applyPage(page) ? 'applied' : 'failed';
+        } catch { return 'failed'; }
+    }
+    async function pollLastChunk() {
+        if (!config.last_chunk_url || polling || document.visibilityState !== 'visible') return;
+        polling = true;
+        const version = pageVersion;
+        try {
+            const result = await request(config.last_chunk_url);
+            if (version !== pageVersion) return;
+            const seen = pageState(result.chunk);
+            if (seen === shownState()) return;
+            const outcome = galleryBusy() ? 'busy' : await refreshGallery();
+            if (outcome === 'applied') { arrivalAnnounced = null; notifyTransient('New upload arrived.'); }
+            else if (outcome === 'busy' && arrivalAnnounced !== seen) { arrivalAnnounced = seen; notify(arrivalNotice); }
+        } catch { /* Keep the existing workspace visible during connectivity interruptions. */ }
+        finally { polling = false; }
+    }
+    if (config.last_chunk_url) {
+        let pollInterval = setInterval(pollLastChunk, lastChunkInterval);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollLastChunk(); });
+        window.addEventListener('pagehide', () => clearInterval(pollInterval));
+        window.addEventListener('pageshow', event => { if (!event.persisted) return; clearInterval(pollInterval); pollInterval = setInterval(pollLastChunk, lastChunkInterval); pollLastChunk(); });
+    }
 }

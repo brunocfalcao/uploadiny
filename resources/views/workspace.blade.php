@@ -1,6 +1,6 @@
 @extends('layouts.app', ['title' => ($project?->name ?? 'Projects').' · Uploadiny'])
 @section('content')
-<div class="workspace" data-workspace data-project="{{ $project?->slug }}" data-latest="{{ $chunks->first()?->uuid }}">
+<div class="workspace" data-workspace data-project="{{ $project?->slug }}" data-latest="{{ $chunks->first()?->uuid }}" data-latest-completed="{{ $chunks->first() ? ($chunks->first()->completed_at ?? $chunks->first()->created_at)->toIso8601String() : '' }}" data-latest-count="{{ $chunks->first()?->images->count() }}">
     <aside class="sidebar">
         <a class="brand" href="{{ route('projects.index') }}"><span class="brand-symbol" aria-hidden="true">u</span>Uploadiny</a>
         <div class="sidebar-heading"><h2>Projects</h2><button type="button" class="sidebar-add" data-new-project aria-label="Create project">+</button></div>
@@ -63,6 +63,7 @@
                 <div><strong>Drop screenshots or recordings here</strong><p>Browse or paste. One upload keeps all your files in one feedback chunk.</p></div>
             </div>
             <div id="upload-progress" role="status" hidden><label>Uploading feedback <progress max="100" value="0"></progress><span></span></label></div>
+            <div id="chunk-list">
             @if($chunks->isNotEmpty())
                 <header class="uploads-heading"><h2>Latest uploads</h2><p>Newest first</p></header>
             @endif
@@ -84,6 +85,7 @@
             @empty
                 <div class="empty-state"><h2>Your first feedback starts here.</h2><p>Upload screenshots or recordings from this page or share them from your iPhone. They will appear together in a chunk.</p></div>
             @endforelse
+            </div>
             </div>
         @endif
         </section>
@@ -166,5 +168,5 @@
     </form>
     @if($project)<form id="delete-project-form" action="{{ route('projects.destroy', $project) }}" method="POST" class="delete-project">@csrf @method('DELETE')<p>Deleting this project permanently removes its files and annotations.</p><button class="text-button danger" type="submit">Delete project permanently</button></form>@endif
 </dialog>
-<script type="application/json" id="workspace-config">{!! json_encode(['project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'description' => $project->description] : null, 'create_url' => route('projects.store'), 'project_url' => $project ? route('projects.show', $project) : null, 'upload_url' => $project ? route('chunks.start', $project) : null, 'latest_url' => $project ? route('projects.latest', $project) : null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<script type="application/json" id="workspace-config">{!! json_encode(['project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'description' => $project->description] : null, 'create_url' => route('projects.store'), 'project_url' => $project ? route('projects.show', $project) : null, 'upload_url' => $project ? route('chunks.start', $project) : null, 'last_chunk_url' => $project ? route('projects.last-chunk', $project) : null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection

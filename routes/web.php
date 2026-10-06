@@ -23,6 +23,7 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('/device-access', [DeviceAccessController::class, 'destroy'])->name('device-access.destroy');
     Route::post('/projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::get('/projects/{project}/latest-chunk', [AgentController::class, 'latest'])->name('projects.latest');
+    Route::get('/projects/{project}/last-chunk', [ChunkController::class, 'last'])->name('projects.last-chunk');
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
     Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
     Route::delete('/projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');

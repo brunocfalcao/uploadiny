@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Tools;
 
+use App\Services\FeedbackReader;
 use App\UploadImage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -21,9 +22,9 @@ class GetAsset extends Tool
 {
     protected string $name = 'get_asset';
 
-    protected string $description = 'Inspect an asset by UUID. Screenshots return actual image content plus their feedback. Choose original (default) or annotated. Original recordings return metadata and an authenticated download URL; use get_recording_frames for visual inspection.';
+    protected string $description = 'Inspect an asset by UUID. Screenshots return actual image content plus compact feedback (comments, marks with type, colour, area and position). Use variant annotated to see the drawn shapes. Choose original (default) or annotated. Original recordings return metadata and an authenticated download URL; use get_recording_frames for visual inspection.';
 
-    public function handle(Request $request): Response|ResponseFactory
+    public function handle(Request $request, FeedbackReader $feedback): Response|ResponseFactory
     {
         $data = $request->validate(['asset_id' => ['required', 'uuid'], 'variant' => ['sometimes', 'string', 'in:original,annotated']]);
         $image = UploadImage::query()->where('uuid', $data['asset_id'])->first();
@@ -38,7 +39,7 @@ class GetAsset extends Tool
             return Response::error($variant === 'annotated' ? 'No annotated image is available for this asset. Try original.' : 'The original asset file is unavailable.');
         }
 
-        $metadata = ['asset' => $image->agentData(), 'variant' => $variant];
+        $metadata = ['asset' => $feedback->image($image), 'variant' => $variant];
         if ($image->isVideo() && $variant === 'original') {
             return Response::structured($metadata + ['visual_inspection' => 'Use get_recording_frames with this asset ID and timestamps in seconds.']);
         }

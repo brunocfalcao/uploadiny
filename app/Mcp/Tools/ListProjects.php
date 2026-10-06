@@ -17,7 +17,7 @@ class ListProjects extends Tool
 {
     protected string $name = 'list_projects';
 
-    protected string $description = 'List workspace projects with their names, descriptions, six-letter canonicals, and completed asset counts.';
+    protected string $description = 'List workspace projects with their names, descriptions, six-letter canonicals, completed asset counts, and the latest completed chunk of each project (id, completed_at, asset_count) or null.';
 
     public function handle(FeedbackReader $feedback): ResponseFactory
     {
