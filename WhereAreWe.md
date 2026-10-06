@@ -1,7 +1,37 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.3.0 candidate, not deployed
+## 2026-10-06 — v0.4.0 candidate, not deployed
 
+- Candidate iOS metadata: 0.4.0 build 13. The Share Extension refuses files
+  over 95 MB with a clear message before uploading; physical-device acceptance
+  of that message is pending.
+- The editor saves annotations and feedback automatically; ⌘Enter saves and
+  ⌘←/→ move between files in a chunk.
+- "Latest" feedback (agent REST/MCP, workspace badge, chunk destinations) now
+  means the chunk that finished last, not the one started last.
+- Each file is limited to 95 MB in the browser, server validation, and Share
+  Extension because Cloudflare Free rejects requests over 100 MB. Production
+  PHP-FPM (`/etc/php/8.5/fpm/php.ini`) and Nginx (`uploadiny.com`) were raised
+  from 64 MB / 20 files to 100 MB / 100 files on 2026-10-06 via the corrected
+  `bump-upload-limit.sh`; backups were kept on the server.
+- MCP `get_asset` returns a tool error for screenshots over 250 MB instead of
+  exhausting memory.
+- Hardening: SQLite busy timeout (`DB_BUSY_TIMEOUT`, default 5000 ms); failed
+  abandoned-draft cleanup is reported; moving the last image out of a chunk
+  removes the empty chunk; a database failure during agent-key rotation
+  restores the previous key file; account setup removes its credentials file
+  when creation fails; the agent-token command explains a missing or ambiguous
+  account; MCP/validation regex anchors reject trailing newlines; the chunk
+  destination list is aggregated instead of loading every image.
+- Optional environment keys with unchanged defaults: `DB_BUSY_TIMEOUT`,
+  `UPLOADINY_FFMPEG_TIMEOUT`, `UPLOADINY_VISION_TIMEOUT`,
+  `UPLOADINY_VISION_CONNECT_TIMEOUT`. No migration or dependency change.
+
+## 2026-10-06 — v0.3.0 deployed via FAST
+
+- Shipped `c781c660a1` on 2026-10-06 at 16:47:45 UTC in 101 seconds. The
+  completed receipt records website verification and signed iPhone 0.3.0
+  build 12 installation and launch.
 - Candidate iOS metadata: 0.3.0 build 12. No mobile behavior change in this delta.
 - Added the destructive MCP tool `delete_chunk(project_canonical, chunk_id)`.
   It uses the existing agent bearer key and deletes only assets in the selected

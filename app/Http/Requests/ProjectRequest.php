@@ -17,6 +17,6 @@ class ProjectRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return ['name' => ['required', 'string', 'max:120'], 'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/', Rule::unique('projects')->ignore($this->route('project'))], 'description' => ['nullable', 'string', 'max:2000']];
+        return ['name' => ['required', 'string', 'max:120'], 'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*\z/', Rule::unique('projects')->ignore($this->route('project'))], 'description' => ['nullable', 'string', 'max:2000']];
     }
 }

@@ -29,7 +29,11 @@ class ChunkTransfer
                     abort_unless($target->images()->where('project_id', $projectId)->exists(), 422, 'Choose an existing upload chunk in that project.');
                     $source = UploadImage::query()->lockForUpdate()->findOrFail($image->id);
                     if ($action === 'move') {
+                        $originalChunkId = $source->chunk_id;
                         $source->update(['chunk_id' => $target->id, 'project_id' => $projectId]);
+                        if ($originalChunkId !== $target->id) {
+                            UploadChunk::whereKey($originalChunkId)->where('status', 'complete')->whereDoesntHave('images')->delete();
+                        }
 
                         return $source;
                     }

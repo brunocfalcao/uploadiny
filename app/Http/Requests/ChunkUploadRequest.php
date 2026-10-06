@@ -16,6 +16,6 @@ class ChunkUploadRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return ['files' => ['required', 'array', 'min:1'], 'files.*' => ['required', 'file', 'max:512000', 'mimes:jpg,jpeg,png,gif,webp,bmp,mp4,mov,m4v']];
+        return ['files' => ['required', 'array', 'min:1'], 'files.*' => ['required', 'file', 'max:97280', 'mimes:jpg,jpeg,png,gif,webp,bmp,mp4,mov,m4v']];
     }
 }

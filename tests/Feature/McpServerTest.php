@@ -11,6 +11,7 @@ use App\UploadImage;
 use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
@@ -128,6 +129,24 @@ class McpServerTest extends TestCase
 
         $this->assertSame($before, $image->fresh()->getAttributes());
         $this->assertSame('original-private-image', Storage::disk('local')->get($image->path));
+    }
+
+    public function test_browser_saved_callout_text_and_marked_image_are_retrievable_through_mcp(): void
+    {
+        $user = $this->reader('mcp-saved-callout@example.test');
+        $project = Project::factory()->create(['slug' => 'mcp-saved-callout']);
+        $image = UploadImage::factory()->create(['project_id' => $project->id, 'annotations' => [], 'comments' => 'image 2', 'feedback_revision' => 0]);
+        $untouched = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $image->chunk_id, 'comments' => 'Keep this separate.']);
+        $beforeUntouched = $untouched->fresh()->getAttributes();
+        $callout = ['tool' => 'callout', 'text' => "Change CRUISE to SPEED.\nKeep the indicator.", 'color' => '#ef4444', 'width' => 0.003, 'points' => [['x' => 0.1, 'y' => 0.4], ['x' => 0.4, 'y' => 0.5], ['x' => 0.2, 'y' => 0.1], ['x' => 0.7, 'y' => 0.3]]];
+        $png = UploadedFile::fake()->image('mcp-saved-callout.png', 30, 20)->getContent();
+        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.annotations', []);
+
+        $this->actingAs($user)->patchJson(route('images.update', $image), ['comments' => 'image 2', 'annotations' => [$callout], 'revision' => 0, 'annotated_image' => 'data:image/png;base64,'.base64_encode($png)])->assertOk()->assertJsonPath('revision', 1);
+        $this->app['auth']->forgetGuards();
+        $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->assertJsonPath('result.structuredContent.chunk.images.0.annotations.0', $callout)->assertJsonPath('result.structuredContent.chunk.images.0.comments', 'image 2')->assertJsonPath('result.structuredContent.chunk.images.0.revision', 1);
+        $this->tool('get_asset', ['asset_id' => $image->uuid, 'variant' => 'annotated'])->assertOk()->assertJsonPath('result.structuredContent.asset.annotations.0', $callout)->assertJsonPath('result.content.1.data', base64_encode($png));
+        $this->assertSame($beforeUntouched, $untouched->fresh()->getAttributes());
     }
 
     public function test_missing_variants_and_files_return_errors_without_exposing_private_paths(): void

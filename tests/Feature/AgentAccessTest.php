@@ -7,8 +7,10 @@ namespace Tests\Feature;
 use App\Services\AgentAccess;
 use App\UploadinyTokenAbility;
 use App\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
 use Mockery;
@@ -108,6 +110,8 @@ class AgentAccessTest extends TestCase
         $old = $files->get('credentials/uploadiny-agent-token.txt');
         $this->freshBearer($old)->getJson(route('api.projects.index'))->assertOk();
         $disk = Mockery::mock(FilesystemAdapter::class);
+        $disk->shouldReceive('exists')->with('credentials/uploadiny-agent-token.txt')->andReturn(true);
+        $disk->shouldReceive('get')->with('credentials/uploadiny-agent-token.txt')->andReturn($old);
         $disk->shouldReceive('put')->once()->with('credentials/.uploadiny-agent-token.next', Mockery::type('string'))->andReturn(false);
         $disk->shouldReceive('delete')->once()->with('credentials/.uploadiny-agent-token.next')->andReturn(true);
         Storage::shouldReceive('disk')->with('local')->andReturn($disk);
@@ -118,6 +122,46 @@ class AgentAccessTest extends TestCase
         $this->assertSame(1, $user->tokens()->where('name', AgentAccess::TOKEN_NAME)->count());
         $this->freshBearer($old)->getJson(route('api.projects.index'))->assertOk();
         $this->freshBearer($phone->plainTextToken)->getJson(route('api.projects.index'))->assertOk();
+    }
+
+    public function test_a_database_failure_after_the_key_file_is_written_restores_the_previous_key_file(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create(['email' => 'key-database@example.test']);
+        $this->assertTrue(app(AgentAccess::class)->rotate($user));
+        $old = Storage::disk('local')->get('credentials/uploadiny-agent-token.txt');
+        DB::statement("CREATE TRIGGER block_token_cleanup BEFORE DELETE ON personal_access_tokens BEGIN SELECT RAISE(ABORT, 'blocked'); END");
+
+        try {
+            app(AgentAccess::class)->rotate($user);
+            $this->fail('Rotation should fail when the old key cannot be removed.');
+        } catch (QueryException) {
+        }
+
+        DB::statement('DROP TRIGGER block_token_cleanup');
+        $this->assertSame($old, Storage::disk('local')->get('credentials/uploadiny-agent-token.txt'));
+        $this->assertSame(1, $user->tokens()->where('name', AgentAccess::TOKEN_NAME)->count());
+        $this->assertSame($old, app(AgentAccess::class)->current($user));
+        $this->freshBearer($old)->getJson(route('api.projects.index'))->assertOk();
+    }
+
+    public function test_a_database_failure_on_the_first_key_removes_the_written_key_file(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create(['email' => 'key-first@example.test']);
+        DB::statement("CREATE TRIGGER block_first_key BEFORE DELETE ON personal_access_tokens BEGIN SELECT RAISE(ABORT, 'blocked'); END");
+        $user->createToken(AgentAccess::TOKEN_NAME.'-stale', UploadinyTokenAbility::agent());
+        DB::table('personal_access_tokens')->update(['name' => AgentAccess::TOKEN_NAME]);
+
+        try {
+            app(AgentAccess::class)->rotate($user);
+            $this->fail('Rotation should fail when the old key cannot be removed.');
+        } catch (QueryException) {
+        }
+
+        DB::statement('DROP TRIGGER block_first_key');
+        Storage::disk('local')->assertMissing('credentials/uploadiny-agent-token.txt');
+        $this->assertSame(1, $user->tokens()->where('name', AgentAccess::TOKEN_NAME)->count());
     }
 
     public function test_an_expired_or_revoked_file_is_not_presented_as_an_active_key(): void

@@ -43,6 +43,10 @@ class GetAsset extends Tool
             return Response::structured($metadata + ['visual_inspection' => 'Use get_recording_frames with this asset ID and timestamps in seconds.']);
         }
 
+        if ($disk->size($path) > 250 * 1024 * 1024) {
+            return Response::error('This image is larger than 250 MB and cannot be sent to the agent. Ask the user to share a smaller export.');
+        }
+
         return Response::make([Response::json($metadata), Response::image($disk->get($path), $variant === 'annotated' ? 'image/png' : $image->mime_type)])
             ->withStructuredContent($metadata);
     }

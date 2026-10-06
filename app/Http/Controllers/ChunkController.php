@@ -22,13 +22,20 @@ class ChunkController extends Controller
     public function index(): JsonResponse
     {
         $projects = Project::query()->pluck('name', 'id');
-        $chunks = UploadChunk::query()->where('status', 'complete')->with('images:id,chunk_id,project_id')->orderByDesc('id')->get();
-        $destinations = $chunks->flatMap(static fn (UploadChunk $chunk) => $chunk->images->pluck('project_id')->unique()->map(static fn (int $projectId): array => [
+        $counts = UploadImage::query()
+            ->selectRaw('chunk_id, project_id, count(*) as file_count')
+            ->whereHas('chunk', static fn ($query) => $query->where('status', 'complete'))
+            ->groupBy('chunk_id', 'project_id')
+            ->orderBy('project_id')
+            ->get()
+            ->groupBy('chunk_id');
+        $chunks = UploadChunk::query()->whereKey($counts->keys())->newestFinishedFirst()->get(['id', 'uuid', 'created_at']);
+        $destinations = $chunks->flatMap(static fn (UploadChunk $chunk) => $counts[$chunk->id]->map(static fn (UploadImage $row): array => [
             'chunk_id' => $chunk->uuid,
-            'project_id' => $projectId,
-            'project_name' => $projects[$projectId],
+            'project_id' => $row->project_id,
+            'project_name' => $projects[$row->project_id],
             'uploaded_at' => $chunk->created_at->toIso8601String(),
-            'file_count' => $chunk->images->where('project_id', $projectId)->count(),
+            'file_count' => (int) $row->getAttribute('file_count'),
         ]))->values();
 
         return response()->json(['destinations' => $destinations]);

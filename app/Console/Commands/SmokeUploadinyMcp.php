@@ -55,7 +55,7 @@ final class SmokeUploadinyMcp extends Command
                     'uuid' => (string) Str::uuid(), 'project_id' => $project->id, 'chunk_id' => $chunk->id,
                     'name' => 'mcp-smoke-'.$file, 'original_name' => $file, 'path' => $fixture.'/'.$file,
                     'mime_type' => $mime, 'size' => $disk->size($fixture.'/'.$file), 'comments' => $comment,
-                    'feedback_revision' => 2, 'description_status' => 'complete',
+                    'feedback_revision' => 2, 'description_status' => 'ready',
                     'annotated_path' => $mime === 'image/png' ? $fixture.'/annotated.png' : null,
                 ]);
             }

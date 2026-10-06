@@ -9,6 +9,7 @@ use App\User;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\PersonalAccessToken;
+use Throwable;
 
 final class AgentAccess
 {
@@ -31,19 +32,31 @@ final class AgentAccess
 
     public function rotate(User $user, ?DateTimeInterface $expiresAt = null): bool
     {
-        return DB::transaction(function () use ($user, $expiresAt): bool {
-            $user = User::query()->lockForUpdate()->findOrFail($user->getKey());
-            $token = $user->createToken(self::TOKEN_NAME, UploadinyTokenAbility::agent(), $expiresAt);
-            if (! $this->storage->replace($token->plainTextToken)) {
-                $token->accessToken->delete();
+        $previous = $this->storage->read();
+        $written = false;
+        try {
+            return DB::transaction(function () use ($user, $expiresAt, &$written): bool {
+                $user = User::query()->lockForUpdate()->findOrFail($user->getKey());
+                $token = $user->createToken(self::TOKEN_NAME, UploadinyTokenAbility::agent(), $expiresAt);
+                if (! $this->storage->replace($token->plainTextToken)) {
+                    $token->accessToken->delete();
 
-                return false;
+                    return false;
+                }
+                $written = true;
+
+                $user->tokens()->where('name', self::TOKEN_NAME)->whereKeyNot($token->accessToken->getKey())->delete();
+
+                return true;
+            });
+        } catch (Throwable $error) {
+            if ($written && $previous === null) {
+                $this->storage->forget();
+            } elseif ($written) {
+                $this->storage->replace($previous);
             }
-
-            $user->tokens()->where('name', self::TOKEN_NAME)->whereKeyNot($token->accessToken->getKey())->delete();
-
-            return true;
-        });
+            throw $error;
+        }
     }
 
     public function revoke(User $user): void

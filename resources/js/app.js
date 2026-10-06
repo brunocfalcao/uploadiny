@@ -40,6 +40,9 @@ if (workspace) {
     let zoom = 1;
     let fitView = true;
     let dirty = false;
+    let dirtyVersion = 0;
+    let autosaveTimer = null;
+    let savePromise = null;
     let saving = false;
     let navigating = false;
     let transferring = false;
@@ -144,6 +147,8 @@ if (workspace) {
     async function upload(files) {
         if (!files.length || loading) return;
         if (files.some(file => /\.(heic|heif|tiff?)$/i.test(file.name))) { notify('Use JPEG, PNG, WebP, GIF or BMP here. The iPhone share button converts HEIC photos automatically.', true); return; }
+        const oversized = files.find(file => file.size > 95 * 1024 * 1024);
+        if (oversized) { notify(`${oversized.name} is larger than 95 MB. Trim or compress it before uploading.`, true); return; }
         if (active) { calloutEditor.finishText(); if (dirty && !await saveFeedback()) return; if (!leaveEditor()) return; }
         loading = true;
         let chunkId = null;
@@ -209,7 +214,15 @@ if (workspace) {
         });
     }
     function finishNavigation() { navigating = false; comments.disabled = false; updateChunkNavigation(); }
-    function setDirty() { dirty = true; saveState.textContent = 'Unsaved changes'; }
+    function scheduleAutosave() {
+        clearTimeout(autosaveTimer);
+        autosaveTimer = setTimeout(() => {
+            if (!active || !dirty) return;
+            if (draft || eraseStart || calloutEditor.busy() || saving || navigating || transferring) { scheduleAutosave(); return; }
+            saveFeedback(true);
+        }, 700);
+    }
+    function setDirty() { dirty = true; dirtyVersion++; saveState.textContent = 'Unsaved changes'; scheduleAutosave(); }
     function repaint() {
         if (!source) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -224,6 +237,7 @@ if (workspace) {
         if (saving) { notify('Wait for your feedback to finish saving.'); return false; }
         calloutEditor.finishText();
         if (dirty && !confirm('Leave without saving your feedback?')) return false;
+        clearTimeout(autosaveTimer);
         clearTimeout(pollTimer);
         if (invalidate) loadGeneration++;
         calloutEditor.reset();
@@ -429,23 +443,40 @@ if (workspace) {
         const action = drawingShortcutAction(event, { active, source, saving: saving || navigating || transferring, draft: draft || eraseStart || calloutEditor.busy(), modalOpen: dialog.open });
         if (!action) return;
         event.preventDefault();
-        document.getElementById(`${action}-drawing`).click();
+        if (action === 'undo' || action === 'redo') calloutEditor.finishText();
+        document.getElementById(action === 'undo' || action === 'redo' ? `${action}-drawing` : action).click();
     });
     comments.addEventListener('input', setDirty);
-    async function saveFeedback() {
+    async function saveFeedback(automatic = false) {
+        if (savePromise) {
+            const saved = await savePromise;
+            if (!saved || automatic || !dirty) return saved;
+        }
         if (!active || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return false;
         calloutEditor.finishText();
-        saving = true; updateChunkNavigation();
+        clearTimeout(autosaveTimer);
+        const image = active; const version = dirtyVersion;
+        const payload = { comments: comments.value, annotations: strokes, revision: image.revision, annotated_image: strokes.length && source ? canvas.toDataURL('image/png') : null };
+        saving = !automatic; updateChunkNavigation();
         repaint();
-        const button = document.getElementById('save-feedback'); button.disabled = true;
-        comments.disabled = true; saveState.textContent = 'Saving…';
-        try {
-            const data = await request(`/images/${active.id}`, { method: 'PATCH', body: JSON.stringify({ comments: comments.value, annotations: strokes, revision: active.revision, annotated_image: strokes.length && source ? canvas.toDataURL('image/png') : null }) });
-            active.revision = data.revision; dirty = false; saveState.textContent = 'Saved'; return true;
-        } catch (error) { saveState.textContent = 'Not saved'; notify(error.message, true); return false; }
-        finally { saving = false; button.disabled = false; comments.disabled = false; updateChunkNavigation(); repaint(); }
+        const button = document.getElementById('save-feedback'); button.disabled = !automatic;
+        comments.disabled = !automatic; saveState.textContent = 'Saving…';
+        savePromise = (async () => {
+            let saved = false;
+            try {
+                const data = await request(`/images/${image.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+                image.revision = data.revision;
+                dirty = dirtyVersion !== version;
+                saveState.textContent = dirty ? 'Unsaved changes' : 'Saved'; saved = true; return true;
+            } catch (error) { clearTimeout(autosaveTimer); saveState.textContent = 'Not saved'; notify(error.message, true); return false; }
+            finally {
+                savePromise = null; saving = false; button.disabled = navigating || transferring; comments.disabled = navigating || transferring; updateChunkNavigation(); repaint();
+                if (saved && dirty) scheduleAutosave();
+            }
+        })();
+        return savePromise;
     }
-    document.getElementById('save-feedback').addEventListener('click', saveFeedback);
+    document.getElementById('save-feedback').addEventListener('click', () => saveFeedback());
     document.getElementById('retry-description').addEventListener('click', async event => {
         if (!active) return;
         const id = active.id;
@@ -496,15 +527,19 @@ if (workspace) {
         if (!active || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
+        transferring = true; comments.disabled = true; updateChunkNavigation();
         event.currentTarget.disabled = true;
         try { const result = await request(`/images/${active.id}/project`, { method: 'PATCH', body: JSON.stringify({ project_id: Number(document.getElementById('move-project').value) }) }); dirty = false; location.href = result.project_url; }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
+        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
     });
     document.getElementById('delete-image').addEventListener('click', async event => {
         if (!active || saving || navigating || transferring || !confirm('Permanently delete this file and all of its feedback?')) return;
+        transferring = true; comments.disabled = true; clearTimeout(autosaveTimer); updateChunkNavigation();
         event.currentTarget.disabled = true;
-        try { await request(`/images/${active.id}`, { method: 'DELETE' }); dirty = false; location.reload(); }
+        try { if (savePromise) await savePromise; await request(`/images/${active.id}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); location.reload(); }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
+        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
     });
     window.addEventListener('pagehide', () => {
         if (uploadingChunk) fetch(`/chunks/${uploadingChunk}`, { method: 'DELETE', keepalive: true, headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token } }).catch(() => {});

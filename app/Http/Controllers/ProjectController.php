@@ -19,7 +19,7 @@ class ProjectController extends Controller
 
     public function show(Project $project): View
     {
-        $chunks = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->orderByDesc('id')->get();
+        $chunks = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->newestFinishedFirst()->get();
 
         return view('workspace', ['projects' => Project::withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])->orderBy('name')->get(), 'project' => $project, 'chunks' => $chunks]);
     }

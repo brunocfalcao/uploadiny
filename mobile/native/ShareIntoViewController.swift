@@ -846,6 +846,11 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   @objc private func beginUpload() {
     guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, !isPreparing else { return }
+    let sizeLimit = 95 * 1024 * 1024
+    if let oversized = review.files.first(where: { ((try? $0.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > sizeLimit }) {
+      showError("\(oversized.name) is larger than 95 MB. Trim the video before sharing it.", allowRetry: false)
+      return
+    }
     saveCurrentFeedback()
     view.endEditing(true)
     review.prepareForUpload()

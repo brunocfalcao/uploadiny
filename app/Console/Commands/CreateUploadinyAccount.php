@@ -8,6 +8,7 @@ use App\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class CreateUploadinyAccount extends Command
 {
@@ -53,7 +54,14 @@ class CreateUploadinyAccount extends Command
             }
             chmod($path, 0600);
         }
-        User::create(['name' => 'Bruno', 'email' => $email, 'password' => $password]);
+        try {
+            User::create(['name' => 'Bruno', 'email' => $email, 'password' => $password]);
+        } catch (Throwable $error) {
+            if ($this->option('generate')) {
+                Storage::disk('local')->delete('initial-login.txt');
+            }
+            throw $error;
+        }
         $this->info('Personal account created. Initial credentials are stored privately when --generate is used.');
 
         return self::SUCCESS;

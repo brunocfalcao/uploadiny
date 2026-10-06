@@ -24,7 +24,7 @@ export function createCalloutEditor(api) {
     }
     function resizeWithKeyboard(event, part, handle) {
         const directions = { ArrowLeft: { x: -.01, y: 0 }, ArrowRight: { x: .01, y: 0 }, ArrowUp: { x: 0, y: -.01 }, ArrowDown: { x: 0, y: .01 } };
-        if (!directions[event.key] || !api.editable() || !current() || event.target !== event.currentTarget) return;
+        if (event.metaKey || event.ctrlKey || event.altKey || !directions[event.key] || !api.editable() || !current() || event.target !== event.currentTarget) return;
         event.preventDefault(); finishText();
         const before = api.getStrokes(); const next = structuredClone(before);
         next[selected] = changeCalloutBox(before[selected], part, handle, directions[event.key]);
@@ -79,7 +79,7 @@ export function createCalloutEditor(api) {
         if (!gesture || event.pointerId !== gesture.pointer) return;
         const before = gesture.before; gesture = null; api.replace(before); render();
     });
-    function reset() { finishText(); selected = null; gesture = null; overlay.hidden = true; }
+    function reset() { if (document.activeElement === text) text.blur(); finishText(); selected = null; gesture = null; overlay.hidden = true; }
     function place(event) {
         finishText(); const point = api.point(event); const strokes = api.getStrokes();
         selected = strokes.findLastIndex(stroke => stroke.tool === 'callout' && calloutContainsPoint(stroke, point));

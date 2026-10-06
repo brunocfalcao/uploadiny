@@ -25,7 +25,7 @@ class GetFeedback extends Tool
 
     public function handle(Request $request, FeedbackReader $feedback): Response|ResponseFactory
     {
-        $data = $request->validate(['project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}$/']]);
+        $data = $request->validate(['project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}\z/']]);
         $project = Project::query()->where('canonical', $data['project_canonical'])->first();
 
         return $project === null ? Response::error('Project code not found. Ask the user for its canonical or use list_projects.') : Response::structured($feedback->latest($project));

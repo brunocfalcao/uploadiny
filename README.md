@@ -142,15 +142,17 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.3.0`, not deployed. Its iOS marketing version is
-`0.3.0`; this release build is `12`. It adds explicit MCP chunk deletion using
-the existing agent key, while preserving assets moved elsewhere.
+The release candidate is `v0.4.0`, candidate, not deployed. Its iOS marketing
+version is `0.4.0`; this release build is `13`. It adds editor autosave and
+keyboard navigation, orders "latest" feedback by completion time, limits each
+uploaded file to 95 MB (below Cloudflare Free's 100 MB request cap) in the
+browser, server, and Share Extension, and caps agent screenshot retrieval at
+250 MB. Production PHP-FPM and Nginx were raised to 100 MB / 100 files on
+6 October 2026 outside the release scripts.
 
-The previous release, `v0.2.0` (`a214ef031e`), completed LIGHT shipping on
-6 October 2026 at 16:03:12 UTC in 854 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.2.0 build 11
-installation and launch. Production HTTPS MCP, per-asset feedback, private
-images, recording frames, and the vision queue passed. SQLite now has a stable
-physical path outside the active application directory for later FAST runs.
-Manual browser, Share Sheet, and provider-client acceptance remain separate.
+The previous release, `v0.3.0` (`c781c660a1`), completed FAST shipping on
+6 October 2026 at 16:47:45 UTC in 101 seconds. Its local completed receipt
+records website verification and signed physical iPhone 0.3.0 build 12
+installation and launch. Manual browser, Share Sheet, and provider-client
+acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -23,7 +23,7 @@ final class FeedbackReader
     /** @return array<string, mixed> */
     public function latest(Project $project): array
     {
-        $chunk = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->orderByDesc('id')->first();
+        $chunk = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->newestFinishedFirst()->first();
 
         return [
             'project' => ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'canonical' => $project->canonical],

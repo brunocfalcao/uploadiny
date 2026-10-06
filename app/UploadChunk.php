@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App;
 
 use Database\Factories\UploadChunkFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -30,11 +31,23 @@ class UploadChunk extends Model
 
     protected $fillable = ['uuid', 'upload_project_id', 'status', 'expected_images', 'completed_at'];
 
+    /** @return array<string, string> */
+    protected function casts(): array
+    {
+        return ['completed_at' => 'datetime', 'expected_images' => 'integer'];
+    }
+
     protected static function booted(): void
     {
         static::creating(function (UploadChunk $chunk): void {
             $chunk->uuid ??= (string) Str::uuid();
         });
+    }
+
+    /** @param Builder<UploadChunk> $query */
+    public function scopeNewestFinishedFirst(Builder $query): void
+    {
+        $query->orderByDesc('completed_at')->orderByDesc('id');
     }
 
     public function getRouteKeyName(): string

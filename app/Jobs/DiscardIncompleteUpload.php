@@ -9,6 +9,7 @@ use App\UploadChunk;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Throwable;
 
 class DiscardIncompleteUpload implements ShouldQueue
 {
@@ -38,5 +39,10 @@ class DiscardIncompleteUpload implements ShouldQueue
                 throw $error;
             }
         }
+    }
+
+    public function failed(Throwable $exception): void
+    {
+        report($exception);
     }
 }

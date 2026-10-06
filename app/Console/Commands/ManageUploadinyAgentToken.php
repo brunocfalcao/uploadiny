@@ -7,6 +7,8 @@ namespace App\Console\Commands;
 use App\Services\AgentAccess;
 use App\User;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\MultipleRecordsFoundException;
 
 final class ManageUploadinyAgentToken extends Command
 {
@@ -25,7 +27,17 @@ final class ManageUploadinyAgentToken extends Command
 
     public function handle(): int
     {
-        $user = User::query()->sole();
+        try {
+            $user = User::query()->sole();
+        } catch (ModelNotFoundException) {
+            $this->error('Create the personal Uploadiny account first.');
+
+            return self::FAILURE;
+        } catch (MultipleRecordsFoundException) {
+            $this->error('Uploadiny must have exactly one personal account.');
+
+            return self::FAILURE;
+        }
 
         if ($this->option('revoke')) {
             return $this->revoke($user);

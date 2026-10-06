@@ -19,7 +19,7 @@ final class RecordingFrames
         $path = Storage::disk('local')->path($image->path);
         $frames = [];
         foreach ($timestamps as $timestamp) {
-            $result = Process::timeout(5)->run([
+            $result = Process::timeout((int) config('services.uploadiny.ffmpeg_timeout'))->run([
                 config('services.uploadiny.ffmpeg_binary'), '-nostdin', '-v', 'error',
                 '-protocol_whitelist', 'file,pipe', '-ss', (string) $timestamp,
                 '-threads', '1', '-i', $path, '-frames:v', '1',

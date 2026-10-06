@@ -31,7 +31,7 @@ class DeleteChunk extends Tool
     public function handle(Request $request, WorkspaceDeletion $deletion): Response|ResponseFactory
     {
         $data = $request->validate([
-            'project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}$/'],
+            'project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}\z/'],
             'chunk_id' => ['required', 'uuid'],
         ]);
         $project = Project::query()->where('canonical', $data['project_canonical'])->first();
