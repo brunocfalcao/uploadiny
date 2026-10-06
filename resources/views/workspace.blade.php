@@ -29,8 +29,7 @@
         @if($project)
             <div class="project-canonical">
                 <label for="project-canonical">Project code</label>
-                <input id="project-canonical" value="{{ $project->canonical }}" readonly spellcheck="false" aria-describedby="canonical-hint">
-                <button class="button" type="button" data-copy-field="project-canonical">Copy code</button>
+                <button type="button" id="project-canonical" class="canonical-chip" data-copy-text="{{ $project->canonical }}" title="Copy project code" aria-label="Copy project code {{ $project->canonical }}" aria-describedby="canonical-hint"><span>{{ $project->canonical }}</span><svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg></button>
                 <p id="canonical-hint" class="muted">Give this code to Claude or Codex so they pick this project.</p>
                 <p class="copy-status muted" data-copy-status role="status" aria-live="polite"></p>
             </div>
@@ -59,8 +58,16 @@
         @else
             <input id="image-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/x-m4v,.mov,.m4v" multiple hidden>
             <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Upload files to {{ $project->name }}">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 16V3m-5 5 5-5 5 5M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
-                <div><strong>Drop screenshots or recordings here</strong><p>Browse or paste. One upload keeps all your files in one feedback chunk.</p></div>
+                <svg class="drop-illustration" viewBox="0 0 120 88" fill="none" aria-hidden="true">
+                    <path class="folder-back" d="M10 22a8 8 0 0 1 8-8h22l8 9h54a8 8 0 0 1 8 8v41a8 8 0 0 1-8 8H18a8 8 0 0 1-8-8Z"/>
+                    <g class="drop-sheet drop-sheet-1"><rect x="28" y="12" width="40" height="50" rx="5"/><rect x="34" y="20" width="18" height="4" rx="2" class="sheet-ink"/><rect x="34" y="29" width="28" height="3" rx="1.5" class="sheet-faint"/><rect x="34" y="36" width="22" height="3" rx="1.5" class="sheet-faint"/></g>
+                    <g class="drop-sheet drop-sheet-2"><rect x="54" y="8" width="40" height="50" rx="5"/><circle cx="74" cy="30" r="9" class="sheet-mark"/><rect x="60" y="45" width="26" height="3" rx="1.5" class="sheet-faint"/></g>
+                    <path class="folder-front" d="M6 40a7 7 0 0 1 7-7h94a7 7 0 0 1 7 7l-4 34a8 8 0 0 1-8 7H18a8 8 0 0 1-8-7Z"/>
+                    <path class="drop-arrow" d="M60 68V50m-7 7 7-7 7 7"/>
+                </svg>
+                <div class="drop-copy"><strong>Drop screenshots or recordings</strong><p>or click to browse · paste with ⌘V. One upload keeps its files together in one feedback chunk.</p></div>
+                <span class="drop-button" aria-hidden="true">Choose files</span>
+                <p class="drop-formats">PNG · JPG · GIF · WebP · BMP · MP4 · MOV · up to 95 MB each</p>
             </div>
             <div id="upload-progress" role="status" hidden><label>Uploading feedback <progress max="100" value="0"></progress><span></span></label></div>
             <div id="chunk-list">
@@ -90,7 +97,7 @@
         @endif
         </section>
         <section id="editor" class="editor" hidden aria-label="File feedback editor">
-            <div class="editor-header"><button type="button" class="button" id="close-editor">Back to project</button><h2 id="editor-name"></h2><nav class="chunk-navigation" id="chunk-navigation" aria-label="Files in this upload chunk"><button type="button" id="first-file" title="First file" aria-label="First file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 6-6 6 6 6m7-12-6 6 6 6"/></svg></button><button type="button" id="previous-file" title="Previous file (⌘← / Ctrl+←)" aria-label="Previous file" aria-keyshortcuts="Meta+ArrowLeft Control+ArrowLeft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><span id="chunk-position" role="status" aria-live="polite"></span><button type="button" id="next-file" title="Next file (⌘→ / Ctrl+→)" aria-label="Next file" aria-keyshortcuts="Meta+ArrowRight Control+ArrowRight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button><button type="button" id="last-file" title="Last file" aria-label="Last file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 6 6 6-6 6m7-12 6 6-6 6"/></svg></button></nav><a class="button" id="download-original">Download original</a></div>
+            <div class="editor-header"><button type="button" class="button" id="close-editor">Back to project</button><h2 id="editor-name"></h2><nav class="chunk-navigation" id="chunk-navigation" aria-label="Files in this upload chunk"><button type="button" id="first-file" title="First file" aria-label="First file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 6-6 6 6 6m7-12-6 6 6 6"/></svg></button><button type="button" id="previous-file" title="Previous file (⌘← / Ctrl+←)" aria-label="Previous file" aria-keyshortcuts="Meta+ArrowLeft Control+ArrowLeft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><span id="chunk-position" role="status" aria-live="polite"></span><button type="button" id="next-file" title="Next file (⌘→ / Ctrl+→)" aria-label="Next file" aria-keyshortcuts="Meta+ArrowRight Control+ArrowRight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button><button type="button" id="last-file" title="Last file" aria-label="Last file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 6 6 6-6 6m7-12 6 6-6 6"/></svg></button></nav><button type="button" class="button" id="duplicate-image" title="Duplicate the original image without annotations">Duplicate</button><a class="button" id="download-original">Download original</a></div>
             <div class="editor-body">
                 <div class="drawing-workspace" id="drawing-workspace">
                     <div class="drawing-toolbar" role="group" aria-label="Annotation controls">

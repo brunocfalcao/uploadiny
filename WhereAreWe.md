@@ -1,6 +1,23 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.8.0 candidate, not deployed
+## 2026-10-06 — v0.9.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.9.0 build 18; no mobile behavior change.
+- Editor: Duplicate (`POST /images/{image}/duplicate`, ImageCopy clean mode via
+  ImageDuplicator) makes a clean copy of the original in the same chunk and
+  opens it; recordings excluded. Desktop editor fits the viewport with
+  equal-height panels and a wider, internally scrolling feedback sidebar.
+  The open image persists across reloads through `?image=<uuid>` (Back
+  returns to the gallery).
+- Project code chip copies on click; upload drop zone redesigned; empty
+  workspace card centred.
+- No migration, dependency, or environment change.
+
+## 2026-10-06 — v0.8.0 deployed via FAST
+
+- Shipped `212ed5bc92` on 2026-10-06 at 20:59:05 UTC in 105 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.8.0
+  build 17 installation and launch.
 
 - Candidate iOS metadata: 0.8.0 build 17. The Share Extension shows a
   byte-accurate progress bar ("Sending 1 of 3 · 64%") and preselects the last

@@ -142,18 +142,18 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.8.0`, candidate, not deployed. Its iOS marketing
-version is `0.8.0`; this release build is `17`. Agent payloads (REST and MCP)
-now return compact `marks` instead of raw drawing points, plus
-`feedback_updated_at`/`feedback_settling` so agents wait while feedback is
-still being edited; `list_projects` adds each project's latest chunk. The
-project page refreshes itself when uploads arrive. The Share Extension shows
-byte-accurate upload progress and reopens on the last project used. One
-additive migration adds nullable `upload_images.feedback_updated_at`.
+The release candidate is `v0.9.0`, candidate, not deployed. Its iOS marketing
+version is `0.9.0`; this release build is `18` (no mobile behavior change). The
+editor gains a Duplicate button (clean copy of the original, no marks or
+comments, same chunk), fits the viewport on desktop with equal-height panels
+and an internally scrolling, wider feedback sidebar, and keeps the open image
+across reloads via `?image=<uuid>`. The project code copies on click, the
+upload area is redesigned, and the empty-workspace card is centred. No
+migration, dependency, or environment change.
 
-The previous release, `v0.7.0` (`61fab29b75`), completed FAST shipping on
-6 October 2026 at 20:19:05 UTC in 114 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.7.0 build 16
+The previous release, `v0.8.0` (`212ed5bc92`), completed FAST shipping on
+6 October 2026 at 20:59:05 UTC in 105 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.8.0 build 17
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

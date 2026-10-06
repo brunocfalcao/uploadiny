@@ -25,7 +25,7 @@ class ProjectCanonicalTest extends TestCase
         $project = Project::query()->where('slug', 'canonical-project')->sole();
         $canonical = $project->canonical;
         $this->assertMatchesRegularExpression('/^[a-z]{6}$/', $canonical);
-        $this->get(route('projects.show', $project))->assertSee($canonical)->assertSee('Copy code');
+        $this->get(route('projects.show', $project))->assertSee($canonical)->assertSee('data-copy-text="'.$canonical.'"', false)->assertSee('Copy project code');
 
         $this->patch(route('projects.update', $project), ['name' => 'Renamed canonical project', 'slug' => 'renamed-canonical-project', 'canonical' => 'change'])->assertRedirect();
 

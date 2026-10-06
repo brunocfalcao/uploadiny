@@ -212,6 +212,7 @@ if (workspace) {
         document.getElementById('previous-file').disabled = busy || index <= 0;
         document.getElementById('next-file').disabled = busy || index < 0 || index >= files.length - 1;
         document.getElementById('last-file').disabled = busy || index < 0 || index >= files.length - 1;
+        document.getElementById('duplicate-image').disabled = busy || !active || active.media_type === 'video';
     }
     for (const [id, offset] of [['first-file', 'first'], ['previous-file', -1], ['next-file', 1], ['last-file', 'last']]) {
         document.getElementById(id).addEventListener('click', () => {
@@ -220,6 +221,24 @@ if (workspace) {
             if (next >= 0 && next < files.length) openImage(files[next]);
         });
     }
+    document.getElementById('duplicate-image').addEventListener('click', async () => {
+        if (!active || active.media_type === 'video' || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
+        calloutEditor.finishText();
+        if (dirty && !await saveFeedback()) return;
+        const id = active.id;
+        transferring = true; comments.disabled = true; updateChunkNavigation();
+        let copy;
+        try {
+            copy = await request(`/images/${id}/duplicate`, { method: 'POST' });
+            const card = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(id));
+            if (card) card.dataset.chunkImages = JSON.stringify([...JSON.parse(card.dataset.chunkImages), copy.id]);
+            chunkGroups = readChunkGroups();
+        } catch (error) { notify(error.message, true); }
+        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
+        if (!copy) return;
+        await openImage(copy.id);
+        if (active?.id === copy.id) notify("Duplicated — you're editing the copy.");
+    });
     function finishNavigation() { navigating = false; comments.disabled = false; updateChunkNavigation(); }
     function scheduleAutosave() {
         clearTimeout(autosaveTimer);
@@ -242,6 +261,14 @@ if (workspace) {
         document.getElementById('clear-drawing').disabled = saving || !strokes.length;
         calloutEditor.render();
     }
+    function syncImageUrl(id, mode = 'replace') {
+        const params = new URLSearchParams(location.search);
+        if (id) params.set('image', id); else params.delete('image');
+        const query = params.toString();
+        const url = `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
+        if (url === `${location.pathname}${location.search}${location.hash}`) return;
+        history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+    }
     function leaveEditor(invalidate = true) {
         if (saving) { notify('Wait for your feedback to finish saving.'); return false; }
         calloutEditor.finishText();
@@ -254,9 +281,10 @@ if (workspace) {
         active = null; source = null; dirty = false;
         document.getElementById('editor').hidden = true;
         document.getElementById('gallery').hidden = false;
+        if (invalidate) syncImageUrl(null);
         return true;
     }
-    document.getElementById('close-editor').addEventListener('click', async () => {
+    async function closeEditor() {
         if (saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
@@ -265,6 +293,19 @@ if (workspace) {
         const outcome = await refreshGallery(true);
         if (outcome === 'failed' || outcome === 'stale') location.reload();
         else if (announced) notifyTransient('New upload arrived.');
+    }
+    document.getElementById('close-editor').addEventListener('click', closeEditor);
+    window.addEventListener('popstate', async () => {
+        const id = new URLSearchParams(location.search).get('image');
+        if (!id) {
+            if (!active) return;
+            await closeEditor();
+            if (active) syncImageUrl(active.id);
+            return;
+        }
+        if (active?.id === id || !chunkGroups.some(files => files.includes(id))) return;
+        await openImage(id, false, true);
+        if (active && active.id !== id) syncImageUrl(active.id);
     });
     const boundTiles = new WeakSet();
     function bindGallery() {
@@ -275,7 +316,12 @@ if (workspace) {
         });
     }
     bindGallery();
-    async function openImage(id, playRecording = false) {
+    const initialImage = new URLSearchParams(location.search).get('image');
+    if (initialImage) {
+        if (chunkGroups.some(files => files.includes(initialImage))) openImage(initialImage, false, true).then(() => { if (active?.id !== initialImage) syncImageUrl(null); });
+        else syncImageUrl(null);
+    }
+    async function openImage(id, playRecording = false, fromUrl = false) {
         if (saving || navigating || transferring || active?.id === id) return;
         if (draft || eraseStart || calloutEditor.busy()) { notify('Finish your current drawing before switching files.'); return; }
         calloutEditor.finishText();
@@ -286,15 +332,18 @@ if (workspace) {
         try {
             const data = await request(`/images/${id}`);
             if (generation !== loadGeneration) return;
+            const fromGallery = !active;
             if (active && !leaveEditor(false)) { finishNavigation(); return; }
             calloutEditor.reset(); selectedIndex = null;
             active = data; dirty = false; source = null;
+            syncImageUrl(data.id, fromGallery && !fromUrl ? 'push' : 'replace');
             loadChunkDestinations(data.id);
             ({ strokes, undo, redo } = resetDrawingHistory(data.annotations)); draft = null; eraseStart = null; zoom = 1; fitView = true;
             comments.value = data.comments;
             saveState.textContent = '';
             document.getElementById('editor-name').textContent = data.name;
             document.getElementById('download-original').href = `/images/${id}/download`;
+            document.getElementById('duplicate-image').hidden = data.media_type === 'video';
             document.getElementById('move-project').value = config.project.id;
             document.getElementById('move-project').dispatchEvent(new Event('change'));
             document.getElementById('gallery').hidden = true;
@@ -605,7 +654,7 @@ if (workspace) {
         comments.disabled = true;
         try {
             const result = await request(`/images/${active.id}/chunk`, { method: 'POST', body: JSON.stringify({ ...JSON.parse(targetChunk.value), action }) });
-            dirty = false; transferring = false; location.href = result.project_url;
+            dirty = false; transferring = false; syncImageUrl(null); location.href = result.project_url;
         } catch (error) {
             transferring = false; comments.disabled = false; updateChunkNavigation();
             document.getElementById('copy-to-chunk').disabled = !targetChunk.value;
@@ -619,7 +668,7 @@ if (workspace) {
         if (dirty && !await saveFeedback()) return;
         transferring = true; comments.disabled = true; updateChunkNavigation();
         event.currentTarget.disabled = true;
-        try { const result = await request(`/images/${active.id}/project`, { method: 'PATCH', body: JSON.stringify({ project_id: Number(document.getElementById('move-project').value) }) }); dirty = false; location.href = result.project_url; }
+        try { const result = await request(`/images/${active.id}/project`, { method: 'PATCH', body: JSON.stringify({ project_id: Number(document.getElementById('move-project').value) }) }); dirty = false; syncImageUrl(null); location.href = result.project_url; }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
         finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
     });
@@ -627,7 +676,7 @@ if (workspace) {
         if (!active || saving || navigating || transferring || !confirm('Permanently delete this file and all of its feedback?')) return;
         transferring = true; comments.disabled = true; clearTimeout(autosaveTimer); updateChunkNavigation();
         event.currentTarget.disabled = true;
-        try { if (savePromise) await savePromise; await request(`/images/${active.id}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); location.reload(); }
+        try { if (savePromise) await savePromise; await request(`/images/${active.id}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); syncImageUrl(null); location.reload(); }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
         finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
     });

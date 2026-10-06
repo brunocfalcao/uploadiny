@@ -37,6 +37,7 @@ Route::middleware('auth')->group(function (): void {
     Route::patch('/images/{image}', [ImageController::class, 'update'])->name('images.update');
     Route::patch('/images/{image}/project', [ImageController::class, 'move'])->name('images.move');
     Route::delete('/images/{image}', [ImageController::class, 'destroy'])->name('images.destroy');
+    Route::post('/images/{image}/duplicate', [ImageController::class, 'duplicate'])->name('images.duplicate');
     Route::post('/images/{image}/description', [ImageController::class, 'describe'])->name('images.describe');
     Route::post('/projects/{project}/chunks/start', [ChunkController::class, 'start'])->name('chunks.start');
     Route::post('/chunks/{chunk}/images', [ChunkController::class, 'append'])->name('chunks.append');

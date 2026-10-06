@@ -9,9 +9,11 @@ import { drawingShortcutAction } from './drawing-shortcuts.js';
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function workspace(t) {
+function workspace(t, search = '') {
     const previousDocument = globalThis.document;
-    const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0;
+    const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0; const popstate = []; const urlCalls = [];
+    const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
+    const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); where.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); where.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; } };
     const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
     class Element {
         constructor(id = '', tagName = 'div') {
@@ -50,18 +52,19 @@ function workspace(t) {
     node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk' });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
-    const writes = []; const deletions = []; let respond = async () => {};
+    const writes = []; const deletions = []; const duplicates = []; let respond = async () => {};
     globalThis.document = document;
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createCalloutEditor, drawingShortcutAction, document,
         enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, setRecordingPoster() {},
-        window: { innerWidth: 1200, addEventListener() {} },
+        window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
+        history, URLSearchParams,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
         Image: class { naturalWidth = 640; naturalHeight = 480; set src(value) { this.onload(); } },
         Option: class {}, FormData: class {}, structuredClone, clearTimeout: id => timers.delete(id),
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; }, setInterval: callback => { intervals.push(callback); return intervals.length; }, clearInterval() {},
-        location: { reload() { reloads++; } }, confirm: () => true,
+        location: where, confirm: () => true,
         DOMParser: class {
             parseFromString() {
                 const next = remote.page;
@@ -81,6 +84,11 @@ function workspace(t) {
             }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
             const id = url.split('/')[2];
+            if (options.method === 'POST' && url.endsWith('/duplicate')) {
+                duplicates.push({ id, saved: writes.length });
+                assets.copy = { ...structuredClone(assets[id]), id: 'copy', name: 'copy', annotations: [], comments: '', revision: 0, preview_url: 'copy' };
+                return { ok: true, status: 201, json: async () => structuredClone(assets.copy) };
+            }
             if (options.method === 'DELETE') { deletions.push(id); delete assets[id]; return { ok: true, json: async () => ({}) }; }
             if (options.method === 'PATCH') {
                 const body = JSON.parse(options.body); writes.push({ id, ...body });
@@ -93,7 +101,8 @@ function workspace(t) {
         },
     });
     return {
-        node, assets, writes, deletions, document, tool, selectTool, remote, timers,
+        where, urlCalls, async pop(search) { where.search = search; for (const listener of popstate) listener({}); await tick(); await tick(); },
+        node, assets, writes, deletions, duplicates, document, tool, selectTool, remote, timers,
         get reloads() { return reloads; },
         async poll() { intervals[0](); await tick(); },
         arrive(id = 'chunk-two', count = 1) {
@@ -516,4 +525,63 @@ test('overlapping polls never run together and a response that predates a swap i
     assert.equal(ui.remote.pageRequests, 1);
     assert.equal(ui.node('workspace').dataset.latest, 'chunk-two');
     assert.equal(ui.reloads, 0);
+});
+
+test('Duplicate saves pending feedback, then opens the clean copy as the last file', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.type(ui.node('image-comments'), 'Before duplicating.');
+    ui.node('duplicate-image').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.assets.one.comments, 'Before duplicating.');
+    assert.deepEqual(ui.duplicates, [{ id: 'one', saved: 1 }]);
+    assert.equal(ui.node('editor-name').textContent, 'copy');
+    assert.equal(ui.node('chunk-position').textContent, '4 of 4');
+    assert.equal(ui.node('image-comments').value, '');
+    assert.equal(ui.node('workspace-message').textContent, "Duplicated — you're editing the copy.");
+    assert.equal(ui.node('duplicate-image').disabled, false);
+});
+
+test('opening a file puts it in the address bar, next-file replaces it and closing removes it', async t => {
+    const ui = workspace(t); await ui.open();
+    assert.deepEqual(ui.urlCalls, [['push', '/projects/1?image=one']]);
+    ui.node('next-file').click(); await ui.settle();
+    assert.deepEqual(ui.urlCalls.at(-1), ['replace', '/projects/1?image=two']);
+    assert.equal(ui.urlCalls.filter(([mode]) => mode === 'push').length, 1);
+    ui.node('close-editor').click(); await ui.settle();
+    assert.deepEqual(ui.urlCalls.at(-1), ['replace', '/projects/1']);
+    assert.equal(ui.where.search, '');
+});
+
+test('loading with an image from the middle of a group opens it with the right position', async t => {
+    const ui = workspace(t, '?image=two&x=1'); await ui.settle(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('chunk-position').textContent, '2 of 3');
+    assert.equal(ui.node('editor').hidden, false);
+    assert.equal(ui.urlCalls.some(([mode]) => mode === 'push'), false);
+    assert.equal(ui.where.search, '?image=two&x=1');
+});
+
+test('loading with an unknown image shows the gallery and drops the parameter', async t => {
+    const ui = workspace(t, '?image=gone&x=1'); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, '');
+    assert.equal(ui.where.search, '?x=1');
+    assert.deepEqual(ui.urlCalls, [['replace', '/projects/1?x=1']]);
+});
+
+test('Back (popstate without an image) saves pending feedback, then closes the editor', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.type(ui.node('image-comments'), 'Keep this.');
+    await ui.pop('');
+    assert.equal(ui.writes.length, 1);
+    assert.equal(ui.assets.one.comments, 'Keep this.');
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+});
+
+test('Back keeps the editor and restores the address when saving fails', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.respondWith(async () => false);
+    ui.type(ui.node('image-comments'), 'Keep this.');
+    await ui.pop('');
+    assert.equal(ui.node('editor').hidden, false);
+    assert.equal(ui.where.search, '?image=one');
 });

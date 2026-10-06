@@ -10,6 +10,7 @@ use App\Http\Requests\TransferChunkImageRequest;
 use App\Jobs\DescribeUploadImage;
 use App\Project;
 use App\Services\ChunkTransfer;
+use App\Services\ImageDuplicator;
 use App\Services\WorkspaceDeletion;
 use App\UploadImage;
 use Illuminate\Http\JsonResponse;
@@ -112,6 +113,13 @@ class ImageController extends Controller
         $result = $transfer->transfer($image, $request->string('chunk_id')->toString(), $request->integer('project_id'), $request->string('action')->toString());
 
         return response()->json(['image' => $result->agentData(), 'project_url' => route('projects.show', $result->project)]);
+    }
+
+    public function duplicate(UploadImage $image, ImageDuplicator $duplicator): JsonResponse
+    {
+        $copy = $duplicator->duplicate($image);
+
+        return response()->json($copy->agentData() + ['preview_url' => route('images.preview', $copy)], 201);
     }
 
     public function destroy(UploadImage $image, WorkspaceDeletion $deletion): JsonResponse
