@@ -1,6 +1,18 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.9.3 candidate, not deployed
+## 2026-10-07 — v0.9.4 candidate, not deployed
+
+- Candidate iOS metadata: 0.9.4 build 22; no mobile behavior change.
+- Paste upload: `clipboardFiles` reads `clipboardData.files`, falls back to
+  file items (Safari screenshots via ⌘⌃⇧4), renames generic `image.*` to
+  `pasted-<time>.<ext>`, and tolerates a non-element paste target.
+- No migration, dependency, or environment change.
+
+## 2026-10-07 — v0.9.3 deployed via FAST
+
+- Shipped `1534a3e1ad` on 2026-10-06 at 22:14:16 UTC in 106 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.9.3
+  build 21 installation and launch.
 
 - Candidate iOS metadata: 0.9.3 build 21; no mobile behavior change.
 - Editor header uses the same two columns as the editor body: Back, file name

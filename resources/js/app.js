@@ -1,5 +1,6 @@
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
+import { clipboardFiles } from './clipboard-files';
 enhanceAgentAccess();
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
@@ -147,9 +148,11 @@ if (workspace) {
     for (const eventName of ['dragleave', 'drop']) dropzone?.addEventListener(eventName, event => { event.preventDefault(); dropzone.classList.remove('dragging'); });
     dropzone?.addEventListener('drop', event => upload([...event.dataTransfer.files]));
     document.addEventListener('paste', event => {
-        if (!config.project || active || event.target.closest('input,textarea,[contenteditable]')) return;
-        const files = [...(event.clipboardData?.files || [])];
-        if (files.length) { event.preventDefault(); upload(files); }
+        if (!config.project || active || event.target?.closest?.('input,textarea,[contenteditable]')) return;
+        const files = clipboardFiles(event.clipboardData);
+        if (!files.length) return;
+        event.preventDefault();
+        upload(files);
     });
     async function upload(files) {
         if (!files.length || loading) return;

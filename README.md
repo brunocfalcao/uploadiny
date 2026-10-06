@@ -142,15 +142,14 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.9.3`, candidate, not deployed. Its iOS marketing
-version is `0.9.3`; this release build is `21` (no mobile behavior change). The
-editor header now aligns the file pager with the drawing panel's right edge
-and places Duplicate, Download original and a red Delete above the feedback
-sidebar.
+The release candidate is `v0.9.4`, candidate, not deployed. Its iOS marketing
+version is `0.9.4`; this release build is `22` (no mobile behavior change).
+Pasting an image with ⌘V on a project's upload list now also reads clipboard
+items (Safari) and names generic pasted screenshots `pasted-<time>.<ext>`.
 
-The previous release, `v0.9.2` (`c24a3895d8`), completed FAST shipping on
-6 October 2026 at 22:05:29 UTC in 108 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.9.2 build 20
+The previous release, `v0.9.3` (`1534a3e1ad`), completed FAST shipping on
+6 October 2026 at 22:14:16 UTC in 106 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.9.3 build 21
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.
