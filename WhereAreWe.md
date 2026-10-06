@@ -1,6 +1,18 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.9.2 candidate, not deployed
+## 2026-10-07 — v0.9.3 candidate, not deployed
+
+- Candidate iOS metadata: 0.9.3 build 21; no mobile behavior change.
+- Editor header uses the same two columns as the editor body: Back, file name
+  and pager over the drawing panel; Duplicate, Download original and Delete
+  (moved from the sidebar, same confirmation) over the feedback sidebar.
+- No migration, dependency, or environment change.
+
+## 2026-10-07 — v0.9.2 deployed via FAST
+
+- Shipped `c24a3895d8` on 2026-10-06 at 22:05:29 UTC in 108 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.9.2
+  build 20 installation and launch.
 
 - Candidate iOS metadata: 0.9.2 build 20; no mobile behavior change.
 - Editor viewport: wheel and pinch zoom anchored at the pointer through the

@@ -142,15 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.9.2`, candidate, not deployed. Its iOS marketing
-version is `0.9.2`; this release build is `20` (no mobile behavior change). In
-the editor the mouse wheel (or trackpad pinch) zooms around the pointer, and
-holding Space while dragging pans the zoomed image; annotations stay aligned
-and new marks map to the correct image coordinates at any zoom.
+The release candidate is `v0.9.3`, candidate, not deployed. Its iOS marketing
+version is `0.9.3`; this release build is `21` (no mobile behavior change). The
+editor header now aligns the file pager with the drawing panel's right edge
+and places Duplicate, Download original and a red Delete above the feedback
+sidebar.
 
-The previous release, `v0.9.1` (`965d0ecc81`), completed FAST shipping on
-6 October 2026 at 21:54:15 UTC in 101 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.9.1 build 19
+The previous release, `v0.9.2` (`c24a3895d8`), completed FAST shipping on
+6 October 2026 at 22:05:29 UTC in 108 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.9.2 build 20
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.
