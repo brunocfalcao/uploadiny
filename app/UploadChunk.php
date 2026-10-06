@@ -19,6 +19,7 @@ use Illuminate\Support\Str;
  * @property int|null $upload_project_id
  * @property string $status
  * @property int|null $expected_images
+ * @property int|null $append_to_chunk_id
  * @property Carbon|null $completed_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -29,7 +30,7 @@ class UploadChunk extends Model
     /** @use HasFactory<UploadChunkFactory> */
     use HasFactory;
 
-    protected $fillable = ['uuid', 'upload_project_id', 'status', 'expected_images', 'completed_at'];
+    protected $fillable = ['uuid', 'upload_project_id', 'append_to_chunk_id', 'status', 'expected_images', 'completed_at'];
 
     /** @return array<string, string> */
     protected function casts(): array

@@ -24,6 +24,7 @@ Route::middleware(['auth:sanctum', 'abilities:'.implode(',', UploadinyTokenAbili
 
 Route::middleware(['auth:sanctum', 'abilities:'.UploadinyTokenAbility::UPLOADS_WRITE])->group(function (): void {
     Route::post('/projects/{project}/chunks', [ChunkController::class, 'store'])->name('api.chunks.store');
+    Route::get('/projects/{project}/last-chunk', [ChunkController::class, 'last'])->name('api.chunks.last');
     Route::post('/projects/{project}/chunks/start', [ChunkController::class, 'start'])->name('api.chunks.start');
     Route::post('/chunks/{chunk}/images', [ChunkController::class, 'append'])->name('api.chunks.append');
     Route::post('/chunks/{chunk}/complete', [ChunkController::class, 'complete'])->name('api.chunks.complete');

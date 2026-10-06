@@ -1,6 +1,26 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.6.0 candidate, not deployed
+## 2026-10-06 — v0.7.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.7.0 build 16. The Share Extension shows "Add to the
+  last upload" with the last upload's time and file count; the choice starts
+  on and is remembered in its own ThisDeviceOnly Keychain item (never
+  UserDefaults). Physical-device acceptance is pending.
+- Server: `GET /api/projects/{project}/last-chunk` (phone `uploads:write`)
+  returns the project's last completed upload. `chunks/start` accepts an
+  optional `append_to` UUID; the draft stays separate until complete, then its
+  files move into that upload, which gets a new completion time (it becomes
+  "latest" for the agent). Unfinished or cancelled shares never touch it; a
+  target deleted meanwhile, from another project, or unfinished yields a
+  normal new upload.
+- One additive migration: nullable `upload_chunks.append_to_chunk_id`
+  (nullOnDelete). Previous code ignores it; rollback leaves it in place.
+
+## 2026-10-06 — v0.6.0 deployed via FAST
+
+- Shipped `3e71520d12` on 2026-10-06 at 19:50:36 UTC in 119 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.6.0
+  build 15 installation and launch.
 
 - Candidate iOS metadata: 0.6.0 build 15. No mobile behavior change.
 - Editor ink: five quick colours, a hue/lightness gradient strip (click, drag

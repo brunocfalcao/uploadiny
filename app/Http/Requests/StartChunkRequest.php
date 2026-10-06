@@ -16,6 +16,6 @@ class StartChunkRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return ['image_count' => ['required', 'integer', 'min:1']];
+        return ['image_count' => ['required', 'integer', 'min:1'], 'append_to' => ['nullable', 'uuid']];
     }
 }

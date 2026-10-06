@@ -142,15 +142,16 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.6.0`, candidate, not deployed. Its iOS marketing
-version is `0.6.0`; this release build is `15`. It adds an ink colour gradient
-strip, a full colour picker and an exact colour-code field to the editor,
-fits the drawing tools on one row on laptop screens, and shows a centred
-"No projects yet" card when the workspace is empty.
+The release candidate is `v0.7.0`, candidate, not deployed. Its iOS marketing
+version is `0.7.0`; this release build is `16`. The Share Extension adds an
+"Add to the last upload" switch (on by default, remembered in a ThisDeviceOnly
+Keychain item) that merges a later share into the project's last completed
+upload on completion and moves it back to the top. One additive migration adds
+a nullable `upload_chunks.append_to_chunk_id`.
 
-The previous release, `v0.5.0` (`4f444267dc`), completed FAST shipping on
-6 October 2026 at 19:41:55 UTC in 108 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.5.0 build 14
+The previous release, `v0.6.0` (`3e71520d12`), completed FAST shipping on
+6 October 2026 at 19:50:36 UTC in 119 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.6.0 build 15
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

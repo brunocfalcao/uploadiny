@@ -60,6 +60,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var draftID: String?
   private var serverURL: URL?
   private var token = ""
+  private let appendRow = UIView()
+  private let appendSwitch = UISwitch()
+  private let appendCaption = UILabel()
+  private var appendToLastUpload = UploadinyAppendPreferenceStore.read()
+  private var lastUpload: LastUploadSummary?
+  private var lastUploadGeneration = 0
+  private var appendingTo: String?
+  private var uploadedImageIDs: [String] = []
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -239,6 +247,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     reviewPanel.axis = .vertical
     reviewPanel.spacing = 8
     reviewPanel.isHidden = true
+    configureAppendRow()
+    reviewPanel.addArrangedSubview(appendRow)
+    reviewPanel.setCustomSpacing(14, after: appendRow)
     mediaLabel.font = .preferredFont(forTextStyle: .headline)
     mediaLabel.adjustsFontForContentSizeCategory = true
     mediaLabel.textColor = SharePalette.text
@@ -379,6 +390,109 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     changeProjectButton.addTarget(self, action: #selector(changeProject), for: .touchUpInside)
   }
 
+  private func configureAppendRow() {
+    appendRow.backgroundColor = SharePalette.surface
+    appendRow.layer.cornerRadius = 12
+    appendRow.layer.borderWidth = 1
+    appendRow.layer.borderColor = SharePalette.line.cgColor
+    appendRow.isHidden = true
+    let title = UILabel()
+    title.text = "Add to the last upload"
+    title.font = .preferredFont(forTextStyle: .body)
+    title.adjustsFontForContentSizeCategory = true
+    title.textColor = SharePalette.text
+    title.numberOfLines = 0
+    title.isAccessibilityElement = false
+    appendCaption.font = .preferredFont(forTextStyle: .caption1)
+    appendCaption.adjustsFontForContentSizeCategory = true
+    appendCaption.textColor = SharePalette.secondary
+    appendCaption.numberOfLines = 0
+    appendCaption.isAccessibilityElement = false
+    let labels = UIStackView(arrangedSubviews: [title, appendCaption])
+    labels.axis = .vertical
+    labels.spacing = 2
+    appendSwitch.onTintColor = SharePalette.accent
+    appendSwitch.isOn = appendToLastUpload
+    appendSwitch.accessibilityLabel = "Add to the last upload"
+    appendSwitch.setContentHuggingPriority(.required, for: .horizontal)
+    appendSwitch.setContentCompressionResistancePriority(.required, for: .horizontal)
+    appendSwitch.addTarget(self, action: #selector(appendPreferenceChanged), for: .valueChanged)
+    let content = UIStackView(arrangedSubviews: [labels, appendSwitch])
+    content.axis = .horizontal
+    content.alignment = .center
+    content.spacing = 12
+    content.translatesAutoresizingMaskIntoConstraints = false
+    appendRow.addSubview(content)
+    let rowHeight = appendRow.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
+    rowHeight.priority = .defaultHigh
+    NSLayoutConstraint.activate([
+      content.leadingAnchor.constraint(equalTo: appendRow.leadingAnchor, constant: 14),
+      content.trailingAnchor.constraint(equalTo: appendRow.trailingAnchor, constant: -14),
+      content.topAnchor.constraint(equalTo: appendRow.topAnchor, constant: 10),
+      content.bottomAnchor.constraint(equalTo: appendRow.bottomAnchor, constant: -10),
+      rowHeight,
+    ])
+    // The whole row is the touch target; taps on the switch itself stay with the switch.
+    appendRow.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(toggleAppendRow)))
+  }
+
+  @objc private func toggleAppendRow() {
+    appendSwitch.setOn(!appendSwitch.isOn, animated: true)
+    appendPreferenceChanged()
+  }
+
+  @objc private func appendPreferenceChanged() {
+    appendToLastUpload = appendSwitch.isOn
+    UploadinyAppendPreferenceStore.write(appendSwitch.isOn)
+  }
+
+  private func updateAppendRow() {
+    guard let lastUpload, lastUpload.projectID == selectedProject?.id else {
+      appendRow.isHidden = true
+      return
+    }
+    let caption = "Last upload: \(lastUploadDate(lastUpload.completedAt)) · \(lastUpload.fileCount) file\(lastUpload.fileCount == 1 ? "" : "s")"
+    appendCaption.text = caption
+    appendSwitch.accessibilityHint = caption
+    appendSwitch.isOn = appendToLastUpload
+    appendRow.isHidden = false
+  }
+
+  private func lastUploadDate(_ date: Date) -> String {
+    let calendar = Calendar.current
+    let time = DateFormatter()
+    time.setLocalizedDateFormatFromTemplate("jjmm")
+    let clock = time.string(from: date)
+    if calendar.isDateInToday(date) { return "Today \(clock)" }
+    if calendar.isDateInYesterday(date) { return "Yesterday \(clock)" }
+    let day = DateFormatter()
+    day.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: Date(), toGranularity: .year) ? "dMMM" : "dMMMy")
+    return "\(day.string(from: date)) \(clock)"
+  }
+
+  private func fetchLastUpload(for project: Project) {
+    lastUploadGeneration += 1
+    let generation = lastUploadGeneration
+    lastUpload = nil
+    updateAppendRow()
+    guard let base = serverURL, !token.isEmpty else { return }
+    var request = authorizedRequest(base.appendingPathComponent("projects").appendingPathComponent(project.slug).appendingPathComponent("last-chunk"))
+    request.timeoutInterval = 30
+    let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
+    session.dataTask(with: request) { [weak self] data, response, error in
+      DispatchQueue.main.async {
+        // Ignore answers for an earlier project choice; on any failure the row stays hidden.
+        guard let self, !self.didClose, self.lastUploadGeneration == generation, self.selectedProject?.id == project.id else { return }
+        guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
+              let data, let result = try? JSONDecoder().decode(LastUploadResult.self, from: data),
+              let chunk = result.chunk, let completedAt = ISO8601DateFormatter().date(from: chunk.completed_at) else { return }
+        self.lastUpload = LastUploadSummary(projectID: project.id, id: chunk.id, completedAt: completedAt, fileCount: chunk.file_count)
+        self.updateAppendRow()
+      }
+    }.resume()
+    session.finishTasksAndInvalidate()
+  }
+
   private func configureNavigationButton(_ button: UIButton, title: String, symbol: String, action: Selector) {
     var configuration = UIButton.Configuration.plain()
     configuration.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
@@ -450,6 +564,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     changeProjectButton.configuration?.subtitle = "Upload to project"
     changeProjectButton.accessibilityLabel = "Project: \(project.name). Change project"
     changeProjectButton.isHidden = false
+    updateAppendRow()
     reviewPanel.isHidden = false
     uploadButton.configuration?.title = "Upload \(review.files.count) asset\(review.files.count == 1 ? "" : "s")"
     footerSummary.isHidden = false
@@ -829,7 +944,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    selectedProject = projects[indexPath.row]
+    let project = projects[indexPath.row]
+    selectedProject = project
+    fetchLastUpload(for: project)
     UISelectionFeedbackGenerator().selectionChanged()
     table.isHidden = true
     signOutButton.isHidden = true
@@ -941,7 +1058,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     var request = authorizedRequest(url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["image_count": review.files.count])
+    // Append only to a last upload that was loaded for this project and is shown with the toggle on.
+    let target = appendToLastUpload && lastUpload?.projectID == project.id ? lastUpload?.id : nil
+    var body: [String: Any] = ["image_count": review.files.count]
+    if let target { body["append_to"] = target }
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    appendingTo = target
+    uploadedImageIDs = []
     request.timeoutInterval = 30
     startingDraft = true
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
@@ -1001,10 +1124,11 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
             return
           }
           guard let data, let result = try? JSONDecoder().decode(AppendResult.self, from: data),
-                result.confirms(file, receivedCount: index + 1) else {
+                result.confirms(file, receivedCount: index + 1), let image = result.image else {
             self.showError("Your feedback could not be confirmed. This group was not published. Your notes are still here.")
             return
           }
+          self.uploadedImageIDs.append(image.id)
           self.uploadFile(at: index + 1)
         }
       }.resume()
@@ -1031,17 +1155,24 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           return
         }
         guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
-              let data, let result = try? JSONDecoder().decode(ChunkResult.self, from: data), result.images.count == self.review.files.count else {
+              let data, let result = try? JSONDecoder().decode(ChunkResult.self, from: data),
+              self.uploadedImageIDs.count == self.review.files.count,
+              Set(self.uploadedImageIDs).isSubset(of: result.images.map(\.id)),
+              // A merged last upload also holds its earlier files.
+              self.appendingTo != nil || result.images.count == self.review.files.count else {
           self.showError("The final response was unavailable. Check your project in the workspace before sharing again; it may already be uploaded.", allowRetry: false)
           return
         }
+        let shared = self.uploadedImageIDs.compactMap { id in result.images.first { $0.id == id } }
+        let merged = self.appendingTo != nil && result.id == self.appendingTo
         self.draftID = nil
         let thumbnail = self.review.files.first.flatMap { self.imagePreview($0.url) }
         self.cleanupFiles()
         self.spinner.stopAnimating()
         self.spinner.isHidden = true
-        self.titleLabel.text = "Uploaded to \(self.selectedProject?.name ?? "project")"
-        self.detailLabel.text = result.images.prefix(3).map { $0.name }.joined(separator: "\n") + (result.images.count > 3 ? "\n+ \(result.images.count - 3) more files" : "") + "\nTap anywhere to close"
+        let projectName = self.selectedProject?.name ?? "project"
+        self.titleLabel.text = merged ? "Added to the last upload in \(projectName)" : "Uploaded to \(projectName)"
+        self.detailLabel.text = shared.prefix(3).map { $0.name }.joined(separator: "\n") + (shared.count > 3 ? "\n+ \(shared.count - 3) more files" : "") + "\nTap anywhere to close"
         self.titleLabel.textAlignment = .center
         self.detailLabel.textAlignment = .center
         self.closeButton.accessibilityLabel = "Done"
@@ -1300,8 +1431,12 @@ private struct DraftResult: Decodable { let id: String }
 
 private struct DeviceTokenResult: Decodable { let token: String }
 
+private struct LastUploadResult: Decodable { let chunk: LastUploadChunk? }
+private struct LastUploadChunk: Decodable { let id: String; let completed_at: String; let file_count: Int }
+private struct LastUploadSummary { let projectID: Int; let id: String; let completedAt: Date; let fileCount: Int }
+
 private enum UploadinyDeviceTokenStore {
-  private static let service = "test.uploadiny.app.share"
+  fileprivate static let service = "test.uploadiny.app.share"
   private static let account = "uploadiny-device-token"
 
   static func read() -> String? {
@@ -1347,3 +1482,36 @@ private enum UploadinyDeviceTokenStore {
 }
 
 private enum UploadinyDeviceTokenStoreError: Error { case unavailable }
+
+// Remembers the "Add to the last upload" choice as "1" or "0" in its own item. Absent means on.
+private enum UploadinyAppendPreferenceStore {
+  private static let service = UploadinyDeviceTokenStore.service
+  private static let account = "append-to-last-upload"
+
+  static func read() -> Bool {
+    var item: CFTypeRef?
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: service,
+      kSecAttrAccount: account,
+      kSecReturnData: true,
+      kSecMatchLimit: kSecMatchLimitOne,
+    ]
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return true }
+    return String(data: data, encoding: .utf8) != "0"
+  }
+
+  @discardableResult
+  static func write(_ enabled: Bool) -> Bool {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: service,
+      kSecAttrAccount: account,
+    ]
+    SecItemDelete(query as CFDictionary)
+    var attributes = query
+    attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    attributes[kSecValueData] = Data((enabled ? "1" : "0").utf8)
+    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+  }
+}
