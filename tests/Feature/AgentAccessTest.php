@@ -40,7 +40,7 @@ class AgentAccessTest extends TestCase
         Storage::disk('local')->assertMissing('credentials/uploadiny-agent-token.txt');
     }
 
-    public function test_owner_generates_a_nonexpiring_read_only_key_and_can_copy_it_from_the_private_page(): void
+    public function test_owner_generates_a_nonexpiring_agent_key_and_can_copy_it_from_the_private_page(): void
     {
         Storage::fake('local');
         $user = User::factory()->create(['email' => 'key-generate@example.test']);

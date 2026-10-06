@@ -74,7 +74,7 @@ final class SmokeUploadinyMcp extends Command
 
             $this->step = 'tool discovery';
             $tools = $this->rpc($agent, 'tools/list');
-            $this->require(array_column($tools->json('result.tools') ?? [], 'name') === ['list_projects', 'get_feedback', 'get_asset', 'get_recording_frames'], 'Unexpected MCP tools.');
+            $this->require(array_column($tools->json('result.tools') ?? [], 'name') === ['list_projects', 'get_feedback', 'get_asset', 'get_recording_frames', 'delete_chunk'], 'Unexpected MCP tools.');
 
             $this->step = 'project and feedback retrieval';
             $projects = $this->callTool($agent, 'list_projects');
@@ -97,10 +97,24 @@ final class SmokeUploadinyMcp extends Command
             }
             $this->require($frames['structuredContent']['frames'][1]['timestamp_seconds'] === 0.5, 'Frame timestamps were lost.');
 
+            $this->step = 'explicit fixture deletion';
+            $deleted = $this->callTool($agent, 'delete_chunk', ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid]);
+            $this->require($deleted['structuredContent'] === [
+                'project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid,
+                'deleted_asset_ids' => array_map(static fn (UploadImage $image): string => $image->uuid, $images),
+                'chunk_deleted' => true,
+            ], 'Deletion did not acknowledge the exact fixture assets.');
+            $this->require(! UploadChunk::whereKey($chunk->id)->exists(), 'The fixture chunk remains.');
+            foreach ($images as $image) {
+                $this->require(! UploadImage::whereKey($image->id)->exists() && ! $disk->exists($image->path)
+                    && ($image->annotated_path === null || ! $disk->exists($image->annotated_path)), 'A fixture asset or private file remains.');
+            }
+            $this->require($this->callTool($agent, 'get_feedback', ['project_canonical' => $project->canonical])['structuredContent']['chunk'] === null, 'Deleted feedback is still visible.');
+
             $this->step = 'credential revocation';
             PersonalAccessToken::findToken($agent)?->delete();
             $this->require($this->rpc($agent, 'tools/list')->status() === 401, 'A revoked key still worked.');
-            $this->info('MCP HTTPS smoke passed: authentication, initialization, four tools, exact feedback, both image variants, recording frames, and revocation.');
+            $this->info('MCP HTTPS smoke passed: authentication, initialization, five tools, exact feedback, both image variants, recording frames, explicit fixture deletion, and revocation.');
 
             return self::SUCCESS;
         } catch (Throwable $error) {

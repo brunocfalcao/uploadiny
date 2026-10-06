@@ -22,7 +22,8 @@ to `https://uploadiny.com/api`.
 - The Share Extension signs in once over HTTPS and stores only its limited
   `projects:read`/`uploads:write` token in the device-only Keychain. It never
   stores a password or embeds a usable credential in the app.
-- The coding-agent token is separate and read-only for project feedback. The
+- The coding-agent token is separate. It reads project feedback and also
+  authorizes explicit completed-chunk deletion through MCP. The
   backoffice’s **Agent API access** page generates, copies, rotates, or revokes
   it without disconnecting the iPhone. Keys generated there do not expire;
   rotation immediately invalidates previous agent keys. The private
@@ -31,7 +32,8 @@ to `https://uploadiny.com/api`.
 - Every project has a unique, permanent six-letter `canonical`, displayed as
   its **Project code**. Existing projects receive codes during migration.
   Agents retrieve the latest completed batch using
-  `GET /api/feedback/{canonical}` with the read-only bearer key. Existing
+  `GET /api/feedback/{canonical}` with the agent bearer key. Agent REST
+  access remains read-only. Existing
   project URLs and slug-based API endpoints remain available.
 - Projects retain current images when images are moved. Deleting a project
   removes only the images still assigned to it.
@@ -59,14 +61,14 @@ database queue worker with `php artisan queue:work` while testing vision jobs.
 
 ## MCP access
 
-The read-only Laravel MCP server is served at `/mcp` over HTTP. Locally, use
+The Laravel MCP server is served at `/mcp` over HTTP. Locally, use
 `https://uploadiny.test/mcp`; after deployment, use `https://uploadiny.com/mcp`.
 Configure the client with the backoffice's Agent API access key as an
 `Authorization: Bearer` header. Rotating or revoking that key immediately
 changes both REST and MCP access. Phone keys and browser sessions cannot use
 the MCP server.
 
-The server exposes four tools:
+The server exposes five tools:
 
 - `list_projects`: discover project names and their six-letter codes.
 - `get_feedback(project_canonical)`: retrieve the latest completed batch,
@@ -78,6 +80,21 @@ The server exposes four tools:
   at specified seconds, with the original feedback alongside them. Omitting
   timestamps returns the first frame. Frames stay within 1280 pixels per side
   without upscaling and are not saved as new assets.
+- `delete_chunk(project_canonical, chunk_id)`: permanently delete the exact
+  completed feedback chunk's assets currently in that project, including
+  comments, annotations, and private files. Assets moved elsewhere survive;
+  the shared chunk record survives while other projects still have assets.
+  The tool uses the same agent key and is marked destructive. Call it only
+  after the owner explicitly requests deletion, retaining the reviewed UUID
+  rather than selecting a newer upload.
+
+`do uploadiny <request>` uses the shared command at
+`~/Herd/.dynamic-commands/uploadiny.md` to select a project, inspect its latest
+feedback, and implement requested changes. An explicit follow-up such as
+`do uploadiny delete the chunk, all good` deletes the pinned reviewed chunk.
+The command prefers connected MCP tools and supports authenticated HTTPS MCP
+calls when the client has not registered the server. Client credentials must
+be configured separately; the command never issues or rotates keys.
 
 Recording inspection requires FFmpeg on the application server. Set
 `UPLOADINY_FFMPEG_BINARY` to its executable path when the web process cannot
@@ -125,6 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.2.0`, not deployed. Its iOS marketing version is
-`0.2.0`; this release build is `11`.
+The release candidate is `v0.3.0`, not deployed. Its iOS marketing version is
+`0.3.0`; this release build is `12`. It adds explicit MCP chunk deletion using
+the existing agent key, while preserving assets moved elsewhere.
+
+The previous release, `v0.2.0` (`a214ef031e`), completed LIGHT shipping on
+6 October 2026 at 16:03:12 UTC in 854 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.2.0 build 11
+installation and launch. Production HTTPS MCP, per-asset feedback, private
+images, recording frames, and the vision queue passed. SQLite now has a stable
+physical path outside the active application directory for later FAST runs.
+Manual browser, Share Sheet, and provider-client acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

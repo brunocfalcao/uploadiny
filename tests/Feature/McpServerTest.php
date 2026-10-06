@@ -53,18 +53,21 @@ class McpServerTest extends TestCase
         $this->flushHeaders()->actingAs($user)->rpc('tools/list')->assertUnauthorized();
     }
 
-    public function test_initialization_and_discovery_advertise_only_the_four_read_only_tools(): void
+    public function test_discovery_advertises_four_read_tools_and_one_destructive_cleanup_tool(): void
     {
         $this->reader('mcp-discovery@example.test');
         $this->rpc('initialize', ['protocolVersion' => '2025-11-25', 'capabilities' => (object) [], 'clientInfo' => ['name' => 'Uploadiny test', 'version' => '1.0']])
             ->assertOk()->assertJsonPath('result.serverInfo.name', 'Uploadiny')->assertJsonPath('result.protocolVersion', '2025-11-25')->assertHeader('Cache-Control', 'no-store, private');
-        $response = $this->rpc('tools/list')->assertOk()->assertJsonCount(4, 'result.tools');
+        $response = $this->rpc('tools/list')->assertOk()->assertJsonCount(5, 'result.tools');
         $tools = $response->json('result.tools');
-        $this->assertSame(['list_projects', 'get_feedback', 'get_asset', 'get_recording_frames'], array_column($tools, 'name'));
-        foreach ($tools as $tool) {
+        $this->assertSame(['list_projects', 'get_feedback', 'get_asset', 'get_recording_frames', 'delete_chunk'], array_column($tools, 'name'));
+        foreach (array_slice($tools, 0, 4) as $tool) {
             $this->assertTrue($tool['annotations']['readOnlyHint']);
             $this->assertFalse($tool['annotations']['openWorldHint']);
         }
+        $this->assertFalse($tools[4]['annotations']['readOnlyHint']);
+        $this->assertTrue($tools[4]['annotations']['destructiveHint']);
+        $this->assertFalse($tools[4]['annotations']['openWorldHint']);
         $this->tool('delete_asset', ['asset_id' => 'arbitrary'])->assertStatus(400)->assertJsonPath('error.code', -32602);
     }
 
@@ -73,7 +76,7 @@ class McpServerTest extends TestCase
         $this->reader('mcp-current-protocol@example.test');
         $meta = ['io.modelcontextprotocol/protocolVersion' => '2026-07-28', 'io.modelcontextprotocol/clientCapabilities' => (object) []];
         $this->withHeaders(['MCP-Protocol-Version' => '2026-07-28', 'MCP-Method' => 'tools/list'])
-            ->rpc('tools/list', ['_meta' => $meta])->assertOk()->assertJsonCount(4, 'result.tools');
+            ->rpc('tools/list', ['_meta' => $meta])->assertOk()->assertJsonCount(5, 'result.tools');
         $this->withHeaders(['MCP-Protocol-Version' => '2026-07-28', 'MCP-Method' => 'tools/call'])
             ->rpc('tools/call', ['name' => 'list_projects', 'arguments' => (object) [], '_meta' => $meta])
             ->assertStatus(400)->assertJsonPath('error.code', -32020);

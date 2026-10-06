@@ -57,6 +57,30 @@ class WorkspaceDeletion
         });
     }
 
+    /** @return array{deleted_asset_ids: list<string>, chunk_deleted: bool} */
+    public function completedChunk(Project $project, UploadChunk $chunk): array
+    {
+        $deleted = [];
+        $chunkDeleted = false;
+        $this->remove(function () use ($project, $chunk, &$deleted, &$chunkDeleted): array {
+            $locked = UploadChunk::query()->lockForUpdate()->findOrFail($chunk->id);
+            abort_unless($locked->status === 'complete', 409, 'Only completed feedback chunks can be deleted through MCP.');
+            $images = $locked->images()->where('project_id', $project->id)->lockForUpdate()->orderBy('id')->get();
+            abort_if($images->isEmpty(), 404, 'This chunk has no assets in the selected project.');
+            $deleted = $images->pluck('uuid')->all();
+
+            return [$images, function () use ($locked, $images, &$chunkDeleted): void {
+                $locked->images()->whereKey($images->modelKeys())->delete();
+                if (! $locked->images()->exists()) {
+                    $locked->delete();
+                    $chunkDeleted = true;
+                }
+            }];
+        });
+
+        return ['deleted_asset_ids' => $deleted, 'chunk_deleted' => $chunkDeleted];
+    }
+
     private function remove(\Closure $operation): void
     {
         $disk = Storage::disk('local');

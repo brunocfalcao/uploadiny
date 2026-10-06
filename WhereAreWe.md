@@ -1,6 +1,26 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.2.0 candidate, not deployed
+## 2026-10-06 — v0.3.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.3.0 build 12. No mobile behavior change in this delta.
+- Added the destructive MCP tool `delete_chunk(project_canonical, chunk_id)`.
+  It uses the existing agent bearer key and deletes only assets in the selected
+  project and exact reviewed completed chunk, with their private files and
+  feedback. Assets moved elsewhere, newer uploads, and other chunks survive.
+  A shared chunk record remains until no project has assets in it.
+- File staging and database rollback reuse `WorkspaceDeletion`; deletion errors
+  never report successful cleanup. Draft cancellation remains unchanged.
+- The shared `do uploadiny` command now discovers project codes, inspects actual
+  screenshots and recording frames, implements requested feedback, and pins the
+  reviewed UUID for later explicit cleanup. Feedback is never deleted automatically.
+- Backoffice key guidance now names the MCP deletion capability. Existing keys
+  and stored token abilities remain compatible; agent REST access stays read-only.
+- No dependency upgrade, migration, or new environment variable is required.
+  Existing Laravel MCP 1.0.1 supports the added tool and destructive annotations.
+- Local verification includes deletion/access/rollback regression coverage and
+  HTTPS MCP smoke with disposable fixtures. Production proof belongs to shipping.
+
+## 2026-10-06 — v0.2.0 deployed via LIGHT
 
 - iOS 0.2.0 build 11 adds screenshot/recording previews, thumbnail and previous/
   next navigation, individual asset remarks, recording playback, and a refined
@@ -25,9 +45,14 @@
 - Preparation baseline: historical verified v0.1.5 at `9535c016`, deployed
   2026-10-04 with website/API health and signed iPhone 0.1.5 build 10 proof.
   Fresh physical Share Extension API proof was waived for that release.
-  No successful receipt exists yet in the new manual shipping workflow;
-  its duration and completion timestamp are not available. No receipt is
-  reconstructed from a tag.
+  Completed local receipt: v0.2.0 at `a214ef031e06a96f74d0b648b675d1f6f1454a00`,
+  2026-10-06 16:03:12 UTC, LIGHT, 854 seconds. The matching completed run records
+  website/API verification and signed physical iPhone 0.2.0 build 11 installation
+  and surviving process. Production HTTPS MCP tools, per-asset remarks, private
+  images, recording frames, and the vision queue passed. Initial SQLite
+  relocation completed; later FAST releases retain its stable physical path.
+  Browser, physical Share Sheet interaction, and provider connection acceptance
+  remain Bruno-owned. No backup or CI/CD ran.
 
 ## 2026-04-22 — DB removed, filesystem is the only source of truth
 
