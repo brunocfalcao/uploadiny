@@ -1,6 +1,19 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.9.1 candidate, not deployed
+## 2026-10-07 — v0.9.2 candidate, not deployed
+
+- Candidate iOS metadata: 0.9.2 build 20; no mobile behavior change.
+- Editor viewport: wheel and pinch zoom anchored at the pointer through the
+  existing `changeZoom`/`sizeCanvas` path; Space + drag pans `#canvas-stage`
+  without drawing, selecting or saving. Pointer mapping reads the canvas rect
+  per event, so marks stay aligned and new marks land correctly when zoomed.
+- No migration, dependency, or environment change.
+
+## 2026-10-06 — v0.9.1 deployed via FAST
+
+- Shipped `965d0ecc81` on 2026-10-06 at 21:54:15 UTC in 101 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.9.1
+  build 19 installation and launch.
 
 - Candidate iOS metadata: 0.9.1 build 19; no mobile behavior change.
 - `ProjectController::show` resolves `?image=` against the project's complete

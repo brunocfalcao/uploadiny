@@ -781,3 +781,5 @@ details.vision-section .vision-caption { display: none; }
 .file-actions > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 .file-actions[open] .vision-chevron { transform: rotate(180deg); }
 .file-actions .move-section:first-of-type { border-top: 0; padding-top: 8px; }
+.canvas-stage.pan-mode, .canvas-stage.pan-mode #annotation-canvas, .canvas-stage.pan-mode .canvas-frame * { cursor: grab !important; }
+.canvas-stage.pan-mode.panning, .canvas-stage.pan-mode.panning #annotation-canvas, .canvas-stage.pan-mode.panning .canvas-frame * { cursor: grabbing !important; }

@@ -499,15 +499,23 @@ if (workspace) {
         document.getElementById('zoom-in').disabled = zoom >= 4;
         calloutEditor.render();
     }
-    function changeZoom(next) {
+    function changeZoom(next, anchor = null) {
         if (!source || draft || eraseStart || calloutEditor.busy()) return;
-        const oldWidth = canvas.getBoundingClientRect().width;
+        const before = canvas.getBoundingClientRect();
         const centerX = stage.scrollLeft + stage.clientWidth / 2;
         const centerY = stage.scrollTop + stage.clientHeight / 2;
         fitView = false;
         zoom = Math.max(.1, Math.min(4, next));
         sizeCanvas();
-        const ratio = canvas.getBoundingClientRect().width / oldWidth;
+        const after = canvas.getBoundingClientRect();
+        if (anchor && before.width > 0 && before.height > 0) {
+            const fractionX = (anchor.x - before.left) / before.width;
+            const fractionY = (anchor.y - before.top) / before.height;
+            stage.scrollLeft = Math.max(0, stage.scrollLeft + after.left + fractionX * after.width - anchor.x);
+            stage.scrollTop = Math.max(0, stage.scrollTop + after.top + fractionY * after.height - anchor.y);
+            return;
+        }
+        const ratio = after.width / before.width;
         stage.scrollLeft = centerX * ratio - stage.clientWidth / 2;
         stage.scrollTop = centerY * ratio - stage.clientHeight / 2;
     }
@@ -515,6 +523,51 @@ if (workspace) {
     document.getElementById('zoom-in').addEventListener('click', () => changeZoom(zoom * 1.25));
     document.getElementById('zoom-fit').addEventListener('click', () => { if (!source || draft || eraseStart || calloutEditor.busy()) return; fitView = true; sizeCanvas(); stage.scrollTop = 0; stage.scrollLeft = 0; });
     new ResizeObserver(sizeCanvas).observe(stage);
+
+    stage.addEventListener('wheel', event => {
+        if (!source || !event.deltaY) return;
+        if (saving || navigating || transferring || draft || eraseStart || calloutEditor.busy() || panning) { if (event.ctrlKey) event.preventDefault(); return; }
+        event.preventDefault();
+        const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+        const delta = Math.max(-100, Math.min(100, event.deltaY * lines));
+        changeZoom(zoom * Math.exp(-delta * (event.ctrlKey ? .01 : .0025)), { x: event.clientX, y: event.clientY });
+    }, { passive: false });
+
+    const panHint = 'Hold Space and drag to move · scroll to zoom';
+    const hintElement = document.getElementById('canvas-tool-hint');
+    let panMode = false; let panning = null; let hintBeforePan = '';
+    function setPanMode(on) {
+        if (panMode === on) return;
+        panMode = on;
+        stage.classList.toggle('pan-mode', on);
+        if (on) { hintBeforePan = hintElement.textContent; hintElement.textContent = panHint; }
+        else { panning = null; stage.classList.toggle('panning', false); if (hintElement.textContent === panHint) hintElement.textContent = hintBeforePan; }
+    }
+    function startPan(event) {
+        if (panning || event.button !== 0 || saving || navigating || transferring) return;
+        event.preventDefault(); event.stopPropagation();
+        try { stage.setPointerCapture(event.pointerId); } catch { return; }
+        panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: stage.scrollLeft || 0, top: stage.scrollTop || 0 };
+        stage.classList.toggle('panning', true);
+    }
+    function endPan(event) { if (!panning || event.pointerId !== panning.pointerId) return; panning = null; stage.classList.toggle('panning', false); }
+    stage.addEventListener('pointerdown', event => { if (panMode && source) startPan(event); }, true);
+    stage.addEventListener('pointermove', event => {
+        if (!panning || event.pointerId !== panning.pointerId) return;
+        stage.scrollLeft = Math.max(0, panning.left - (event.clientX - panning.x));
+        stage.scrollTop = Math.max(0, panning.top - (event.clientY - panning.y));
+    });
+    stage.addEventListener('pointerup', endPan);
+    stage.addEventListener('pointercancel', endPan);
+    document.addEventListener('keydown', event => {
+        if (event.key !== ' ' || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+        if (!active || !source || dialog.open || draft || eraseStart || calloutEditor.busy()) return;
+        if (event.target?.closest?.('input,textarea,select,[contenteditable],[role=combobox],.callout-text')) return;
+        event.preventDefault();
+        setPanMode(true);
+    });
+    document.addEventListener('keyup', event => { if (event.key !== ' ' || !panMode) return; event.preventDefault(); setPanMode(false); });
+    window.addEventListener('blur', () => setPanMode(false));
 
     function commitStrokes(next) {
         ({ strokes, undo, redo } = commitDrawingHistory({ strokes, undo, redo }, next));
@@ -530,6 +583,7 @@ if (workspace) {
     canvas.addEventListener('pointerdown', event => {
         if (!source || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy() || event.button !== 0) return;
         event.preventDefault();
+        if (panMode) return;
         if (tool === 'callout') { calloutEditor.place(event); return; }
         if (tool === 'select') {
             const point = positionOnCanvas(event, canvas);

@@ -142,17 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.9.1`, candidate, not deployed. Its iOS marketing
-version is `0.9.1`; this release build is `19` (no mobile behavior change).
-Reloading a project page with `?image=<uuid>` now server-renders the editor
-directly, so the upload list no longer flashes before the editor opens.
-Opening a file focuses its title instead of the Back button, so Space no
-longer leaves the editor, and the feedback sidebar fits without scrolling
-(collapsible image context and move/copy actions, shorter feedback box).
+The release candidate is `v0.9.2`, candidate, not deployed. Its iOS marketing
+version is `0.9.2`; this release build is `20` (no mobile behavior change). In
+the editor the mouse wheel (or trackpad pinch) zooms around the pointer, and
+holding Space while dragging pans the zoomed image; annotations stay aligned
+and new marks map to the correct image coordinates at any zoom.
 
-The previous release, `v0.9.0` (`e630a0c297`), completed FAST shipping on
-6 October 2026 at 21:39:16 UTC in 94 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.9.0 build 18
+The previous release, `v0.9.1` (`965d0ecc81`), completed FAST shipping on
+6 October 2026 at 21:54:15 UTC in 101 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.9.1 build 19
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

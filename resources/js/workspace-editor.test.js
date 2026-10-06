@@ -593,3 +593,74 @@ test('opening a file focuses its title, not the Back button, so Space cannot lea
     ui.key(' ', ui.document.activeElement, { metaKey: false });
     assert.equal(ui.node('editor').hidden, false);
 });
+
+function viewport(ui) {
+    const stage = ui.node('canvas-stage'); const canvas = ui.node('annotation-canvas');
+    stage.scrollLeft = 0; stage.scrollTop = 0;
+    canvas.getBoundingClientRect = () => { const width = parseFloat(canvas.style.width); return { left: 100 - stage.scrollLeft, top: 50 - stage.scrollTop, width, height: width * 0.75 }; };
+    const rect = () => canvas.getBoundingClientRect();
+    const percent = () => parseInt(ui.node('canvas-zoom').textContent, 10);
+    const wheel = (properties = {}) => stage.emit('wheel', { deltaY: -100, deltaMode: 0, ctrlKey: false, clientX: 420, clientY: 290, ...properties });
+    const draw = (from, to, pointerId = 1) => { canvas.emit('pointerdown', { button: 0, clientX: from[0], clientY: from[1], pointerId }); canvas.emit('pointermove', { clientX: to[0], clientY: to[1], pointerId }); canvas.emit('pointerup', { clientX: to[0], clientY: to[1], pointerId }); };
+    return { stage, canvas, rect, percent, wheel, draw };
+}
+
+test('mouse wheel and pinch zoom keep the point under the pointer, and marks keep their image coordinates', async t => {
+    const ui = workspace(t); await ui.open(); const view = viewport(ui);
+    assert.equal(view.percent(), 100);
+    view.draw([420, 290], [260, 170]);
+    const wheeled = view.wheel();
+    assert.equal(wheeled.defaultPrevented, true);
+    assert.ok(view.percent() > 100);
+    const rect = view.rect();
+    assert.ok(Math.abs(rect.left + 0.5 * rect.width - 420) < 0.01 && Math.abs(rect.top + 0.5 * rect.height - 290) < 0.01);
+    view.draw([420, 290], [rect.left + 0.1 * rect.width, rect.top + 0.2 * rect.height], 2);
+    await ui.autosave();
+    const [first, second] = ui.assets.one.annotations;
+    assert.deepEqual(first.points[0], { x: 0.5, y: 0.5 }); assert.deepEqual(first.points.at(-1), { x: 0.25, y: 0.25 });
+    assert.ok(Math.abs(second.points[0].x - 0.5) < 1e-9 && Math.abs(second.points.at(-1).x - 0.1) < 1e-9 && Math.abs(second.points.at(-1).y - 0.2) < 1e-9);
+    assert.equal(second.width, first.width);
+    const before = view.percent();
+    const pinch = view.wheel({ ctrlKey: true, deltaY: 10 });
+    assert.equal(pinch.defaultPrevented, true); assert.ok(view.percent() < before);
+    for (let i = 0; i < 80; i++) view.wheel();
+    assert.equal(view.percent(), 400); assert.ok(view.stage.scrollLeft >= 0 && view.stage.scrollTop >= 0);
+    for (let i = 0; i < 200; i++) view.wheel({ deltaY: 100 });
+    assert.equal(view.percent(), 10);
+    assert.equal(ui.node('zoom-out').disabled, true);
+});
+
+test('wheel is ignored while a stroke is being drawn and when no image is loaded', async t => {
+    const ui = workspace(t); await ui.open(); const view = viewport(ui);
+    view.canvas.emit('pointerdown', { button: 0, clientX: 300, clientY: 200, pointerId: 1 });
+    const event = view.wheel();
+    assert.equal(view.percent(), 100); assert.equal(event.defaultPrevented, false);
+    view.canvas.emit('pointerup', { clientX: 300, clientY: 200, pointerId: 1 });
+    view.wheel(); assert.ok(view.percent() > 100);
+});
+
+test('holding Space pans the zoomed image instead of drawing, and Space still types in text fields', async t => {
+    const ui = workspace(t); await ui.open(); const view = viewport(ui);
+    view.wheel(); const zoomed = view.percent();
+    const hint = ui.node('canvas-tool-hint'); hint.textContent = 'Pen: draw freely on the image.';
+    const space = ui.key(' ', ui.document.activeElement, { metaKey: false });
+    assert.equal(ui.document.activeElement, ui.node('editor-name'));
+    assert.equal(space.defaultPrevented, true); assert.equal(ui.node('editor').hidden, false);
+    assert.equal(hint.textContent, 'Hold Space and drag to move · scroll to zoom');
+    const stage = view.stage; const left = stage.scrollLeft; const top = stage.scrollTop;
+    stage.emit('pointerdown', { button: 0, clientX: 300, clientY: 300, pointerId: 4 });
+    view.canvas.emit('pointerdown', { button: 0, clientX: 300, clientY: 300, pointerId: 4 });
+    stage.emit('pointermove', { clientX: 250, clientY: 280, pointerId: 4 });
+    assert.equal(stage.scrollLeft, left + 50); assert.equal(stage.scrollTop, top + 20);
+    stage.emit('pointerup', { clientX: 250, clientY: 280, pointerId: 4 });
+    stage.emit('pointermove', { clientX: 0, clientY: 0, pointerId: 4 });
+    assert.equal(stage.scrollLeft, left + 50);
+    await ui.autosave(); assert.equal(ui.writes.length, 0); assert.equal(view.percent(), zoomed);
+    ui.document.emit('keyup', { key: ' ' });
+    assert.equal(hint.textContent, 'Pen: draw freely on the image.');
+    view.draw([300, 300], [200, 200], 5); await ui.autosave();
+    assert.equal(ui.assets.one.annotations.length, 1);
+    const feedback = ui.node('image-comments'); feedback.focus();
+    assert.equal(ui.key(' ', feedback, { metaKey: false }).defaultPrevented, false);
+    assert.equal(hint.textContent, 'Pen: draw freely on the image.');
+});
