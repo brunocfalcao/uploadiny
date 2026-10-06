@@ -21,6 +21,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private let spinner = UIActivityIndicatorView(style: .medium)
   private let uploadProgress = UIProgressView(progressViewStyle: .default)
   private weak var currentUploadTask: URLSessionTask?
+  private var autoCloseTimer: Timer?
   private var uploadTotalBytes: Int64 = 0
   private var uploadDoneBytes: Int64 = 0
   private var currentFileBytes: Int64 = 0
@@ -1228,7 +1229,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.spinner.isHidden = true
         let projectName = self.selectedProject?.name ?? "project"
         self.titleLabel.text = merged ? "Added to the last upload in \(projectName)" : "Uploaded to \(projectName)"
-        self.detailLabel.text = shared.prefix(3).map { $0.name }.joined(separator: "\n") + (shared.count > 3 ? "\n+ \(shared.count - 3) more files" : "") + "\nTap anywhere to close"
+        let sharedSummary = shared.prefix(3).map { $0.name }.joined(separator: "\n") + (shared.count > 3 ? "\n+ \(shared.count - 3) more files" : "")
+        self.detailLabel.text = sharedSummary + "\nClosing in 5… tap to close now"
         self.titleLabel.textAlignment = .center
         self.detailLabel.textAlignment = .center
         self.closeButton.accessibilityLabel = "Done"
@@ -1237,6 +1239,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.preview.isHidden = thumbnail == nil
         self.canDismiss = true
         self.preferredContentSize = CGSize(width: 0, height: thumbnail == nil ? 300 : 680)
+        self.startAutoClose(summary: sharedSummary)
       }
     }.resume()
   }
@@ -1316,8 +1319,27 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     temporaryURLs.removeAll()
   }
 
+  private func startAutoClose(summary: String, seconds: Int = 5) {
+    autoCloseTimer?.invalidate()
+    var remaining = seconds
+    let timer = Timer(timeInterval: 1, repeats: true) { [weak self] timer in
+      guard let self, !self.didClose, self.canDismiss else { timer.invalidate(); return }
+      remaining -= 1
+      if remaining <= 0 {
+        timer.invalidate()
+        self.closeExtension()
+        return
+      }
+      self.detailLabel.text = summary + "\nClosing in \(remaining)… tap to close now"
+    }
+    autoCloseTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+  }
+
   @objc private func closeExtension() {
     guard !didClose else { return }
+    autoCloseTimer?.invalidate()
+    autoCloseTimer = nil
     didClose = true
     view.endEditing(true)
     previewGenerator?.cancelAllCGImageGeneration()

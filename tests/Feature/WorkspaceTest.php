@@ -199,6 +199,43 @@ class WorkspaceTest extends TestCase
         $this->get(route('projects.show', $project))->assertOk()->assertSee(sprintf('data-latest="%s" data-latest-completed="%s" data-latest-count="3"', $merged['id'], $merged['completed_at']), false);
     }
 
+    public function test_the_add_to_last_upload_switch_shows_only_when_the_project_has_an_upload(): void
+    {
+        $this->prepare();
+        $project = Project::factory()->create(['slug' => 'switch-taxiny']);
+        $empty = $this->get(route('projects.show', $project))->assertOk()
+            ->assertSee('id="append-to-last"', false)->assertSee('Add to the last upload');
+        $this->assertMatchesRegularExpression('/id="append-row"\s+hidden/', $empty->getContent());
+
+        $first = $this->upload($project, 2)->assertCreated();
+        $page = $this->get(route('projects.show', $project))->assertOk()
+            ->assertSee('id="append-target"', false)->assertSee('Last upload: 2 files')
+            ->assertSee(sprintf('data-latest="%s"', $first->json('id')), false);
+        $this->assertDoesNotMatchRegularExpression('/id="append-row"\s+hidden/', $page->getContent());
+        $this->get(route('projects.index'))->assertOk()->assertDontSee('id="append-to-last"', false);
+    }
+
+    public function test_the_browser_session_can_add_files_to_the_last_upload(): void
+    {
+        $this->prepare();
+        $project = Project::factory()->create(['slug' => 'browser-append']);
+        $older = $this->upload($project, 2)->assertCreated()->json('id');
+        $this->travel(5)->minutes();
+        $newer = $this->upload($project, 1)->assertCreated()->json('id');
+        $this->travel(5)->minutes();
+
+        $draft = $this->postJson(route('chunks.start', $project), ['image_count' => 2, 'append_to' => $older])->assertCreated()->json('id');
+        foreach (['a', 'b'] as $name) {
+            $this->postJson(route('chunks.append', $draft), ['file' => UploadedFile::fake()->image("{$name}.png", 30, 20)])->assertCreated();
+        }
+        $this->postJson(route('chunks.complete', $draft))->assertOk()->assertJsonPath('id', $older);
+
+        $this->assertSame(4, UploadChunk::query()->where('uuid', $older)->firstOrFail()->images()->count());
+        $this->assertSame(1, UploadChunk::query()->where('uuid', $newer)->firstOrFail()->images()->count());
+        $this->assertSame(0, UploadChunk::query()->where('uuid', $draft)->count());
+        $this->getJson(route('projects.last-chunk', $project))->assertJsonPath('chunk.id', $older)->assertJsonPath('chunk.file_count', 4);
+    }
+
     public function test_invalid_groups_are_rejected_before_any_file_or_chunk_is_saved(): void
     {
         $this->prepare();

@@ -5,11 +5,17 @@ import { runInNewContext } from 'node:vm';
 import * as drawing from './drawing.js';
 import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
+import { appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function workspace(t, search = '') {
+function memoryStorage(initial = {}) {
+    const data = { ...initial };
+    return { getItem: key => data[key] ?? null, setItem: (key, value) => { data[key] = String(value); }, data };
+}
+
+function workspace(t, search = '', storage = memoryStorage()) {
     const previousDocument = globalThis.document;
     const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0; const popstate = []; const urlCalls = [];
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
@@ -49,14 +55,14 @@ function workspace(t, search = '') {
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
     const cards = () => node('chunk-list').children.length ? node('chunk-list').children : [card];
     document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : [];
-    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk' });
+    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', upload_url: '/projects/1/chunks/start' });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
-    const writes = []; const deletions = []; const duplicates = []; let respond = async () => {};
+    const writes = []; const starts = []; const deletions = []; const duplicates = []; let respond = async () => {};
     globalThis.document = document;
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
-        ...drawing, createCalloutEditor, drawingShortcutAction, document,
+        ...drawing, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
         enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams,
@@ -82,6 +88,7 @@ function workspace(t, search = '') {
                 if (remote.pageResponse) return remote.pageResponse();
                 return { ok: true, text: async () => '<html></html>' };
             }
+            if (url === '/projects/1/chunks/start') { starts.push(JSON.parse(options.body)); return { ok: true, status: 201, json: async () => ({ id: 'draft-1' }) }; }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
             const id = url.split('/')[2];
             if (options.method === 'POST' && url.endsWith('/duplicate')) {
@@ -102,7 +109,7 @@ function workspace(t, search = '') {
     });
     return {
         where, urlCalls, async pop(search) { where.search = search; for (const listener of popstate) listener({}); await tick(); await tick(); },
-        node, assets, writes, deletions, duplicates, document, tool, selectTool, remote, timers,
+        node, assets, writes, starts, storage, deletions, duplicates, document, tool, selectTool, remote, timers,
         get reloads() { return reloads; },
         async poll() { intervals[0](); await tick(); },
         arrive(id = 'chunk-two', count = 1) {
@@ -111,6 +118,7 @@ function workspace(t, search = '') {
             remote.page = { cards: [fresh], dataset: { latest: id, latestCompleted: 't2', latestCount: String(count) } };
             return fresh;
         },
+        async uploadFiles() { const input = node('image-input'); input.files = [{ name: 'shot.png', size: 10 }]; input.emit('change'); await tick(); await tick(); await tick(); },
         async open() { card.click(); await tick(); assert.equal(node("editor-name").textContent, "one", node("workspace-message").textContent); assert.equal(node("annotation-canvas").hidden, false, node("workspace-message").textContent); },
         async settle() { await tick(); },
         async autosave() { const pending = [...timers.values()]; timers.clear(); for (const callback of pending) callback(); await tick(); },
@@ -663,4 +671,67 @@ test('holding Space pans the zoomed image instead of drawing, and Space still ty
     const feedback = ui.node('image-comments'); feedback.focus();
     assert.equal(ui.key(' ', feedback, { metaKey: false }).defaultPrevented, false);
     assert.equal(hint.textContent, 'Pen: draw freely on the image.');
+});
+
+test('append helpers: preference defaults ON, remembers OFF, survives broken storage', () => {
+    assert.equal(readAppendPreference(memoryStorage()), true);
+    assert.equal(readAppendPreference(memoryStorage({ 'uploadiny.appendToLast': '0' })), false);
+    assert.equal(readAppendPreference(memoryStorage({ 'uploadiny.appendToLast': '1' })), true);
+    assert.equal(readAppendPreference({ getItem() { throw new Error('blocked'); } }), true);
+    const store = memoryStorage();
+    writeAppendPreference(store, false); assert.equal(store.data['uploadiny.appendToLast'], '0');
+    writeAppendPreference(store, true); assert.equal(store.data['uploadiny.appendToLast'], '1');
+    assert.doesNotThrow(() => writeAppendPreference({ setItem() { throw new Error('blocked'); } }, false));
+    assert.equal(appendTarget(true, 'chunk-one'), 'chunk-one');
+    assert.equal(appendTarget(false, 'chunk-one'), null);
+    assert.equal(appendTarget(true, ''), null);
+});
+
+test('append caption reads Today, Yesterday or a short date with 24h time', () => {
+    const now = new Date(2026, 9, 7, 12, 0);
+    assert.equal(formatLastUpload(new Date(2026, 9, 7, 23, 41).toISOString(), 3, now, 'en-GB'), 'Last upload: Today 23:41 · 3 files');
+    assert.equal(formatLastUpload(new Date(2026, 9, 6, 9, 10).toISOString(), 1, now, 'en-GB'), 'Last upload: Yesterday 09:10 · 1 file');
+    assert.equal(formatLastUpload(new Date(2026, 9, 3, 18, 5).toISOString(), 2, now, 'en-GB'), 'Last upload: 3 Oct 18:05 · 2 files');
+    assert.equal(formatLastUpload('', 4, now, 'en-GB'), 'Last upload: 4 files');
+});
+
+test('upload asks to join the last upload when the switch is ON, pinned at start', async t => {
+    const ui = workspace(t);
+    assert.equal(ui.node('append-to-last').checked, true);
+    await ui.uploadFiles();
+    assert.deepEqual(ui.starts, [{ image_count: 1, append_to: 'chunk-one' }]);
+});
+
+test('upload stays a new upload when the switch is OFF, and the choice is remembered', async t => {
+    const ui = workspace(t);
+    ui.node('append-to-last').checked = false; ui.node('append-to-last').emit('change');
+    assert.equal(ui.storage.data['uploadiny.appendToLast'], '0');
+    await ui.uploadFiles();
+    assert.deepEqual(ui.starts, [{ image_count: 1 }]);
+    const later = workspace(t, '', memoryStorage({ 'uploadiny.appendToLast': '0' }));
+    assert.equal(later.node('append-to-last').checked, false);
+});
+
+test('upload has no append_to when no upload exists, and the row hides and follows refreshes', async t => {
+    const ui = workspace(t);
+    assert.equal(ui.node('append-row').hidden, false);
+    assert.equal(ui.node('append-target').textContent, 'Last upload: 3 files');
+    ui.arrive('chunk-two', 1);
+    await ui.poll();
+    assert.equal(ui.node('append-target').textContent, 'Last upload: 1 file');
+    ui.remote.page = { cards: [], dataset: { latest: '', latestCompleted: '', latestCount: '' } };
+    ui.remote.chunk = null;
+    await ui.poll();
+    assert.equal(ui.node('append-row').hidden, true);
+    await ui.uploadFiles();
+    assert.deepEqual(ui.starts, [{ image_count: 1 }]);
+});
+
+test('a browser that blocks storage still uploads and defaults the switch on', async t => {
+    const blocked = { getItem() { throw new Error('SecurityError'); }, setItem() { throw new Error('SecurityError'); } };
+    const ui = workspace(t, '', blocked);
+    assert.equal(ui.node('append-to-last').checked, true);
+    ui.node('append-to-last').checked = false; ui.node('append-to-last').emit('change');
+    await ui.open();
+    assert.equal(ui.node('editor').hidden, false);
 });

@@ -1,6 +1,21 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.9.4 candidate, not deployed
+## 2026-10-07 — v0.10.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.10.0 build 23. The Share Extension success screen
+  shows "Closing in N…" and closes after 5 seconds; error screens never
+  auto-close. Device acceptance pending.
+- Website: "Add to the last upload" switch under the drop zone (localStorage
+  `uploadiny.appendToLast`, default on) sends `append_to` for paste, drop and
+  file picking; caption tracks the latest chunk through auto-refresh.
+- No migration, dependency, or environment change.
+
+## 2026-10-07 — v0.9.4 deployed via FAST
+
+- Shipped `2064a717b9` on 2026-10-06; the first run stopped at the release
+  fixture cleanup and `uploadiny-ship resume` completed it at 22:27:17 UTC.
+  The completed receipt records website/API verification and signed iPhone
+  0.9.4 build 22 installation and launch; no fixtures remained.
 
 - Candidate iOS metadata: 0.9.4 build 22; no mobile behavior change.
 - Paste upload: `clipboardFiles` reads `clipboardData.files`, falls back to

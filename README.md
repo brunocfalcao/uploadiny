@@ -142,14 +142,16 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.9.4`, candidate, not deployed. Its iOS marketing
-version is `0.9.4`; this release build is `22` (no mobile behavior change).
-Pasting an image with ⌘V on a project's upload list now also reads clipboard
-items (Safari) and names generic pasted screenshots `pasted-<time>.<ext>`.
+The release candidate is `v0.10.0`, candidate, not deployed. Its iOS
+marketing version is `0.10.0`; this release build is `23`. The website upload
+area gains an "Add to the last upload" switch (on by default, remembered per
+browser) covering paste, drag-and-drop and file picking. The Share Extension's
+success screen counts down and closes itself after 5 seconds; error screens
+stay open.
 
-The previous release, `v0.9.3` (`1534a3e1ad`), completed FAST shipping on
-6 October 2026 at 22:14:16 UTC in 106 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.9.3 build 21
-installation and launch. Manual browser, Share Sheet, and provider-client
-acceptance remain separate.
+The previous release, `v0.9.4` (`2064a717b9`), completed FAST shipping on
+6 October 2026 at 22:27:17 UTC after a resumed run. Its local completed
+receipt records website/API verification and signed physical iPhone 0.9.4
+build 22 installation and launch. Manual browser, Share Sheet, and
+provider-client acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

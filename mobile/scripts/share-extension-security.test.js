@@ -71,3 +71,16 @@ test('the signed extension receives no embedded credential or build-time credent
   assert.match(deploy, /plutil -extract UploadinyUploadToken raw/);
   assert.match(deploy, /https:\/\/uploadiny\.com\/api/);
 });
+
+test('only a confirmed upload closes the share sheet automatically; errors stay on screen', () => {
+  const swift = fs.readFileSync(path.join(__dirname, '../native/ShareIntoViewController.swift'), 'utf8');
+  const calls = swift.match(/self\.startAutoClose\(summary:/g) || [];
+  assert.equal(calls.length, 1);
+  const success = swift.indexOf('self.canDismiss = true');
+  assert.ok(success > 0 && swift.indexOf('self.startAutoClose(summary:') > success);
+  const start = swift.indexOf('private func showError');
+  const showError = swift.slice(start, swift.indexOf('\n  private func ', start + 1) > 0 ? swift.indexOf('\n  private func ', start + 1) : undefined);
+  assert.ok(showError.length > 100);
+  assert.doesNotMatch(showError, /startAutoClose|canDismiss = true/);
+  assert.match(swift, /autoCloseTimer\?\.invalidate\(\)[\s\S]{0,80}didClose = true/);
+});

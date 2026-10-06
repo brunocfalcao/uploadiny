@@ -69,6 +69,15 @@
                 <span class="drop-button" aria-hidden="true">Choose files</span>
                 <p class="drop-formats">PNG · JPG · GIF · WebP · BMP · MP4 · MOV · up to 95 MB each</p>
             </div>
+            @php($latestChunk = $chunks->first())
+            <div class="append-row" id="append-row" @if(! $latestChunk) hidden @endif>
+                <label class="append-switch" for="append-to-last">
+                    <input type="checkbox" id="append-to-last" role="switch" aria-describedby="append-target" checked>
+                    <span class="append-track" aria-hidden="true"><span class="append-knob"></span></span>
+                    <span class="append-label">Add to the last upload</span>
+                </label>
+                <span class="append-caption" id="append-target">@if($latestChunk)Last upload: {{ $latestChunk->images->count() }} {{ Str::plural('file', $latestChunk->images->count()) }}@endif</span>
+            </div>
             <div id="upload-progress" role="status" hidden><label>Uploading feedback <progress max="100" value="0"></progress><span></span></label></div>
             <div id="chunk-list">
             @if($chunks->isNotEmpty())

@@ -1,6 +1,7 @@
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
 import { clipboardFiles } from './clipboard-files';
+import { appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference } from './append-to-last';
 enhanceAgentAccess();
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
@@ -154,6 +155,22 @@ if (workspace) {
         event.preventDefault();
         upload(files);
     });
+    const appendSwitch = document.getElementById('append-to-last');
+    const appendRow = document.getElementById('append-row');
+    const appendCaption = document.getElementById('append-target');
+    if (appendSwitch) {
+        let preferenceStore = null;
+        try { preferenceStore = localStorage; } catch { preferenceStore = null; }
+        appendSwitch.checked = readAppendPreference(preferenceStore);
+        appendSwitch.addEventListener('change', () => writeAppendPreference(preferenceStore, appendSwitch.checked));
+    }
+    function syncAppendTarget() {
+        if (!appendRow) return;
+        const latest = workspace.dataset.latest ?? '';
+        appendRow.hidden = !latest;
+        if (appendCaption) appendCaption.textContent = latest ? formatLastUpload(workspace.dataset.latestCompleted, workspace.dataset.latestCount) : '';
+    }
+    syncAppendTarget();
     async function upload(files) {
         if (!files.length || loading) return;
         if (files.some(file => /\.(heic|heif|tiff?)$/i.test(file.name))) { notify('Use JPEG, PNG, WebP, GIF or BMP here. The iPhone share button converts HEIC photos automatically.', true); return; }
@@ -161,6 +178,7 @@ if (workspace) {
         if (oversized) { notify(`${oversized.name} is larger than 95 MB. Trim or compress it before uploading.`, true); return; }
         if (active) { calloutEditor.finishText(); if (dirty && !await saveFeedback()) return; if (!leaveEditor()) return; }
         loading = true;
+        const appendTo = appendTarget(Boolean(appendSwitch?.checked), workspace.dataset.latest);
         let chunkId = null;
         const progress = document.getElementById('upload-progress');
         progress.hidden = false;
@@ -172,7 +190,7 @@ if (workspace) {
             progress.querySelector('span').textContent = `${index + 1} / ${files.length} · ${percent}%`;
         }
         try {
-            const draft = await request(config.upload_url, { method: 'POST', body: JSON.stringify({ image_count: files.length }) });
+            const draft = await request(config.upload_url, { method: 'POST', body: JSON.stringify(appendTo ? { image_count: files.length, append_to: appendTo } : { image_count: files.length }) });
             chunkId = draft.id;
             uploadingChunk = chunkId;
             for (let index = 0; index < files.length; index++) {
@@ -764,6 +782,7 @@ if (workspace) {
         const nav = document.querySelector('.project-nav'); const nextNav = page.querySelector('.project-nav');
         if (nav && nextNav) nav.replaceChildren(...nextNav.childNodes);
         for (const key of ['latest', 'latestCompleted', 'latestCount']) workspace.dataset[key] = next.dataset[key] ?? '';
+        syncAppendTarget();
         chunkGroups = readChunkGroups();
         bindGallery();
         enhanceRecordingPreviews(current);

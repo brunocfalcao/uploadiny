@@ -792,3 +792,14 @@ details.vision-section .vision-caption { display: none; }
 .button-danger:hover { background: #fdecef; border-color: #eba3b0; }
 @media (min-width: 1101px) { .editor-header { grid-template-columns: minmax(0,1fr) clamp(340px, 26vw, 440px); } .editor-actions { justify-content: flex-start; } }
 @media (max-width: 760px) { .editor-header { grid-template-columns: minmax(0,1fr); } .editor-title-row { flex-wrap: wrap; } .editor-actions { justify-content: flex-start; } }
+.append-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
+.append-switch { position: relative; display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; font-weight: 600; color: var(--ink-2, #263448); cursor: pointer; }
+.append-switch input { position: absolute; opacity: 0; width: 34px; height: 20px; margin: 0; padding: 0; cursor: pointer; }
+.append-track { position: relative; flex-shrink: 0; width: 34px; height: 20px; border-radius: 999px; background: #bdc6d4; transition: background 150ms ease-out; }
+.append-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(24, 35, 55, .3); transition: transform 150ms ease-out; }
+.append-switch input:checked + .append-track { background: var(--accent); }
+.append-switch input:checked + .append-track .append-knob { transform: translateX(14px); }
+.append-switch input:focus-visible + .append-track { outline: 3px solid #8299ff; outline-offset: 3px; }
+.append-label { font-size: 13px; }
+.append-caption { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .append-track, .append-knob { transition: none; } }
