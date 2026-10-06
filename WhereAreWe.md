@@ -1,6 +1,22 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.5.0 candidate, not deployed
+## 2026-10-06 — v0.6.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.6.0 build 15. No mobile behavior change.
+- Editor ink: five quick colours, a hue/lightness gradient strip (click, drag
+  or arrow keys), the native colour picker behind a rainbow ring, and a hex
+  code field; all stay in sync and recolour a selected annotation.
+- Drawing tools fit one row on laptop widths (icons with names on hover);
+  wide screens keep labels.
+- Empty workspace shows a centred "No projects yet" card with an animated
+  illustration and a "Create your first project" button.
+- No migration, dependency, or environment change.
+
+## 2026-10-06 — v0.5.0 deployed via FAST
+
+- Shipped `4f444267dc` on 2026-10-06 at 19:41:55 UTC in 108 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.5.0
+  build 14 installation and launch.
 
 - Candidate iOS metadata: 0.5.0 build 14. The app home screen and Share
   Extension use the light studio palette; physical-device review is pending.

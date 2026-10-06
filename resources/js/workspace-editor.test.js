@@ -26,7 +26,7 @@ function workspace(t) {
         click() { if (!this.disabled) this.emit('click'); }
         focus() { document.activeElement?.blur(); document.activeElement = this; this.emit('focus'); }
         blur() { if (document.activeElement === this) { document.activeElement = null; this.emit('blur'); } }
-        closest(selector) { return (selector === '.callout-text' && this.className === 'callout-text') || (selector.includes('textarea') && this.tagName === 'textarea') ? this : null; }
+        closest(selector) { return (selector === '.callout-text' && this.className === 'callout-text') || (selector.includes('textarea') && this.tagName === 'textarea') || (selector.startsWith('input,') && this.tagName === 'input') ? this : null; }
         append(...children) { this.children.push(...children); }
         replaceChildren(...children) { this.children = children; }
         setAttribute() {} removeAttribute() {} toggleAttribute() {} setPointerCapture() {}
@@ -35,7 +35,7 @@ function workspace(t) {
         toDataURL() { return 'data:image/png;base64,snapshot'; }
         pause() {} load() {}
     }
-    const node = id => { if (!nodes.has(id)) nodes.set(id, new Element(id, id === 'image-comments' ? 'textarea' : 'div')); return nodes.get(id); };
+    const node = id => { if (!nodes.has(id)) nodes.set(id, new Element(id, id === 'image-comments' ? 'textarea' : id === 'drawing-color-hex' ? 'input' : 'div')); return nodes.get(id); };
     const document = new Element(); document.getElementById = node; document.createElement = tag => new Element('', tag);
     const card = new Element(); card.dataset = { chunkImages: '["one","two","three"]', openImage: 'one', chunk: 'chunk-one' };
     const tool = new Element(); tool.dataset.tool = 'callout';
@@ -43,7 +43,7 @@ function workspace(t) {
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
     document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? [card] : selector === '[data-tool]' ? [selectTool, tool] : [];
     node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, latest_url: null });
-    node('drawing-color').value = '#ef4444'; node('drawing-width').value = '6';
+    node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
     const writes = []; const deletions = []; let respond = async () => {};
     globalThis.document = document;
@@ -256,6 +256,48 @@ test('Delete and Backspace leave marks alone while typing in feedback or a note'
     assert.deepEqual(ui.assets.one.annotations, []);
 });
 
+test('hex field applies a valid colour to the next stroke and the selected note, and syncs', async t => {
+    const ui = workspace(t); await ui.open(); const field = ui.annotate('Tint me'); await ui.autosave();
+    ui.tool.click();
+    ui.node('annotation-canvas').emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 3 });
+    const hex = ui.node('drawing-color-hex'); hex.value = 'ABC'; hex.emit('change');
+    assert.equal(ui.node('drawing-color').value, '#aabbcc');
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].color, '#aabbcc');
+    hex.value = '12ff00'; hex.emit('keydown', { key: 'Enter' });
+    assert.equal(ui.node('drawing-color').value, '#12ff00');
+    hex.blur(); assert.equal(hex.value, '#12ff00');
+});
+
+test('gradient strip applies the colour under the pointer, syncs the hex field and keeps arrows away from shortcuts', async t => {
+    const ui = workspace(t); await ui.open();
+    const strip = ui.node('color-gradient'); strip.emit('pointerdown', { button: 0, clientX: 320, clientY: 120, pointerId: 5 });
+    assert.equal(ui.node('drawing-color').value, '#80ffff'); assert.equal(ui.node('drawing-color-hex').value, '#80ffff');
+    strip.emit('pointermove', { clientX: 0, clientY: 240, pointerId: 5 });
+    assert.equal(ui.node('drawing-color').value, '#ff0000');
+    strip.emit('pointerup', { pointerId: 5 }); strip.emit('pointermove', { clientX: 320, clientY: 240, pointerId: 5 });
+    assert.equal(ui.node('drawing-color').value, '#ff0000');
+    for (const extra of [{}, { metaKey: false }]) assert.equal(ui.key('ArrowRight', strip, extra).defaultPrevented, true);
+    assert.notEqual(ui.node('drawing-color').value, '#ff0000');
+});
+
+test('invalid hex keeps the previous colour and blur restores the field', async t => {
+    const ui = workspace(t); await ui.open();
+    const hex = ui.node('drawing-color-hex'); hex.focus();
+    for (const bad of ['#12', 'ggg', '#1234567', '']) { hex.value = bad; hex.emit('change'); hex.emit('keydown', { key: 'Enter' }); assert.equal(ui.node('drawing-color').value, '#ef4444'); }
+    hex.blur(); assert.equal(hex.value, '#ef4444');
+});
+
+test('Backspace in the hex field does not delete a selected mark', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Keep me'); await ui.autosave();
+    ui.selectTool.click();
+    ui.node('annotation-canvas').emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 3 });
+    const hex = ui.node('drawing-color-hex');
+    for (const key of ['Delete', 'Backspace']) assert.equal(ui.key(key, hex, { metaKey: false }).defaultPrevented, false);
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations.length, 1);
+});
+
 test('dragging the note frame moves only the note and autosaves the new position', async t => {
     const ui = workspace(t); await ui.open(); ui.annotate('Move me');
     await ui.autosave();
@@ -269,4 +311,19 @@ test('dragging the note frame moves only the note and autosaves the new position
     assert.deepEqual(after.slice(0, 2), before.slice(0, 2));
     assert.ok(after[2].x > before[2].x && after[2].y > before[2].y);
     assert.equal(ui.assets.one.annotations[0].text, 'Move me');
+});
+
+test('dragging across the gradient recolours a selected note in one undo step', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Recolour me'); await ui.autosave();
+    ui.tool.click();
+    ui.node('annotation-canvas').emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 3 });
+    const original = ui.assets.one.annotations[0].color;
+    const strip = ui.node('color-gradient');
+    strip.emit('pointerdown', { button: 0, clientX: 320, clientY: 120, pointerId: 5 });
+    for (const x of [40, 120, 200, 0]) strip.emit('pointermove', { clientX: x, clientY: 240, pointerId: 5 });
+    strip.emit('pointerup', { pointerId: 5 });
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].color, '#ff0000');
+    ui.node('undo-drawing').click(); await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].color, original);
 });

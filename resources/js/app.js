@@ -74,6 +74,10 @@ if (workspace) {
     });
     const stage = document.getElementById('canvas-stage');
     const ink = document.getElementById('drawing-color');
+    const hexField = document.getElementById('drawing-color-hex');
+    const gradient = document.getElementById('color-gradient');
+    const gradientThumb = document.getElementById('color-gradient-thumb');
+    let gradientPick = null;
     const thickness = document.getElementById('drawing-width');
     const message = document.getElementById('workspace-message');
     const comments = document.getElementById('image-comments');
@@ -360,11 +364,66 @@ if (workspace) {
         preview.style.height = `${thickness.value}px`;
         preview.style.backgroundColor = ink.value;
         document.getElementById('drawing-width-value').textContent = `${thickness.value} px`;
-        document.querySelectorAll('[data-color]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.color === ink.value)));
+        const swatches = [...document.querySelectorAll('[data-color]')];
+        const preset = swatches.some(button => button.dataset.color === ink.value);
+        swatches.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.color === ink.value)));
+        const custom = document.querySelector('.custom-color');
+        custom.style.setProperty('--custom', ink.value);
+        custom.classList.toggle('selected', !preset);
+        if (document.activeElement !== hexField) hexField.value = ink.value;
+        const picked = gradientPick && gradientPick.color === ink.value ? gradientPick : null;
+        gradientThumb.hidden = !picked;
+        if (picked) { gradientThumb.style.left = `${picked.x * 100}%`; gradientThumb.style.top = `${picked.y * 100}%`; }
+        gradient.setAttribute('aria-valuenow', String(Math.round((picked?.x ?? 0) * 360)));
+        gradient.setAttribute('aria-valuetext', picked ? ink.value : 'No colour picked from the gradient');
     }
-    ink.addEventListener('input', () => { updateInkControls(); calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width)); });
+    function gradientColor(x, y) {
+        const lightness = 1 - y; const chroma = 1 - Math.abs(2 * lightness - 1); const hue = x * 6 % 6; const second = chroma * (1 - Math.abs(hue % 2 - 1)); const base = lightness - chroma / 2;
+        const [r, g, b] = [[chroma, second, 0], [second, chroma, 0], [0, chroma, second], [0, second, chroma], [second, 0, chroma], [chroma, 0, second]][Math.floor(hue) % 6];
+        return `#${[r, g, b].map(channel => Math.round((channel + base) * 255).toString(16).padStart(2, '0')).join('')}`;
+    }
+    function inkGradientPosition() {
+        if (gradientPick && gradientPick.color === ink.value) return gradientPick;
+        const [r, g, b] = [1, 3, 5].map(index => parseInt(ink.value.slice(index, index + 2), 16) / 255);
+        const high = Math.max(r, g, b); const low = Math.min(r, g, b); const delta = high - low;
+        const hue = delta === 0 ? 0 : high === r ? ((g - b) / delta + 6) % 6 : high === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+        return { x: hue / 6, y: 1 - (high + low) / 2 };
+    }
+    function pickGradient(x, y, commit = true) {
+        x = Math.min(1, Math.max(0, x)); y = Math.min(1, Math.max(0, y));
+        const color = gradientColor(x, y); gradientPick = { x, y, color }; applyInk(color, commit);
+    }
+    function applyInk(color, commit = true) {
+        ink.value = color;
+        updateInkControls();
+        if (commit) calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width));
+    }
+    function parseHex(text) {
+        const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(text.trim());
+        if (!match) return null;
+        const digits = match[1].length === 3 ? [...match[1]].map(digit => digit + digit).join('') : match[1];
+        return `#${digits.toLowerCase()}`;
+    }
+    ink.addEventListener('input', () => applyInk(ink.value, false));
+    ink.addEventListener('change', () => applyInk(ink.value));
+    hexField.addEventListener('change', () => { const color = parseHex(hexField.value); if (color) applyInk(color); });
+    hexField.addEventListener('keydown', event => { if (event.key !== 'Enter' || event.metaKey || event.ctrlKey) return; event.preventDefault(); const color = parseHex(hexField.value); if (color) applyInk(color); });
+    let gradientPointer = null;
+    function pickFromPointer(event, commit = false) { const box = gradient.getBoundingClientRect(); pickGradient((event.clientX - box.left) / box.width, (event.clientY - box.top) / box.height, commit); }
+    gradient.addEventListener('pointerdown', event => { if (event.button !== 0) return; event.preventDefault(); gradientPointer = event.pointerId; gradient.setPointerCapture(event.pointerId); gradient.focus(); pickFromPointer(event); });
+    gradient.addEventListener('pointermove', event => { if (event.pointerId === gradientPointer) pickFromPointer(event); });
+    for (const type of ['pointerup', 'pointercancel']) gradient.addEventListener(type, event => { if (event.pointerId !== gradientPointer) return; gradientPointer = null; applyInk(ink.value); });
+    gradient.addEventListener('keydown', event => {
+        const moves = { ArrowLeft: [-1 / 72, 0], ArrowRight: [1 / 72, 0], ArrowUp: [0, -0.04], ArrowDown: [0, 0.04] };
+        if (!moves[event.key]) return;
+        event.preventDefault(); event.stopPropagation();
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const start = inkGradientPosition(); const [dx, dy] = moves[event.key];
+        pickGradient(((start.x + dx) % 1 + 1) % 1, start.y + dy);
+    });
+    hexField.addEventListener('blur', () => { hexField.value = ink.value; });
     thickness.addEventListener('input', () => { updateInkControls(); calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width)); });
-    document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => { ink.value = button.dataset.color; updateInkControls(); calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width)); }));
+    document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => applyInk(button.dataset.color)));
     updateInkControls();
 
     function sizeCanvas() {

@@ -142,16 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.5.0`, candidate, not deployed. Its iOS marketing
-version is `0.5.0`; this release build is `14`. It redesigns the backoffice as a
-light "studio table" (see `DESIGN.md`), switches the iPhone app and Share
-Extension to the same light palette, adds a Select tool that deletes a chosen
-mark with the Delete key or button, shrinks default annotation notes, and lets
-a note be dragged by its frame.
+The release candidate is `v0.6.0`, candidate, not deployed. Its iOS marketing
+version is `0.6.0`; this release build is `15`. It adds an ink colour gradient
+strip, a full colour picker and an exact colour-code field to the editor,
+fits the drawing tools on one row on laptop screens, and shows a centred
+"No projects yet" card when the workspace is empty.
 
-The previous release, `v0.4.0` (`1d15933ab0`), completed FAST shipping on
-6 October 2026 at 17:57:25 UTC in 105 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.4.0 build 13
+The previous release, `v0.5.0` (`4f444267dc`), completed FAST shipping on
+6 October 2026 at 19:41:55 UTC in 108 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.5.0 build 14
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

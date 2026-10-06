@@ -37,7 +37,22 @@
         @endif
         <section id="gallery">
         @if(!$project)
+            @if($projects->isEmpty())
+            <div class="empty-projects">
+                <svg class="empty-illustration" viewBox="0 0 160 120" fill="none" aria-hidden="true">
+                    <rect class="sheet sheet-back" x="38" y="22" width="84" height="62" rx="10"/>
+                    <rect class="sheet sheet-mid" x="30" y="30" width="84" height="62" rx="10"/>
+                    <g class="sheet-front"><rect x="22" y="38" width="84" height="62" rx="10"/><rect x="32" y="49" width="30" height="6" rx="3" class="ink-soft"/><rect x="32" y="61" width="52" height="5" rx="2.5" class="ink-faint"/><rect x="32" y="71" width="44" height="5" rx="2.5" class="ink-faint"/></g>
+                    <ellipse class="marker" cx="76" cy="66" rx="26" ry="15"/>
+                    <circle class="plus-badge" cx="118" cy="92" r="15"/><path class="plus" d="M118 85v14M111 92h14"/>
+                </svg>
+                <h2>No projects yet</h2>
+                <p>Create a project, then drop in screenshots or share them from your iPhone. Mark what needs fixing — your coding agent sees the whole picture.</p>
+                <button type="button" class="button button-primary" data-new-project>Create your first project</button>
+            </div>
+            @else
             <div class="intro"><p>Pick a project, drop in screenshots, mark what needs fixing — your coding agent sees the whole picture.</p></div>
+            @endif
             <div class="project-grid">
             @foreach($projects as $entry)<a class="project-tile" href="{{ route('projects.show', $entry) }}"><h2>{{ $entry->name }}</h2><p>{{ $entry->description ?: 'Open project' }}</p><span>Project code: <code>{{ $entry->canonical }}</code></span><span>{{ $entry->images_count }} {{ Str::plural('file', $entry->images_count) }}</span></a>@endforeach
             </div>
@@ -99,13 +114,13 @@
                             <div class="stroke-control"><label for="drawing-width">Thickness</label><span id="stroke-preview" aria-hidden="true"></span><input type="range" id="drawing-width" min="2" max="24" value="6" step="1"><output id="drawing-width-value" for="drawing-width">6 px</output></div>
                             <div class="color-control" role="group" aria-label="Ink color"><span>Color</span>
                                 <button type="button" class="color-swatch" data-color="#ef4444" style="--swatch: #ef4444" title="Red" aria-label="Red ink" aria-pressed="true"></button>
-                                <button type="button" class="color-swatch" data-color="#f59e0b" style="--swatch: #f59e0b" title="Amber" aria-label="Amber ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#16a34a" style="--swatch: #16a34a" title="Green" aria-label="Green ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#3b82f6" style="--swatch: #3b82f6" title="Blue" aria-label="Blue ink" aria-pressed="false"></button>
-                                <button type="button" class="color-swatch" data-color="#8b5cf6" style="--swatch: #8b5cf6" title="Purple" aria-label="Purple ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#182337" style="--swatch: #182337" title="Dark ink" aria-label="Dark ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#ffffff" style="--swatch: #ffffff" title="White" aria-label="White ink" aria-pressed="false"></button>
-                                <label class="custom-color" title="Choose a custom ink color"><input type="color" id="drawing-color" value="#ef4444" aria-label="Custom ink color"></label>
+                                <div class="color-gradient" id="color-gradient" role="slider" tabindex="0" aria-label="Colour gradient" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0" aria-valuetext="No colour picked from the gradient" title="Click or drag to pick a colour. Arrow keys fine-tune it."><span class="color-gradient-thumb" id="color-gradient-thumb" hidden></span></div>
+                                <label class="custom-color" style="--custom: #ef4444" title="Pick any colour"><input type="color" id="drawing-color" value="#ef4444" aria-label="Custom ink color"></label>
+                                <input type="text" id="drawing-color-hex" class="color-hex" value="#ef4444" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Custom colour code" placeholder="#RRGGBB">
                             </div>
                             <div class="zoom-controls" role="group" aria-label="Canvas zoom">
                                 <button type="button" class="tool icon-tool" id="zoom-out" aria-label="Zoom out" title="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>

@@ -87,6 +87,14 @@ class WorkspaceTest extends TestCase
         $this->get('/')->assertRedirect('/login');
     }
 
+    public function test_an_empty_workspace_invites_creating_the_first_project_until_one_exists(): void
+    {
+        $this->prepare();
+        $this->get('/')->assertOk()->assertSee('No projects yet')->assertSee('Create your first project')->assertDontSee('Pick a project, drop in screenshots');
+        Project::factory()->create(['name' => 'Taxiny', 'slug' => 'taxiny']);
+        $this->get('/')->assertOk()->assertDontSee('No projects yet')->assertSee('Pick a project, drop in screenshots');
+    }
+
     public function test_projects_can_be_created_edited_and_rendered_without_executing_names(): void
     {
         $this->prepare();
