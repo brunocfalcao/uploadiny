@@ -585,3 +585,11 @@ test('Back keeps the editor and restores the address when saving fails', async t
     assert.equal(ui.node('editor').hidden, false);
     assert.equal(ui.where.search, '?image=one');
 });
+
+test('opening a file focuses its title, not the Back button, so Space cannot leave the editor', async t => {
+    const ui = workspace(t); await ui.open();
+    assert.equal(ui.document.activeElement, ui.node('editor-name'));
+    assert.notEqual(ui.document.activeElement, ui.node('close-editor'));
+    ui.key(' ', ui.document.activeElement, { metaKey: false });
+    assert.equal(ui.node('editor').hidden, false);
+});

@@ -34,7 +34,7 @@
                 <p class="copy-status muted" data-copy-status role="status" aria-live="polite"></p>
             </div>
         @endif
-        <section id="gallery">
+        <section id="gallery" @if($openImage ?? null) hidden @endif>
         @if(!$project)
             @if($projects->isEmpty())
             <div class="empty-projects">
@@ -96,10 +96,10 @@
             </div>
         @endif
         </section>
-        <section id="editor" class="editor" hidden aria-label="File feedback editor">
-            <div class="editor-header"><button type="button" class="button" id="close-editor">Back to project</button><h2 id="editor-name"></h2><nav class="chunk-navigation" id="chunk-navigation" aria-label="Files in this upload chunk"><button type="button" id="first-file" title="First file" aria-label="First file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 6-6 6 6 6m7-12-6 6 6 6"/></svg></button><button type="button" id="previous-file" title="Previous file (⌘← / Ctrl+←)" aria-label="Previous file" aria-keyshortcuts="Meta+ArrowLeft Control+ArrowLeft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><span id="chunk-position" role="status" aria-live="polite"></span><button type="button" id="next-file" title="Next file (⌘→ / Ctrl+→)" aria-label="Next file" aria-keyshortcuts="Meta+ArrowRight Control+ArrowRight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button><button type="button" id="last-file" title="Last file" aria-label="Last file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 6 6 6-6 6m7-12 6 6-6 6"/></svg></button></nav><button type="button" class="button" id="duplicate-image" title="Duplicate the original image without annotations">Duplicate</button><a class="button" id="download-original">Download original</a></div>
+        <section id="editor" class="editor" @unless($openImage ?? null) hidden @endunless aria-label="File feedback editor">
+            <div class="editor-header"><button type="button" class="button" id="close-editor">Back to project</button><h2 id="editor-name" tabindex="-1">{{ ($openImage ?? null)?->name }}</h2><nav class="chunk-navigation" id="chunk-navigation" aria-label="Files in this upload chunk"><button type="button" id="first-file" title="First file" aria-label="First file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m12 6-6 6 6 6m7-12-6 6 6 6"/></svg></button><button type="button" id="previous-file" title="Previous file (⌘← / Ctrl+←)" aria-label="Previous file" aria-keyshortcuts="Meta+ArrowLeft Control+ArrowLeft"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button><span id="chunk-position" role="status" aria-live="polite">@if($openChunk ?? null){{ $openChunk->images->pluck('uuid')->search($openImage->uuid) + 1 }} of {{ $openChunk->images->count() }}@endif</span><button type="button" id="next-file" title="Next file (⌘→ / Ctrl+→)" aria-label="Next file" aria-keyshortcuts="Meta+ArrowRight Control+ArrowRight"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button><button type="button" id="last-file" title="Last file" aria-label="Last file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m5 6 6 6-6 6m7-12 6 6-6 6"/></svg></button></nav><button type="button" class="button" id="duplicate-image" title="Duplicate the original image without annotations">Duplicate</button><a class="button" id="download-original">Download original</a></div>
             <div class="editor-body">
-                <div class="drawing-workspace" id="drawing-workspace">
+                <div class="drawing-workspace" id="drawing-workspace" @if(($openImage ?? null)?->isVideo()) hidden @endif>
                     <div class="drawing-toolbar" role="group" aria-label="Annotation controls">
                         <div class="drawing-toolbar-row">
                             <div class="tool-group" role="group" aria-label="Drawing tools">
@@ -142,22 +142,25 @@
                     <div class="canvas-stage" id="canvas-stage"><div class="canvas-bed"><div class="canvas-frame"><canvas id="annotation-canvas" aria-label="Draw on this image with your pointer"></canvas><div id="callout-overlay" class="callout-overlay" hidden></div></div></div><p id="image-load-error" class="error-message" hidden></p></div>
                     <div class="canvas-footer"><p id="canvas-tool-hint">Pen: draw freely on the image.</p><span id="canvas-dimensions"></span><span class="original-hint">Original preserved</span></div>
                 </div>
-                <div class="video-workspace" id="video-workspace" hidden>
+                <div class="video-workspace" id="video-workspace" @unless(($openImage ?? null)?->isVideo()) hidden @endunless>
                     <div class="video-stage"><video id="recording-player" controls playsinline preload="metadata" aria-label="Screen recording playback"></video></div>
                     <div class="video-footer"><button type="button" class="button button-primary recording-play-button" id="recording-play"><svg id="recording-play-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg><svg id="recording-pause-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M6 5h4v14H6Zm8 0h4v14h-4Z"/></svg><span id="recording-play-label">Play recording</span></button><strong>Screen recording</strong><span>Play, pause or scrub to review. Add timestamps in your feedback.</span></div>
                     <p id="video-load-error" class="error-message" hidden>This browser cannot play this recording. Download the original to watch it.</p>
                 </div>
                 <aside class="feedback-panel">
-                    <label class="qr-field-label" for="image-comments">Your feedback</label><p class="muted">What is wrong? What should improve?</p><textarea class="qr-field qr-field-default qr-textarea" id="image-comments" rows="9" placeholder="Describe the changes you want…"></textarea>
+                    <label class="qr-field-label" for="image-comments">Your feedback</label><p class="muted">What is wrong? What should improve?</p><textarea class="qr-field qr-field-default qr-textarea" id="image-comments" rows="5" placeholder="Describe the changes you want…"></textarea>
                     <div class="save-row"><button type="button" class="button button-primary" id="save-feedback" title="Save feedback (⌘Enter / Ctrl+Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">Save feedback</button><span id="save-state" role="status" aria-live="polite"></span></div>
                     <p class="field-hint">Annotations and feedback save automatically. ⌘Enter saves immediately.</p>
-                    <section id="vision-section" class="vision-section" aria-labelledby="vision-heading">
-                        <header class="vision-heading"><span class="vision-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></span><div><h3 id="vision-heading">Image context</h3><p class="vision-caption">AI-generated description</p></div><span id="vision-status" class="vision-status" role="status"></span></header>
+                    <details id="vision-section" class="vision-section" @if(($openImage ?? null)?->isVideo()) hidden @endif>
+                        <summary class="vision-heading"><span class="vision-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></span><div><h3 id="vision-heading">Image context</h3><p class="vision-caption">AI-generated description</p></div><span id="vision-status" class="vision-status" role="status"></span><svg class="vision-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <div class="vision-content" tabindex="0" role="region" aria-label="AI image description"><p id="vision-description"></p></div>
                         <footer class="vision-footer"><p>Included when your coding agent reads this image.</p><button type="button" class="text-button" id="retry-description" hidden>Retry description</button></footer>
-                    </section>
+                    </details>
+                    <details class="file-actions">
+                        <summary><span>Move or copy this file</span><svg class="vision-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                     <section class="move-section chunk-transfer-section"><label class="qr-field-label" for="target-chunk">Copy or move to chunk</label><div class="qr-field-shell"><select class="qr-field qr-field-default qr-select" id="target-chunk"><option value="">Choose an upload chunk…</option></select><span class="qr-select-indicator" aria-hidden="true">⌄</span></div><p class="muted" id="chunk-transfer-hint">Annotations and comments go with the file.</p><div class="chunk-transfer-actions"><button type="button" class="button" id="copy-to-chunk">Copy to chunk</button><button type="button" class="button" id="move-to-chunk">Move to chunk</button></div></section>
                     <section class="move-section"><label class="qr-field-label" for="move-project">Move to project</label><div class="qr-field-shell"><select class="qr-field qr-field-default qr-select" id="move-project">@foreach($projects as $entry)<option value="{{ $entry->id }}">{{ $entry->name }}</option>@endforeach</select><span class="qr-select-indicator" aria-hidden="true">⌄</span></div><button type="button" class="button" id="move-image">Move file</button></section>
+                    </details>
                     <button type="button" class="text-button danger" id="delete-image">Delete file and feedback</button>
                 </aside>
             </div>

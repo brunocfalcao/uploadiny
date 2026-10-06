@@ -318,8 +318,8 @@ if (workspace) {
     bindGallery();
     const initialImage = new URLSearchParams(location.search).get('image');
     if (initialImage) {
-        if (chunkGroups.some(files => files.includes(initialImage))) openImage(initialImage, false, true).then(() => { if (active?.id !== initialImage) syncImageUrl(null); });
-        else syncImageUrl(null);
+        if (chunkGroups.some(files => files.includes(initialImage))) openImage(initialImage, false, true).then(() => { if (active?.id !== initialImage) leaveEditor(); });
+        else leaveEditor();
     }
     async function openImage(id, playRecording = false, fromUrl = false) {
         if (saving || navigating || transferring || active?.id === id) return;
@@ -363,7 +363,7 @@ if (workspace) {
                 video.src = data.preview_url; video.load(); syncRecordingControls();
                 if (playRecording) video.play().catch(() => { /* Browsers may require another tap on Play. */ });
                 document.getElementById('save-feedback').disabled = false;
-                finishNavigation(); document.getElementById('close-editor').focus();
+                finishNavigation(); document.getElementById('editor-name').focus({ preventScroll: true });
                 return;
             }
             updateChunkNavigation(); showDescription(data);
@@ -387,7 +387,7 @@ if (workspace) {
                 finishNavigation(); document.getElementById('save-feedback').disabled = false;
             };
             image.src = data.preview_url;
-            document.getElementById('close-editor').focus();
+            document.getElementById('editor-name').focus({ preventScroll: true });
         } catch (error) { finishNavigation(); document.getElementById('save-feedback').disabled = !active; notify(error.message, true); }
     }
     function showDescription(data) {

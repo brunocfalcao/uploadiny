@@ -8,6 +8,7 @@ use App\Http\Requests\ProjectRequest;
 use App\Project;
 use App\Services\WorkspaceDeletion;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ProjectController extends Controller
@@ -17,11 +18,14 @@ class ProjectController extends Controller
         return view('workspace', ['projects' => Project::withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])->orderBy('name')->get(), 'project' => null, 'chunks' => collect()]);
     }
 
-    public function show(Project $project): View
+    public function show(Request $request, Project $project): View
     {
         $chunks = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->newestFinishedFirst()->get();
+        $requested = $request->query('image');
+        $openImage = is_string($requested) ? $chunks->flatMap->images->firstWhere('uuid', $requested) : null;
+        $openChunk = $openImage ? $chunks->first(fn ($chunk) => $chunk->images->contains($openImage)) : null;
 
-        return view('workspace', ['projects' => Project::withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])->orderBy('name')->get(), 'project' => $project, 'chunks' => $chunks]);
+        return view('workspace', ['projects' => Project::withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])->orderBy('name')->get(), 'project' => $project, 'chunks' => $chunks, 'openImage' => $openImage, 'openChunk' => $openChunk]);
     }
 
     public function store(ProjectRequest $request): RedirectResponse

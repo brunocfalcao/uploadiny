@@ -1,6 +1,22 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.9.0 candidate, not deployed
+## 2026-10-06 — v0.9.1 candidate, not deployed
+
+- Candidate iOS metadata: 0.9.1 build 19; no mobile behavior change.
+- `ProjectController::show` resolves `?image=` against the project's complete
+  chunks and the view renders the editor (gallery hidden, file name, position,
+  video or drawing workspace) on first paint; unknown, foreign or draft images
+  fall back to the gallery. A failed startup load returns to the gallery.
+- Opening a file focuses `#editor-name`, not Back, so Space cannot leave the
+  editor. The sidebar fits without scrolling: image context and move/copy
+  actions are collapsible `<details>`, and the feedback box is 5 rows.
+- No migration, dependency, or environment change.
+
+## 2026-10-06 — v0.9.0 deployed via FAST
+
+- Shipped `e630a0c297` on 2026-10-06 at 21:39:16 UTC in 94 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.9.0
+  build 18 installation and launch.
 
 - Candidate iOS metadata: 0.9.0 build 18; no mobile behavior change.
 - Editor: Duplicate (`POST /images/{image}/duplicate`, ImageCopy clean mode via

@@ -142,18 +142,17 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.9.0`, candidate, not deployed. Its iOS marketing
-version is `0.9.0`; this release build is `18` (no mobile behavior change). The
-editor gains a Duplicate button (clean copy of the original, no marks or
-comments, same chunk), fits the viewport on desktop with equal-height panels
-and an internally scrolling, wider feedback sidebar, and keeps the open image
-across reloads via `?image=<uuid>`. The project code copies on click, the
-upload area is redesigned, and the empty-workspace card is centred. No
-migration, dependency, or environment change.
+The release candidate is `v0.9.1`, candidate, not deployed. Its iOS marketing
+version is `0.9.1`; this release build is `19` (no mobile behavior change).
+Reloading a project page with `?image=<uuid>` now server-renders the editor
+directly, so the upload list no longer flashes before the editor opens.
+Opening a file focuses its title instead of the Back button, so Space no
+longer leaves the editor, and the feedback sidebar fits without scrolling
+(collapsible image context and move/copy actions, shorter feedback box).
 
-The previous release, `v0.8.0` (`212ed5bc92`), completed FAST shipping on
-6 October 2026 at 20:59:05 UTC in 105 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.8.0 build 17
+The previous release, `v0.9.0` (`e630a0c297`), completed FAST shipping on
+6 October 2026 at 21:39:16 UTC in 94 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.9.0 build 18
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

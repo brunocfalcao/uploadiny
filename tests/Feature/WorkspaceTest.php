@@ -87,6 +87,39 @@ class WorkspaceTest extends TestCase
         $this->get('/')->assertRedirect('/login');
     }
 
+    public function test_reloading_with_an_open_image_renders_the_editor_directly_without_the_gallery(): void
+    {
+        $this->prepare();
+        $project = Project::factory()->create(['slug' => 'reload-project']);
+        $other = Project::factory()->create(['slug' => 'other-reload']);
+        $chunk = UploadChunk::factory()->create(['status' => 'complete', 'completed_at' => now()]);
+        $first = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $chunk->id, 'name' => 'upload-1.png']);
+        $second = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $chunk->id, 'name' => 'upload-2.png']);
+        $recording = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $chunk->id, 'name' => 'upload-3.mp4', 'mime_type' => 'video/mp4']);
+        $foreign = UploadImage::factory()->create(['project_id' => $other->id, 'name' => 'foreign.png']);
+        $draft = UploadChunk::factory()->create(['status' => 'uploading', 'upload_project_id' => $project->id, 'expected_images' => 2]);
+        $unpublished = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $draft->id, 'name' => 'draft.png']);
+
+        $this->get('/projects/reload-project?image='.$second->uuid)->assertOk()
+            ->assertSee('<section id="gallery"  hidden >', false)
+            ->assertDontSee('id="editor" class="editor"  hidden', false)
+            ->assertSee('<h2 id="editor-name" tabindex="-1">upload-2.png</h2>', false)
+            ->assertSee('2 of 3')
+            ->assertSee('id="chunk-list"', false)
+            ->assertSee('id="video-workspace"  hidden', false);
+        $this->get('/projects/reload-project?image='.$recording->uuid)->assertOk()
+            ->assertSee('id="drawing-workspace"  hidden', false)
+            ->assertDontSee('id="video-workspace"  hidden', false);
+
+        foreach (['00000000-0000-4000-8000-000000000001', $foreign->uuid, $unpublished->uuid] as $uuid) {
+            $this->get('/projects/reload-project?image='.$uuid)->assertOk()
+                ->assertDontSee('<section id="gallery"  hidden >', false)
+                ->assertSee('id="editor" class="editor"  hidden', false)
+                ->assertSee('<h2 id="editor-name" tabindex="-1"></h2>', false);
+        }
+        $this->assertNotNull($first);
+    }
+
     public function test_an_empty_workspace_invites_creating_the_first_project_until_one_exists(): void
     {
         $this->prepare();
