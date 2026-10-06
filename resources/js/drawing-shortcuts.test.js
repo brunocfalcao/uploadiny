@@ -52,3 +52,19 @@ test('shortcuts leave native keys and unavailable editor states untouched', () =
         }
     }
 });
+
+test('Delete and Backspace remove the selected mark only outside text fields', () => {
+    const plain = key => shortcutEvent({ key, ctrlKey: false });
+    const selected = { ...readyEditor, selected: true };
+    for (const key of ['Delete', 'Backspace']) {
+        assert.equal(drawingShortcutAction(plain(key), selected), 'delete-mark');
+        assert.equal(drawingShortcutAction(plain(key), readyEditor), null);
+        assert.equal(drawingShortcutAction(plain(key), { ...selected, source: null }), null);
+        assert.equal(drawingShortcutAction(plain(key), { ...selected, saving: true }), null);
+        assert.equal(drawingShortcutAction(plain(key), { ...selected, modalOpen: true }), null);
+        assert.equal(drawingShortcutAction(shortcutEvent({ key, ctrlKey: false, altKey: true }), selected), null);
+        for (const field of ['textarea', 'input', 'contenteditable']) {
+            assert.equal(drawingShortcutAction(shortcutEvent({ key, ctrlKey: false, target: { closest: selector => selector.includes(field) ? {} : null } }), selected), null);
+        }
+    }
+});

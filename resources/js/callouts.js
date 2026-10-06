@@ -1,10 +1,11 @@
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 export function createCallout(point, color, width) {
-    const left = clamp(point.x - .15, 0, .7);
-    const top = clamp(point.y - .04, 0, .92);
-    const noteTop = top >= .25 ? top - .2 : Math.min(.82, top + .14);
-    return { tool: 'callout', color, width, text: '', points: [{ x: left, y: top }, { x: left + .3, y: top + .08 }, { x: clamp(point.x - .23, 0, .54), y: noteTop }, { x: clamp(point.x - .23, 0, .54) + .46, y: noteTop + .16 }] };
+    const left = clamp(point.x - .1, 0, .8);
+    const top = clamp(point.y - .03, 0, .94);
+    const noteTop = top >= .2 ? top - .14 : Math.min(.9, top + .1);
+    const noteLeft = clamp(point.x - .14, 0, .72);
+    return { tool: 'callout', color, width, text: '', points: [{ x: left, y: top }, { x: left + .2, y: top + .06 }, { x: noteLeft, y: noteTop }, { x: noteLeft + .28, y: noteTop + .1 }] };
 }
 
 export function calloutBox(stroke, part = 'target') {
@@ -58,7 +59,7 @@ export function drawCallout(ctx, stroke, width, height) {
     const x = note.x * width; const y = note.y * height; const w = note.width * width; const h = note.height * height;
     ctx.fillStyle = '#ffffff'; ctx.fillRect(x, y, w, h);
     ctx.lineWidth = Math.max(1, width * .002); ctx.strokeRect(x, y, w, h);
-    const fontSize = width * .035; const padding = width * .025; const lineHeight = fontSize * 1.4;
+    const fontSize = width * .022; const padding = width * .015; const lineHeight = fontSize * 1.4;
     ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`; ctx.textBaseline = 'top'; ctx.fillStyle = '#182337';
     ctx.beginPath(); ctx.rect(x + padding, y + padding, Math.max(0, w - padding * 2), Math.max(0, h - padding * 2)); ctx.clip();
     let line = ''; let row = 0;

@@ -79,13 +79,13 @@ test('callout rectangles resize independently and remain within image edges', as
     }
     const mark = createCallout({ x: .5, y: .5 }, '#ef4444', .004);
     const resized = changeCalloutBox(mark, 'target', 'se', { x: .1, y: .2 });
-    assert.ok(Math.abs(resized.points[1].x - .75) < 1e-12);
-    assert.ok(Math.abs(resized.points[1].y - .74) < 1e-12);
+    assert.ok(Math.abs(resized.points[1].x - .7) < 1e-12);
+    assert.ok(Math.abs(resized.points[1].y - .73) < 1e-12);
     assert.deepEqual(resized.points.slice(2), mark.points.slice(2));
     const moved = changeCalloutBox(mark, 'note', 'move', { x: -2, y: -2 });
     assert.deepEqual(moved.points[2], { x: 0, y: 0 });
     assert.deepEqual(moved.points.slice(0, 2), mark.points.slice(0, 2));
-    assert.equal(mark.points[2].x, .27);
+    assert.ok(Math.abs(mark.points[2].x - .36) < 1e-12);
 });
 
 test('callout text color and geometry undo and redo together without sharing mutable snapshots', async () => {

@@ -1,7 +1,8 @@
 const editableSelector = 'input,textarea,select,[contenteditable],[role=combobox]';
 
-export function drawingShortcutAction(event, { active, source, saving, draft, modalOpen }) {
-    if (!active || saving || draft || modalOpen || event.defaultPrevented || event.isComposing || event.altKey || !(event.metaKey || event.ctrlKey)) return null;
+export function drawingShortcutAction(event, { active, source, saving, draft, modalOpen, selected }) {
+    if (!active || saving || draft || modalOpen || event.defaultPrevented || event.isComposing || event.altKey) return null;
+    if (!event.metaKey && !event.ctrlKey) return selected && source && !event.shiftKey && ['Delete', 'Backspace'].includes(event.key) && !event.target?.closest(editableSelector) ? 'delete-mark' : null;
 
     const key = event.key.toLowerCase();
     if (!event.shiftKey) {

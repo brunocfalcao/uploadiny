@@ -142,17 +142,16 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.4.0`, candidate, not deployed. Its iOS marketing
-version is `0.4.0`; this release build is `13`. It adds editor autosave and
-keyboard navigation, orders "latest" feedback by completion time, limits each
-uploaded file to 95 MB (below Cloudflare Free's 100 MB request cap) in the
-browser, server, and Share Extension, and caps agent screenshot retrieval at
-250 MB. Production PHP-FPM and Nginx were raised to 100 MB / 100 files on
-6 October 2026 outside the release scripts.
+The release candidate is `v0.5.0`, candidate, not deployed. Its iOS marketing
+version is `0.5.0`; this release build is `14`. It redesigns the backoffice as a
+light "studio table" (see `DESIGN.md`), switches the iPhone app and Share
+Extension to the same light palette, adds a Select tool that deletes a chosen
+mark with the Delete key or button, shrinks default annotation notes, and lets
+a note be dragged by its frame.
 
-The previous release, `v0.3.0` (`c781c660a1`), completed FAST shipping on
-6 October 2026 at 16:47:45 UTC in 101 seconds. Its local completed receipt
-records website verification and signed physical iPhone 0.3.0 build 12
+The previous release, `v0.4.0` (`1d15933ab0`), completed FAST shipping on
+6 October 2026 at 17:57:25 UTC in 105 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.4.0 build 13
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -31,13 +31,13 @@
                 <label for="project-canonical">Project code</label>
                 <input id="project-canonical" value="{{ $project->canonical }}" readonly spellcheck="false" aria-describedby="canonical-hint">
                 <button class="button" type="button" data-copy-field="project-canonical">Copy code</button>
-                <p id="canonical-hint" class="muted">Give this canonical to Claude or Codex to select this project.</p>
+                <p id="canonical-hint" class="muted">Give this code to Claude or Codex so they pick this project.</p>
                 <p class="copy-status muted" data-copy-status role="status" aria-live="polite"></p>
             </div>
         @endif
         <section id="gallery">
         @if(!$project)
-            <div class="intro"><h2>A home for every feedback group.</h2><p>Choose a project or create one. Upload files together, mark what needs attention, and give your coding agent the whole picture.</p></div>
+            <div class="intro"><p>Pick a project, drop in screenshots, mark what needs fixing — your coding agent sees the whole picture.</p></div>
             <div class="project-grid">
             @foreach($projects as $entry)<a class="project-tile" href="{{ route('projects.show', $entry) }}"><h2>{{ $entry->name }}</h2><p>{{ $entry->description ?: 'Open project' }}</p><span>Project code: <code>{{ $entry->canonical }}</code></span><span>{{ $entry->images_count }} {{ Str::plural('file', $entry->images_count) }}</span></a>@endforeach
             </div>
@@ -79,6 +79,7 @@
                     <div class="drawing-toolbar" role="group" aria-label="Annotation controls">
                         <div class="drawing-toolbar-row">
                             <div class="tool-group" role="group" aria-label="Drawing tools">
+                                <button type="button" class="tool" data-tool="select" aria-pressed="false" title="Select — click a mark, then press Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 3 14 7-6 2-2 6Z"/></svg><span>Select</span></button>
                                 <button type="button" class="tool active" data-tool="pen" aria-pressed="true" title="Pen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z"/><path d="m14 5 5 5"/></svg><span>Pen</span></button>
                                 <button type="button" class="tool" data-tool="callout" aria-pressed="false" title="Annotation — click to add a rectangle, arrow and note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="9" height="7" rx="1"/><path d="M18 14 8 9m2 5-2-5 5 1"/><rect x="13" y="15" width="9" height="6" rx="1"/></svg><span>Annotation</span></button>
                                 <button type="button" class="tool" data-tool="arrow" aria-pressed="false" title="Arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20 20 4M8 4h12v12"/></svg><span>Arrow</span></button>
@@ -90,6 +91,7 @@
                             <div class="tool-group history-tools" role="group" aria-label="Drawing history">
                                 <button type="button" class="tool history-tool" id="undo-drawing" disabled title="Undo (⌘Z / Ctrl+Z)" aria-keyshortcuts="Meta+Z Control+Z"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 4-5 5 5 5M3 9h11a7 7 0 0 1 0 14"/></svg><span>Undo</span></button>
                                 <button type="button" class="tool history-tool" id="redo-drawing" disabled title="Redo (⌘⇧Z / Ctrl+Shift+Z)" aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z Control+Y"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 4 5 5-5 5M21 9H10a7 7 0 0 0 0 14"/></svg><span>Redo</span></button>
+                                <button type="button" class="tool history-tool" id="delete-mark" disabled title="Delete selected mark (Delete)" aria-keyshortcuts="Delete Backspace"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/></svg><span>Delete</span></button>
                                 <button type="button" class="tool history-tool" id="clear-drawing" disabled title="Clear all drawings — you can undo this"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg><span>Clear all</span></button>
                             </div>
                         </div>

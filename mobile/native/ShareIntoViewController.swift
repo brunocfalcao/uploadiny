@@ -76,6 +76,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func configureView() {
     preferredContentSize = CGSize(width: 0, height: 760)
     view.backgroundColor = SharePalette.canvas
+    overrideUserInterfaceStyle = .light
     view.tintColor = SharePalette.accent
     titleLabel.text = "Choose a project"
     titleLabel.font = .preferredFont(forTextStyle: .title2)
@@ -123,7 +124,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     configureReview()
     table.backgroundColor = .clear
     table.separatorStyle = .none
-    table.indicatorStyle = .white
+    table.indicatorStyle = .black
     table.alwaysBounceVertical = false
     table.register(UITableViewCell.self, forCellReuseIdentifier: "project")
     table.dataSource = self
@@ -176,7 +177,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     stack.spacing = 14
     stack.translatesAutoresizingMaskIntoConstraints = false
     scroll.translatesAutoresizingMaskIntoConstraints = false
-    scroll.indicatorStyle = .white
+    scroll.indicatorStyle = .black
     scroll.keyboardDismissMode = .interactive
     view.addSubview(scroll)
     scroll.addSubview(stack)
@@ -520,7 +521,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   private func displayAssetPreview(_ image: UIImage?, file: SharedFile) {
     assetPreview.image = image ?? UIImage(systemName: file.mime.hasPrefix("video/") ? "video" : "photo")
-    assetPreview.tintColor = UIColor(red: 168 / 255, green: 176 / 255, blue: 205 / 255, alpha: 1)
+    assetPreview.tintColor = SharePalette.secondary
     assetPreview.accessibilityLabel = image == nil ? "Preview unavailable for \(file.name)" : "Preview of \(file.name)"
     assetNameLabel.text = file.name + (image == nil ? " · Preview unavailable" : "")
   }
@@ -588,12 +589,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   private func configureCredentialField(_ field: UITextField, placeholder: String, secure: Bool) {
     field.placeholder = placeholder
-    field.textColor = .white
-    field.tintColor = UIColor(red: 166 / 255, green: 182 / 255, blue: 255 / 255, alpha: 1)
-    field.backgroundColor = UIColor(red: 16 / 255, green: 24 / 255, blue: 43 / 255, alpha: 1)
+    field.textColor = SharePalette.text
+    field.tintColor = SharePalette.accent
+    field.backgroundColor = SharePalette.surface
     field.layer.cornerRadius = 14
     field.layer.borderWidth = 1
-    field.layer.borderColor = UIColor(red: 37 / 255, green: 49 / 255, blue: 76 / 255, alpha: 1).cgColor
+    field.layer.borderColor = SharePalette.line.cgColor
     field.font = .preferredFont(forTextStyle: .body)
     field.isSecureTextEntry = secure
     field.clearButtonMode = .whileEditing
@@ -811,14 +812,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 16, bottom: 18, trailing: 12)
     cell.contentConfiguration = content
     var background = UIBackgroundConfiguration.clear()
-    background.backgroundColor = selected ? UIColor(red: 33 / 255, green: 46 / 255, blue: 87 / 255, alpha: 1) : UIColor(red: 16 / 255, green: 24 / 255, blue: 43 / 255, alpha: 1)
+    background.backgroundColor = selected ? UIColor(red: 238 / 255, green: 237 / 255, blue: 253 / 255, alpha: 1) : SharePalette.surface
     background.cornerRadius = 16
     background.backgroundInsets = NSDirectionalEdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0)
-    background.strokeColor = selected ? UIColor(red: 132 / 255, green: 148 / 255, blue: 255 / 255, alpha: 1) : UIColor(red: 37 / 255, green: 49 / 255, blue: 76 / 255, alpha: 1)
+    background.strokeColor = selected ? SharePalette.accent : SharePalette.line
     background.strokeWidth = selected ? 1.5 : 1
     cell.backgroundConfiguration = background
     let check = UIImageView(image: UIImage(systemName: selected ? "checkmark.circle.fill" : "circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .medium)))
-    check.tintColor = selected ? UIColor(red: 166 / 255, green: 182 / 255, blue: 255 / 255, alpha: 1) : UIColor(red: 91 / 255, green: 107 / 255, blue: 143 / 255, alpha: 1)
+    check.tintColor = selected ? SharePalette.accent : UIColor(red: 163 / 255, green: 169 / 255, blue: 184 / 255, alpha: 1)
     check.sizeToFit()
     cell.accessoryView = check
     cell.accessibilityTraits = selected ? [.button, .selected] : [.button]
@@ -1153,14 +1154,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 }
 
 private enum SharePalette {
-  static let canvas = UIColor(red: 7 / 255, green: 11 / 255, blue: 24 / 255, alpha: 1)
-  static let surface = UIColor(red: 16 / 255, green: 22 / 255, blue: 42 / 255, alpha: 1)
-  static let accent = UIColor(red: 79 / 255, green: 99 / 255, blue: 234 / 255, alpha: 1)
-  static let accentText = UIColor(red: 166 / 255, green: 182 / 255, blue: 255 / 255, alpha: 1)
-  static let text = UIColor(red: 247 / 255, green: 248 / 255, blue: 255 / 255, alpha: 1)
-  static let secondary = UIColor(red: 168 / 255, green: 176 / 255, blue: 205 / 255, alpha: 1)
-  static let line = UIColor(red: 36 / 255, green: 45 / 255, blue: 80 / 255, alpha: 1)
-  static let mint = UIColor(red: 98 / 255, green: 230 / 255, blue: 167 / 255, alpha: 1)
+  static let canvas = UIColor(red: 238 / 255, green: 240 / 255, blue: 244 / 255, alpha: 1)
+  static let surface = UIColor(red: 255 / 255, green: 255 / 255, blue: 255 / 255, alpha: 1)
+  static let accent = UIColor(red: 81 / 255, green: 70 / 255, blue: 229 / 255, alpha: 1)
+  static let accentText = UIColor(red: 67 / 255, green: 56 / 255, blue: 202 / 255, alpha: 1)
+  static let text = UIColor(red: 14 / 255, green: 21 / 255, blue: 37 / 255, alpha: 1)
+  static let secondary = UIColor(red: 91 / 255, green: 99 / 255, blue: 117 / 255, alpha: 1)
+  static let line = UIColor(red: 227 / 255, green: 230 / 255, blue: 238 / 255, alpha: 1)
+  static let mint = UIColor(red: 31 / 255, green: 138 / 255, blue: 87 / 255, alpha: 1)
 }
 
 private final class ShareAssetCell: UICollectionViewCell {
@@ -1181,7 +1182,7 @@ private final class ShareAssetCell: UICollectionViewCell {
     imageView.layer.cornerRadius = 8
     numberLabel.font = .preferredFont(forTextStyle: .caption2)
     numberLabel.textColor = .white
-    numberLabel.backgroundColor = SharePalette.canvas.withAlphaComponent(0.9)
+    numberLabel.backgroundColor = SharePalette.text.withAlphaComponent(0.72)
     numberLabel.textAlignment = .center
     numberLabel.layer.cornerRadius = 6
     numberLabel.clipsToBounds = true

@@ -1,7 +1,23 @@
 # Where Are We — Uploadiny
 
-## 2026-10-06 — v0.4.0 candidate, not deployed
+## 2026-10-06 — v0.5.0 candidate, not deployed
 
+- Candidate iOS metadata: 0.5.0 build 14. The app home screen and Share
+  Extension use the light studio palette; physical-device review is pending.
+- Backoffice redesigned per `DESIGN.md`: pale ground, floating white panels,
+  one indigo accent, pill controls, upload chunks as a deck that fans open on
+  hover. On phones the upload button floats in the thumb zone and the editor
+  stacks its canvas above the feedback panel.
+- Editor: a Select tool picks one mark; Delete/Backspace or the Delete button
+  removes it through undoable history and autosave. Default annotation notes
+  are about 40% smaller, and a note moves by dragging its frame or its tab.
+- No migration, dependency, or environment change.
+
+## 2026-10-06 — v0.4.0 deployed via FAST
+
+- Shipped `1d15933ab0` on 2026-10-06 at 17:57:25 UTC in 105 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.4.0
+  build 13 installation and launch.
 - Candidate iOS metadata: 0.4.0 build 13. The Share Extension refuses files
   over 95 MB with a clear message before uploading; physical-device acceptance
   of that message is pending.

@@ -7,6 +7,7 @@ import {
     annotationContainsPoint,
     commitDrawingHistory,
     drawAnnotation,
+    drawSelection,
     normalizedStrokeWidth,
     positionOnCanvas,
     redoDrawingHistory,
@@ -35,6 +36,7 @@ if (workspace) {
     let redo = [];
     let draft = null;
     let tool = 'pen';
+    let selectedIndex = null;
     let eraseStart = null;
     let drawingPointer = null;
     let zoom = 1;
@@ -223,11 +225,13 @@ if (workspace) {
         }, 700);
     }
     function setDirty() { dirty = true; dirtyVersion++; saveState.textContent = 'Unsaved changes'; scheduleAutosave(); }
-    function repaint() {
+    function repaint(showSelection = true) {
         if (!source) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
         [...strokes, ...(draft ? [draft] : [])].forEach(stroke => drawAnnotation(ctx, stroke, canvas.width, canvas.height));
+        if (showSelection && strokes[selectedIndex]) drawSelection(ctx, strokes[selectedIndex], canvas.width, canvas.height);
+        document.getElementById('delete-mark').disabled = saving || !strokes[selectedIndex];
         document.getElementById('undo-drawing').disabled = saving || !undo.length;
         document.getElementById('redo-drawing').disabled = saving || !redo.length;
         document.getElementById('clear-drawing').disabled = saving || !strokes.length;
@@ -240,7 +244,7 @@ if (workspace) {
         clearTimeout(autosaveTimer);
         clearTimeout(pollTimer);
         if (invalidate) loadGeneration++;
-        calloutEditor.reset();
+        calloutEditor.reset(); selectedIndex = null;
         video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load();
         active = null; source = null; dirty = false;
         document.getElementById('editor').hidden = true;
@@ -266,7 +270,7 @@ if (workspace) {
             const data = await request(`/images/${id}`);
             if (generation !== loadGeneration) return;
             if (active && !leaveEditor(false)) { finishNavigation(); return; }
-            calloutEditor.reset();
+            calloutEditor.reset(); selectedIndex = null;
             active = data; dirty = false; source = null;
             loadChunkDestinations(data.id);
             ({ strokes, undo, redo } = resetDrawingHistory(data.annotations)); draft = null; eraseStart = null; zoom = 1; fitView = true;
@@ -340,14 +344,15 @@ if (workspace) {
             }, 3000);
         }
     }
-    const toolHints = { callout: 'Annotation: click to add a callout. Drag its handles to resize; drag the rectangle or Move note to reposition.', pen: 'Pen: draw freely on the image.', arrow: 'Arrow: drag to point at a detail.', line: 'Line: drag to draw a straight line.', rectangle: 'Rectangle: drag around an area.', ellipse: 'Ellipse: drag to circle an area.', eraser: 'Eraser: drag over a mark to remove it. Undo restores it.' };
+    const toolHints = { select: 'Select: click a mark, then press Delete to remove it.', callout: 'Annotation: click to add a callout. Drag its handles to resize; drag the rectangle or Move note to reposition.', pen: 'Pen: draw freely on the image.', arrow: 'Arrow: drag to point at a detail.', line: 'Line: drag to draw a straight line.', rectangle: 'Rectangle: drag around an area.', ellipse: 'Ellipse: drag to circle an area.', eraser: 'Eraser: drag over a mark to remove it. Undo restores it.' };
     document.querySelectorAll('[data-tool]').forEach(button => button.addEventListener('click', () => {
         if (draft || eraseStart || calloutEditor.busy()) return;
-        calloutEditor.reset();
+        calloutEditor.reset(); selectedIndex = null;
         tool = button.dataset.tool;
         canvas.dataset.tool = tool;
         document.getElementById('canvas-tool-hint').textContent = toolHints[tool];
         document.querySelectorAll('[data-tool]').forEach(entry => { entry.classList.toggle('active', entry === button); entry.setAttribute('aria-pressed', entry === button ? 'true' : 'false'); });
+        repaint();
     }));
     function updateInkControls() {
         const preview = document.getElementById('stroke-preview');
@@ -405,6 +410,12 @@ if (workspace) {
         if (!source || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy() || event.button !== 0) return;
         event.preventDefault();
         if (tool === 'callout') { calloutEditor.place(event); return; }
+        if (tool === 'select') {
+            const point = positionOnCanvas(event, canvas);
+            const tolerance = 10 * canvas.width / canvas.getBoundingClientRect().width;
+            const index = strokes.findLastIndex(stroke => annotationContainsPoint(stroke, point, canvas.width, canvas.height, tolerance));
+            selectedIndex = index < 0 ? null : index; repaint(); return;
+        }
         canvas.setPointerCapture(event.pointerId);
         drawingPointer = event.pointerId;
         if (tool === 'eraser') { eraseStart = restoreCancelledErase(strokes); eraseAt(event); return; }
@@ -436,12 +447,18 @@ if (workspace) {
         }
     });
     canvas.addEventListener('pointercancel', event => { if (event.pointerId !== drawingPointer) return; drawingPointer = null; if (eraseStart) strokes = restoreCancelledErase(eraseStart); eraseStart = null; draft = null; repaint(); });
-    document.getElementById('undo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); if (!saving && !navigating && !transferring && !draft && !eraseStart && undo.length) { ({ strokes, undo, redo } = undoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
-    document.getElementById('redo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); if (!saving && !navigating && !transferring && !draft && !eraseStart && redo.length) { ({ strokes, undo, redo } = redoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
-    document.getElementById('clear-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); if (!saving && !navigating && !transferring && !draft && !eraseStart && strokes.length) commitStrokes([]); });
+    document.getElementById('undo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && undo.length) { ({ strokes, undo, redo } = undoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('redo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && redo.length) { ({ strokes, undo, redo } = redoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('clear-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && strokes.length) commitStrokes([]); else repaint(); });
+    document.getElementById('delete-mark').addEventListener('click', () => {
+        if (calloutEditor.busy()) return; calloutEditor.reset();
+        if (saving || navigating || transferring || draft || eraseStart || !strokes[selectedIndex]) return;
+        const index = selectedIndex; selectedIndex = null;
+        commitStrokes(strokes.filter((_, position) => position !== index));
+    });
     document.addEventListener('keydown', event => {
-        const action = drawingShortcutAction(event, { active, source, saving: saving || navigating || transferring, draft: draft || eraseStart || calloutEditor.busy(), modalOpen: dialog.open });
-        if (!action) return;
+        const action = drawingShortcutAction(event, { active, source, saving: saving || navigating || transferring, draft: draft || eraseStart || calloutEditor.busy(), modalOpen: dialog.open, selected: selectedIndex !== null });
+        if (!action) { if (event.key === 'Escape' && selectedIndex !== null && !dialog.open) { selectedIndex = null; repaint(); } return; }
         event.preventDefault();
         if (action === 'undo' || action === 'redo') calloutEditor.finishText();
         document.getElementById(action === 'undo' || action === 'redo' ? `${action}-drawing` : action).click();
@@ -456,6 +473,7 @@ if (workspace) {
         calloutEditor.finishText();
         clearTimeout(autosaveTimer);
         const image = active; const version = dirtyVersion;
+        if (strokes.length && source) repaint(false);
         const payload = { comments: comments.value, annotations: strokes, revision: image.revision, annotated_image: strokes.length && source ? canvas.toDataURL('image/png') : null };
         saving = !automatic; updateChunkNavigation();
         repaint();

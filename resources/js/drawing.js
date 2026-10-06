@@ -101,3 +101,16 @@ export function annotationContainsPoint(stroke, point, width, height, tolerance 
     const right = { x: last.x - size * Math.cos(angle + Math.PI / 6), y: last.y - size * Math.sin(angle + Math.PI / 6) };
     return distanceToSegment(target, last, left) <= radius || distanceToSegment(target, last, right) <= radius || distanceToSegment(target, left, right) <= radius;
 }
+
+export function drawSelection(ctx, stroke, width, height) {
+    const xs = []; const ys = [];
+    const points = stroke.tool === 'callout' ? stroke.points.slice(0, 4) : stroke.points;
+    for (const point of points) { xs.push(point.x * width); ys.push(point.y * height); }
+    if (!xs.length) return;
+    const pad = (stroke.tool === 'callout' ? 0 : Math.max(1, stroke.width * width) / 2) + 6;
+    ctx.save();
+    ctx.strokeStyle = '#5146e5'; ctx.lineWidth = Math.max(2, width * .003);
+    ctx.setLineDash([Math.max(6, width * .01), Math.max(4, width * .006)]);
+    ctx.strokeRect(Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + pad * 2, Math.max(...ys) - Math.min(...ys) + pad * 2);
+    ctx.restore();
+}

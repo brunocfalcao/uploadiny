@@ -8,6 +8,7 @@ export function createCalloutEditor(api) {
     const grip = document.createElement('button'); grip.type = 'button'; grip.className = 'callout-grip'; grip.textContent = 'Move note'; grip.title = 'Drag to move the text box';
     const text = document.createElement('textarea'); text.className = 'callout-text'; text.placeholder = 'Write your annotation…'; text.setAttribute('aria-label', 'Annotation text');
     note.append(grip, text); overlay.append(target, note);
+    note.addEventListener('pointerdown', event => startDrag(event, 'note', 'move'));
     const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
     for (const [element, part] of [[target, 'target'], [note, 'note']]) {
         const moveElement = part === 'target' ? element : grip;
@@ -54,7 +55,7 @@ export function createCalloutEditor(api) {
         overlay.style.setProperty('--callout-color', stroke.color);
         position(target, calloutBox(stroke)); position(note, calloutBox(stroke, 'note'));
         const displayWidth = canvas.getBoundingClientRect().width;
-        text.style.fontSize = `${displayWidth * .035}px`; text.style.padding = `${displayWidth * .025}px`;
+        text.style.fontSize = `${displayWidth * .022}px`; text.style.padding = `${displayWidth * .015}px`;
         if (document.activeElement !== text) text.value = stroke.text || '';
     }
     function startDrag(event, part, handle) {

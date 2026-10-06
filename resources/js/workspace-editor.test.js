@@ -39,8 +39,9 @@ function workspace(t) {
     const document = new Element(); document.getElementById = node; document.createElement = tag => new Element('', tag);
     const card = new Element(); card.dataset = { chunkImages: '["one","two","three"]', openImage: 'one', chunk: 'chunk-one' };
     const tool = new Element(); tool.dataset.tool = 'callout';
+    const selectTool = new Element(); selectTool.dataset.tool = 'select';
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
-    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? [card] : selector === '[data-tool]' ? [tool] : [];
+    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? [card] : selector === '[data-tool]' ? [selectTool, tool] : [];
     node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, latest_url: null });
     node('drawing-color').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
@@ -71,7 +72,7 @@ function workspace(t) {
         },
     });
     return {
-        node, assets, writes, deletions, document, tool,
+        node, assets, writes, deletions, document, tool, selectTool,
         async open() { card.click(); await tick(); assert.equal(node("editor-name").textContent, "one", node("workspace-message").textContent); assert.equal(node("annotation-canvas").hidden, false, node("workspace-message").textContent); },
         async settle() { await tick(); },
         async autosave() { const pending = [...timers.values()]; timers.clear(); for (const callback of pending) callback(); await tick(); },
@@ -195,8 +196,8 @@ test('autosave never captures an unfinished callout drag and cancellation restor
     ui.node('callout-overlay').emit('pointercancel', { pointerId: 7 });
     await ui.autosave();
     assert.equal(ui.writes.length, 1);
-    assert.equal(ui.assets.one.annotations[0].points[0].x, 0.35);
-    assert.equal(ui.assets.one.annotations[0].points[0].y, 0.46);
+    assert.equal(ui.assets.one.annotations[0].points[0].x, 0.4);
+    assert.equal(ui.assets.one.annotations[0].points[0].y, 0.47);
     assert.equal(ui.assets.one.annotations[0].text, 'Keep this box');
 });
 
@@ -212,4 +213,60 @@ test('deleting a file waits for its background save and cancels pending autosave
     assert.equal(ui.assets.one, undefined);
     assert.equal(ui.writes.length, 1);
     assert.equal(ui.assets.two.revision, 0);
+});
+
+test('Select tool picks a mark, Delete removes it through autosave and Undo restores it', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Remove me'); await ui.autosave();
+    assert.equal(ui.assets.one.annotations.length, 1);
+    const canvas = ui.node('annotation-canvas');
+    ui.selectTool.click();
+    assert.equal(ui.node('delete-mark').disabled, true);
+    assert.equal(ui.key('Delete', ui.document, { metaKey: false }).defaultPrevented, false);
+    canvas.emit('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 2 });
+    assert.equal(ui.node('delete-mark').disabled, true);
+    canvas.emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 2 });
+    assert.equal(ui.node('delete-mark').disabled, false);
+    assert.equal(ui.key('Escape', ui.document, { metaKey: false }).defaultPrevented, false);
+    assert.equal(ui.node('delete-mark').disabled, true);
+    canvas.emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 2 });
+    assert.equal(ui.key('Delete', ui.document, { metaKey: false }).defaultPrevented, true);
+    assert.equal(ui.node('delete-mark').disabled, true);
+    await ui.autosave();
+    assert.deepEqual(ui.assets.one.annotations, []);
+    assert.equal(ui.writes.at(-1).annotated_image, null);
+    ui.key('z'); await ui.autosave();
+    assert.equal(ui.assets.one.annotations.length, 1);
+    assert.equal(ui.assets.one.annotations[0].text, 'Remove me');
+    assert.equal(ui.node('delete-mark').disabled, true);
+    ui.key('z', ui.document, { shiftKey: true }); await ui.autosave();
+    assert.deepEqual(ui.assets.one.annotations, []);
+});
+
+test('Delete and Backspace leave marks alone while typing in feedback or a note', async t => {
+    const ui = workspace(t); await ui.open(); const field = ui.annotate('Keep me'); await ui.autosave();
+    ui.selectTool.click();
+    ui.node('annotation-canvas').emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 3 });
+    for (const target of [ui.node('image-comments'), field]) for (const key of ['Delete', 'Backspace']) {
+        assert.equal(ui.key(key, target, { metaKey: false }).defaultPrevented, false);
+    }
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations.length, 1);
+    assert.equal(ui.key('Backspace', ui.document, { metaKey: false }).defaultPrevented, true);
+    await ui.autosave();
+    assert.deepEqual(ui.assets.one.annotations, []);
+});
+
+test('dragging the note frame moves only the note and autosaves the new position', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Move me');
+    await ui.autosave();
+    const before = structuredClone(ui.assets.one.annotations[0].points);
+    const note = ui.node('callout-overlay').children[1];
+    note.emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 9 });
+    ui.node('callout-overlay').emit('pointermove', { clientX: 360, clientY: 280, pointerId: 9 });
+    ui.node('callout-overlay').emit('pointerup', { clientX: 360, clientY: 280, pointerId: 9 });
+    await ui.autosave();
+    const after = ui.assets.one.annotations[0].points;
+    assert.deepEqual(after.slice(0, 2), before.slice(0, 2));
+    assert.ok(after[2].x > before[2].x && after[2].y > before[2].y);
+    assert.equal(ui.assets.one.annotations[0].text, 'Move me');
 });
