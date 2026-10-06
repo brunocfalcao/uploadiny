@@ -18,6 +18,7 @@ use Illuminate\Support\Str;
  * @property string $uuid
  * @property string $name
  * @property string $slug
+ * @property string $canonical
  * @property string|null $description
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -34,6 +35,10 @@ class Project extends Model
     {
         static::creating(function (Project $project): void {
             $project->uuid ??= (string) Str::uuid();
+            do {
+                $canonical = strtolower(Str::password(6, numbers: false, symbols: false));
+            } while (static::query()->where('canonical', $canonical)->exists());
+            $project->canonical = $canonical;
         });
     }
 

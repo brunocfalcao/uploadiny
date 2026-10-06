@@ -19,17 +19,27 @@
         <header class="workspace-header">
             <div><p class="breadcrumb">Your workspace / {{ $project?->name ?? 'Projects' }}</p><h1>{{ $project?->name ?? 'Your projects' }}</h1>@if($project?->description)<p class="muted project-description">{{ $project->description }}</p>@endif</div>
             <div class="header-actions">
+                <a class="button" href="{{ route('agent-access.show') }}">Agent API access</a>
                 @if($project)<button type="button" class="button" data-edit-project>Project settings</button><button type="button" class="button button-primary" data-upload-trigger>Upload files</button>@else<button type="button" class="button button-primary" data-new-project>Create project</button>@endif
             </div>
         </header>
         @if(session('status'))<div class="notice" role="status">{{ session('status') }}</div>@endif
         @if($errors->any())<div class="notice error-message" role="alert">{{ $errors->first() }}</div>@endif
         <div id="workspace-message" role="status" aria-live="polite" class="notice" hidden></div>
+        @if($project)
+            <div class="project-canonical">
+                <label for="project-canonical">Project code</label>
+                <input id="project-canonical" value="{{ $project->canonical }}" readonly spellcheck="false" aria-describedby="canonical-hint">
+                <button class="button" type="button" data-copy-field="project-canonical">Copy code</button>
+                <p id="canonical-hint" class="muted">Give this canonical to Claude or Codex to select this project.</p>
+                <p class="copy-status muted" data-copy-status role="status" aria-live="polite"></p>
+            </div>
+        @endif
         <section id="gallery">
         @if(!$project)
             <div class="intro"><h2>A home for every feedback group.</h2><p>Choose a project or create one. Upload files together, mark what needs attention, and give your coding agent the whole picture.</p></div>
             <div class="project-grid">
-            @foreach($projects as $entry)<a class="project-tile" href="{{ route('projects.show', $entry) }}"><h2>{{ $entry->name }}</h2><p>{{ $entry->description ?: 'Open project' }}</p><span>{{ $entry->images_count }} {{ Str::plural('file', $entry->images_count) }}</span></a>@endforeach
+            @foreach($projects as $entry)<a class="project-tile" href="{{ route('projects.show', $entry) }}"><h2>{{ $entry->name }}</h2><p>{{ $entry->description ?: 'Open project' }}</p><span>Project code: <code>{{ $entry->canonical }}</code></span><span>{{ $entry->images_count }} {{ Str::plural('file', $entry->images_count) }}</span></a>@endforeach
             </div>
         @else
             <input id="image-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp,video/mp4,video/quicktime,video/x-m4v,.mov,.m4v" multiple hidden>
@@ -132,7 +142,7 @@
         @csrf<input id="project-method" name="_method" value="POST" type="hidden">
         <div class="dialog-heading"><h2 id="project-dialog-title">Create project</h2><button type="button" class="tool" data-close-project aria-label="Close project form">Close</button></div>
         <label class="form-label">Project name<input class="qr-field qr-field-default" id="project-name" name="name" maxlength="120" required></label>
-        <label class="form-label">Project identifier<input class="qr-field qr-field-default" id="project-slug" name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="120" required><span class="field-hint">Used to find this project, for example taxiny.</span></label>
+        <label class="form-label">Project URL identifier<input class="qr-field qr-field-default" id="project-slug" name="slug" pattern="[a-z0-9]+(-[a-z0-9]+)*" maxlength="120" required><span class="field-hint">Used in this project’s website address, for example taxiny. The agent’s project code stays the same when this changes.</span></label>
         <label class="form-label">Description<textarea class="qr-field qr-field-default qr-textarea" id="project-description" name="description" maxlength="2000" rows="3"></textarea></label>
         <button class="button button-primary" id="project-submit" type="submit">Create project</button>
     </form>

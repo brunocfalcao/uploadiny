@@ -1,6 +1,6 @@
 {
   "name": "uploadiny-mobile",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -9,7 +9,7 @@
     "prebuild:ios": "expo prebuild --platform ios --no-install",
     "typecheck": "tsc --noEmit",
     "doctor": "expo-doctor",
-    "test:share-extension": "node --test scripts/share-extension-security.test.js scripts/scene-lifecycle.test.js"
+    "test:share-extension": "node --test scripts/share-extension-security.test.js scripts/share-review.test.js scripts/scene-lifecycle.test.js"
   },
   "dependencies": {
     "expo": "~57.0.9",

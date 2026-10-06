@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Http\Controllers\AgentAccessController;
 use App\Http\Controllers\AgentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChunkController;
@@ -14,6 +15,9 @@ Route::middleware('guest')->group(function (): void {
     Route::post('/login', [AuthController::class, 'store'])->middleware('throttle:login')->name('login.store');
 });
 Route::middleware('auth')->group(function (): void {
+    Route::get('/agent-access', [AgentAccessController::class, 'show'])->name('agent-access.show');
+    Route::post('/agent-access', [AgentAccessController::class, 'store'])->name('agent-access.store');
+    Route::delete('/agent-access', [AgentAccessController::class, 'destroy'])->name('agent-access.destroy');
     Route::get('/', [ProjectController::class, 'index'])->name('projects.index');
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::delete('/device-access', [DeviceAccessController::class, 'destroy'])->name('device-access.destroy');

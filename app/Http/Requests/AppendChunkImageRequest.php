@@ -16,6 +16,9 @@ class AppendChunkImageRequest extends FormRequest
     /** @return array<string, mixed> */
     public function rules(): array
     {
-        return ['file' => ['required', 'file', 'max:512000', 'mimes:jpg,jpeg,png,gif,webp,bmp,mp4,mov,m4v']];
+        return [
+            'file' => ['required', 'file', 'max:512000', 'mimes:jpg,jpeg,png,gif,webp,bmp,mp4,mov,m4v'],
+            'comments' => ['nullable', 'string', 'max:50000'],
+        ];
     }
 }

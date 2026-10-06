@@ -16,6 +16,7 @@ Route::middleware(['auth:sanctum', 'abilities:'.UploadinyTokenAbility::PROJECTS_
 });
 
 Route::middleware(['auth:sanctum', 'abilities:'.implode(',', UploadinyTokenAbility::agent())])->group(function (): void {
+    Route::get('/feedback/{project:canonical}', [AgentController::class, 'latest'])->where('project', '[a-z]{6}')->name('api.feedback.latest');
     Route::get('/projects/{project}/latest-chunk', [AgentController::class, 'latest'])->name('api.projects.latest');
     Route::get('/images/{image}/download', [ImageController::class, 'original'])->name('api.images.download');
     Route::get('/images/{image}/annotated', [ImageController::class, 'annotated'])->name('api.images.annotated');

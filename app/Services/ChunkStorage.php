@@ -17,13 +17,16 @@ use Throwable;
 
 class ChunkStorage
 {
-    /** @param array<int, UploadedFile> $files */
-    public function store(Project $project, array $files, ?UploadChunk $draft = null): UploadChunk
+    /**
+     * @param  array<int, UploadedFile>  $files
+     * @param  array<int, string>  $comments
+     */
+    public function store(Project $project, array $files, ?UploadChunk $draft = null, array $comments = []): UploadChunk
     {
-        return Cache::lock('uploadiny:upload-sequence', 600)->block(30, function () use ($project, $files, $draft): UploadChunk {
+        return Cache::lock('uploadiny:upload-sequence', 600)->block(30, function () use ($project, $files, $draft, $comments): UploadChunk {
             $paths = [];
             try {
-                return DB::transaction(function () use ($project, $files, $draft, &$paths): UploadChunk {
+                return DB::transaction(function () use ($project, $files, $draft, $comments, &$paths): UploadChunk {
                     // Serialize project deletion and group creation around the same project record.
                     $project = Project::query()->lockForUpdate()->findOrFail($project->id);
                     $sequence = max((int) Storage::disk('local')->get('.uploadiny-sequence'), (int) UploadImage::query()->max('id'));
@@ -32,7 +35,7 @@ class ChunkStorage
                         abort_unless($chunk->status === 'uploading' && $chunk->upload_project_id === $project->id, 409, 'This chunk is no longer accepting images.');
                         abort_if($chunk->images()->count() + count($files) > $chunk->expected_images, 409, 'This chunk already contains its expected images.');
                     }
-                    foreach ($files as $file) {
+                    foreach ($files as $index => $file) {
                         $uuid = (string) Str::uuid();
                         $extension = strtolower($file->getClientOriginalExtension());
                         $extension = preg_replace('/[^a-z0-9]/', '', $extension);
@@ -46,7 +49,7 @@ class ChunkStorage
                             'uuid' => $uuid, 'project_id' => $project->id, 'name' => $name,
                             'original_name' => $file->getClientOriginalName(), 'path' => $path,
                             'mime_type' => $file->getMimeType() ?? 'application/octet-stream', 'size' => $file->getSize(),
-                            'annotations' => [], 'comments' => '',
+                            'annotations' => [], 'comments' => $comments[$index] ?? '',
                             'description_status' => str_starts_with($file->getMimeType() ?? '', 'video/') ? 'not_applicable' : 'pending',
                         ]);
                     }

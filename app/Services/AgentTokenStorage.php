@@ -8,10 +8,24 @@ use Illuminate\Support\Facades\Storage;
 
 final class AgentTokenStorage
 {
+    private const PATH = 'credentials/uploadiny-agent-token.txt';
+
+    public function read(): ?string
+    {
+        $disk = Storage::disk('local');
+
+        return $disk->exists(self::PATH) ? $disk->get(self::PATH) : null;
+    }
+
+    public function forget(): void
+    {
+        Storage::disk('local')->delete(self::PATH);
+    }
+
     public function replace(string $token): bool
     {
         $disk = Storage::disk('local');
-        $path = 'credentials/uploadiny-agent-token.txt';
+        $path = self::PATH;
         $temporaryPath = 'credentials/.uploadiny-agent-token.next';
         $originalUmask = umask(0077);
         try {

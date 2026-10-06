@@ -1,9 +1,10 @@
+import AVKit
 import ImageIO
 import Security
 import UIKit
 import UniformTypeIdentifiers
 
-final class ShareIntoViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, URLSessionTaskDelegate {
+final class ShareIntoViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UICollectionViewDataSource, UICollectionViewDelegate, UITextViewDelegate, URLSessionTaskDelegate {
   private let titleLabel = UILabel()
   private let detailLabel = UILabel()
   private let emptyProjectIcon = UIImageView()
@@ -21,7 +22,35 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var projects: [Project] = []
   private var selectedProject: Project?
   private var providers: [NSItemProvider] = []
-  private var preparedFiles: [SharedFile] = []
+  private var review = ShareReview()
+  private let reviewPanel = UIStackView()
+  private let assetPreview = UIImageView()
+  private var assetPreviewHeight: NSLayoutConstraint!
+  private let assetLabel = UILabel()
+  private let mediaLabel = UILabel()
+  private let feedbackCard = UIView()
+  private let feedbackStatus = UILabel()
+  private let footerSummary = UILabel()
+  private var feedbackHeight: NSLayoutConstraint!
+  private let assetStrip: UICollectionView = {
+    let layout = UICollectionViewFlowLayout()
+    layout.scrollDirection = .horizontal
+    layout.itemSize = CGSize(width: 68, height: 68)
+    layout.minimumLineSpacing = 10
+    layout.sectionInset = UIEdgeInsets(top: 4, left: 2, bottom: 4, right: 2)
+    return UICollectionView(frame: .zero, collectionViewLayout: layout)
+  }()
+  private let assetNameLabel = UILabel()
+  private let feedbackField = UITextView()
+  private let feedbackPlaceholder = UILabel()
+  private let previousButton = UIButton(type: .system)
+  private let nextButton = UIButton(type: .system)
+  private let playButton = UIButton(type: .system)
+  private let changeProjectButton = UIButton(type: .system)
+  private let scroll = UIScrollView()
+  private var previewGenerator: AVAssetImageGenerator?
+  private var previewGeneration = 0
+  private var isPreparing = false
   private var uploadSession: URLSession?
   private var temporaryURLs: [URL] = []
   private var didStart = false
@@ -45,30 +74,53 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   private func configureView() {
-    preferredContentSize = CGSize(width: 0, height: 620)
-    view.backgroundColor = UIColor(red: 7 / 255, green: 11 / 255, blue: 24 / 255, alpha: 1)
+    preferredContentSize = CGSize(width: 0, height: 760)
+    view.backgroundColor = SharePalette.canvas
+    view.tintColor = SharePalette.accent
     titleLabel.text = "Choose a project"
-    titleLabel.font = .systemFont(ofSize: 24, weight: .bold)
-    titleLabel.textColor = .white
-    titleLabel.textAlignment = .left
+    titleLabel.font = .preferredFont(forTextStyle: .title2)
+    titleLabel.textColor = SharePalette.text
     titleLabel.numberOfLines = 2
     titleLabel.adjustsFontForContentSizeCategory = true
     detailLabel.text = "Loading your projects…"
-    detailLabel.font = .systemFont(ofSize: 14)
-    detailLabel.textColor = UIColor(red: 168 / 255, green: 176 / 255, blue: 205 / 255, alpha: 1)
-    detailLabel.numberOfLines = 4
-    detailLabel.textAlignment = .left
+    detailLabel.font = .preferredFont(forTextStyle: .subheadline)
+    detailLabel.textColor = SharePalette.secondary
+    detailLabel.numberOfLines = 0
     detailLabel.adjustsFontForContentSizeCategory = true
+    let brandIcon = UIImageView(image: UIImage(systemName: "square.and.arrow.up", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
+    brandIcon.tintColor = SharePalette.accentText
+    brandIcon.backgroundColor = SharePalette.accent.withAlphaComponent(0.16)
+    brandIcon.contentMode = .center
+    brandIcon.layer.cornerRadius = 10
+    brandIcon.isAccessibilityElement = false
+    brandIcon.widthAnchor.constraint(equalToConstant: 36).isActive = true
+    brandIcon.heightAnchor.constraint(equalToConstant: 36).isActive = true
+    var closeConfiguration = UIButton.Configuration.plain()
+    closeConfiguration.image = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 16, weight: .semibold))
+    closeConfiguration.baseForegroundColor = SharePalette.secondary
+    closeButton.configuration = closeConfiguration
+    closeButton.accessibilityLabel = "Close share sheet"
+    closeButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+    closeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+    closeButton.setContentHuggingPriority(.required, for: .horizontal)
+    closeButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
+    let header = UIStackView(arrangedSubviews: [brandIcon, titleLabel, closeButton])
+    header.axis = .horizontal
+    header.alignment = .center
+    header.spacing = 12
+    header.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(header)
     emptyProjectIcon.image = UIImage(systemName: "folder.badge.plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 52, weight: .medium))
-    emptyProjectIcon.tintColor = UIColor(red: 132 / 255, green: 148 / 255, blue: 255 / 255, alpha: 1)
+    emptyProjectIcon.tintColor = SharePalette.accentText
     emptyProjectIcon.contentMode = .scaleAspectFit
     emptyProjectIcon.isAccessibilityElement = false
     emptyProjectIcon.isHidden = true
     preview.contentMode = .scaleAspectFit
     preview.clipsToBounds = true
-    preview.layer.cornerRadius = 20
-    preview.backgroundColor = UIColor(red: 13 / 255, green: 20 / 255, blue: 38 / 255, alpha: 1)
+    preview.layer.cornerRadius = 16
+    preview.backgroundColor = SharePalette.surface
     preview.isHidden = true
+    configureReview()
     table.backgroundColor = .clear
     table.separatorStyle = .none
     table.indicatorStyle = .white
@@ -86,70 +138,56 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     emailField.autocorrectionType = .no
     configureCredentialField(passwordField, placeholder: "Password", secure: true)
     passwordField.textContentType = .password
-    signInButton.setTitle("Sign in securely", for: .normal)
-    var signInConfiguration = UIButton.Configuration.filled()
-    signInConfiguration.baseBackgroundColor = UIColor(red: 79 / 255, green: 99 / 255, blue: 234 / 255, alpha: 1)
-    signInConfiguration.baseForegroundColor = .white
-    signInConfiguration.cornerStyle = .large
-    signInConfiguration.image = UIImage(systemName: "lock.fill")
-    signInConfiguration.imagePadding = 10
-    signInConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
+    emailField.isHidden = true
+    passwordField.isHidden = true
+    signInButton.isHidden = true
+    let signInConfiguration = primaryButtonConfiguration(title: "Sign in securely", symbol: "lock.fill")
     signInButton.configuration = signInConfiguration
     signInButton.addTarget(self, action: #selector(beginSignIn), for: .touchUpInside)
     signOutButton.setTitle("Remove this iPhone sign-in", for: .normal)
-    signOutButton.setTitleColor(UIColor(red: 220 / 255, green: 228 / 255, blue: 250 / 255, alpha: 1), for: .normal)
-    signOutButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+    signOutButton.setTitleColor(SharePalette.secondary, for: .normal)
+    signOutButton.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+    signOutButton.titleLabel?.adjustsFontForContentSizeCategory = true
+    let signOutHeight = signOutButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+    signOutHeight.priority = .defaultHigh
+    signOutHeight.isActive = true
     signOutButton.addTarget(self, action: #selector(signOut), for: .touchUpInside)
     signOutButton.isHidden = true
-    uploadButton.setTitle("Upload files", for: .normal)
-    uploadButton.setTitleColor(.white, for: .normal)
-    uploadButton.backgroundColor = UIColor(red: 51 / 255, green: 72 / 255, blue: 216 / 255, alpha: 1)
-    var uploadConfiguration = UIButton.Configuration.filled()
-    uploadConfiguration.baseBackgroundColor = UIColor(red: 79 / 255, green: 99 / 255, blue: 234 / 255, alpha: 1)
-    uploadConfiguration.baseForegroundColor = .white
-    uploadConfiguration.cornerStyle = .large
-    uploadConfiguration.image = UIImage(systemName: "arrow.up.doc.fill")
-    uploadConfiguration.imagePadding = 10
-    uploadConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
-    uploadButton.configuration = uploadConfiguration
-    uploadButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+    uploadButton.configuration = primaryButtonConfiguration(title: "Upload assets", symbol: "arrow.up")
     uploadButton.isEnabled = false
-    uploadButton.alpha = 0.5
     uploadButton.isHidden = true
     uploadButton.addTarget(self, action: #selector(beginUpload), for: .touchUpInside)
-    closeButton.setTitle("Close", for: .normal)
-    var closeConfiguration = UIButton.Configuration.gray()
-    closeConfiguration.baseBackgroundColor = UIColor(red: 28 / 255, green: 37 / 255, blue: 60 / 255, alpha: 1)
-    closeConfiguration.baseForegroundColor = UIColor(red: 220 / 255, green: 228 / 255, blue: 250 / 255, alpha: 1)
-    closeConfiguration.cornerStyle = .large
-    closeConfiguration.image = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
-    closeConfiguration.imagePadding = 8
-    closeConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 20, bottom: 14, trailing: 20)
-    closeButton.configuration = closeConfiguration
-    closeButton.addTarget(self, action: #selector(closeExtension), for: .touchUpInside)
-    spinner.color = .white
+    footerSummary.font = .preferredFont(forTextStyle: .caption1)
+    footerSummary.adjustsFontForContentSizeCategory = true
+    footerSummary.textColor = SharePalette.secondary
+    footerSummary.textAlignment = .center
+    footerSummary.numberOfLines = 0
+    footerSummary.isHidden = true
+    let footer = UIStackView(arrangedSubviews: [footerSummary, uploadButton])
+    footer.axis = .vertical
+    footer.spacing = 10
+    footer.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(footer)
+    spinner.color = SharePalette.accentText
     spinner.startAnimating()
-    let stack = UIStackView(arrangedSubviews: [emptyProjectIcon, titleLabel, detailLabel, emailField, passwordField, signInButton, preview, spinner, table, uploadButton, signOutButton, closeButton])
+    let stack = UIStackView(arrangedSubviews: [emptyProjectIcon, detailLabel, emailField, passwordField, signInButton, changeProjectButton, reviewPanel, preview, spinner, table, signOutButton])
     stack.axis = .vertical
     stack.alignment = .fill
-    stack.spacing = 18
+    stack.spacing = 14
     stack.translatesAutoresizingMaskIntoConstraints = false
-    let scroll = UIScrollView()
     scroll.translatesAutoresizingMaskIntoConstraints = false
     scroll.indicatorStyle = .white
-    scroll.alwaysBounceVertical = false
+    scroll.keyboardDismissMode = .interactive
     view.addSubview(scroll)
     scroll.addSubview(stack)
     let emptyIconHeight = emptyProjectIcon.heightAnchor.constraint(equalToConstant: 64)
     emptyIconHeight.priority = .defaultHigh
     tableHeight = table.heightAnchor.constraint(equalToConstant: 320)
     tableHeight.priority = .defaultHigh
-    previewHeight = preview.heightAnchor.constraint(equalToConstant: 360)
+    previewHeight = preview.heightAnchor.constraint(equalToConstant: 320)
     previewHeight.priority = .defaultHigh
     let uploadHeight = uploadButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
     uploadHeight.priority = .defaultHigh
-    let closeHeight = closeButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
-    closeHeight.priority = .defaultHigh
     let emailHeight = emailField.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
     emailHeight.priority = .defaultHigh
     let passwordHeight = passwordField.heightAnchor.constraint(greaterThanOrEqualToConstant: 52)
@@ -157,21 +195,395 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     let signInHeight = signInButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
     signInHeight.priority = .defaultHigh
     NSLayoutConstraint.activate([
+      header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+      header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+      header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
       scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-      scroll.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
-      stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 24),
-      stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -24),
-      stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 28),
-      stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
-      stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -48),
-      tableHeight, emptyIconHeight, previewHeight, uploadHeight, closeHeight,
-      emailHeight, passwordHeight, signInHeight,
+      scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 16),
+      scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -16),
+      footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+      footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+      footer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
+      stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 20),
+      stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -20),
+      stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 8),
+      stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -16),
+      stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -40),
+      tableHeight, emptyIconHeight, previewHeight, uploadHeight, emailHeight, passwordHeight, signInHeight,
     ])
     let gesture = UITapGestureRecognizer(target: self, action: #selector(dismissAfterSuccess))
     gesture.cancelsTouchesInView = false
     view.addGestureRecognizer(gesture)
+  }
+
+  private func primaryButtonConfiguration(title: String, symbol: String) -> UIButton.Configuration {
+    var configuration = UIButton.Configuration.filled()
+    configuration.title = title
+    configuration.baseBackgroundColor = SharePalette.accent
+    configuration.baseForegroundColor = .white
+    configuration.background.cornerRadius = 16
+    configuration.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(weight: .semibold))
+    configuration.imagePadding = 10
+    configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+      var attributes = attributes
+      attributes.font = .preferredFont(forTextStyle: .headline)
+      return attributes
+    }
+    configuration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 20)
+    return configuration
+  }
+
+  private func configureReview() {
+    reviewPanel.axis = .vertical
+    reviewPanel.spacing = 8
+    reviewPanel.isHidden = true
+    mediaLabel.font = .preferredFont(forTextStyle: .headline)
+    mediaLabel.adjustsFontForContentSizeCategory = true
+    mediaLabel.textColor = SharePalette.text
+    assetLabel.font = .preferredFont(forTextStyle: .subheadline)
+    assetLabel.adjustsFontForContentSizeCategory = true
+    assetLabel.textColor = SharePalette.secondary
+    assetLabel.textAlignment = .center
+    assetLabel.setContentHuggingPriority(.required, for: .horizontal)
+    configureNavigationButton(previousButton, title: "Previous asset", symbol: "chevron.left", action: #selector(previousAsset))
+    configureNavigationButton(nextButton, title: "Next asset", symbol: "chevron.right", action: #selector(nextAsset))
+    let navigation = UIStackView(arrangedSubviews: [mediaLabel, previousButton, assetLabel, nextButton])
+    navigation.alignment = .center
+    navigation.spacing = 4
+    reviewPanel.addArrangedSubview(navigation)
+    assetPreview.contentMode = .scaleAspectFit
+    assetPreview.backgroundColor = SharePalette.surface
+    assetPreview.layer.cornerRadius = 16
+    assetPreview.clipsToBounds = true
+    assetPreview.isAccessibilityElement = true
+    reviewPanel.addArrangedSubview(assetPreview)
+    assetPreviewHeight = assetPreview.heightAnchor.constraint(equalToConstant: 160)
+    assetPreviewHeight.priority = .defaultHigh
+    assetPreviewHeight.isActive = true
+    assetNameLabel.font = .preferredFont(forTextStyle: .caption1)
+    assetNameLabel.adjustsFontForContentSizeCategory = true
+    assetNameLabel.textColor = SharePalette.secondary
+    assetNameLabel.numberOfLines = 1
+    assetNameLabel.lineBreakMode = .byTruncatingMiddle
+    reviewPanel.addArrangedSubview(assetNameLabel)
+    var playConfiguration = UIButton.Configuration.tinted()
+    playConfiguration.title = "Play recording"
+    playConfiguration.image = UIImage(systemName: "play.fill")
+    playConfiguration.imagePadding = 8
+    playConfiguration.baseForegroundColor = SharePalette.accentText
+    playButton.configuration = playConfiguration
+    let playHeight = playButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+    playHeight.priority = .defaultHigh
+    playHeight.isActive = true
+    playButton.addTarget(self, action: #selector(playRecording), for: .touchUpInside)
+    reviewPanel.addArrangedSubview(playButton)
+    assetStrip.backgroundColor = .clear
+    assetStrip.showsHorizontalScrollIndicator = false
+    assetStrip.dataSource = self
+    assetStrip.delegate = self
+    assetStrip.register(ShareAssetCell.self, forCellWithReuseIdentifier: "asset")
+    let stripHeight = assetStrip.heightAnchor.constraint(equalToConstant: 76)
+    stripHeight.priority = .defaultHigh
+    stripHeight.isActive = true
+    reviewPanel.addArrangedSubview(assetStrip)
+    reviewPanel.setCustomSpacing(16, after: assetStrip)
+    feedbackCard.backgroundColor = SharePalette.surface
+    feedbackCard.layer.cornerRadius = 18
+    feedbackCard.layer.borderWidth = 1
+    feedbackCard.layer.borderColor = SharePalette.line.cgColor
+    let pencil = UIImageView(image: UIImage(systemName: "text.bubble", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)))
+    pencil.tintColor = SharePalette.accentText
+    pencil.isAccessibilityElement = false
+    pencil.widthAnchor.constraint(equalToConstant: 24).isActive = true
+    let heading = UILabel()
+    heading.text = "Your feedback"
+    heading.font = .preferredFont(forTextStyle: .headline)
+    heading.adjustsFontForContentSizeCategory = true
+    heading.textColor = SharePalette.text
+    heading.numberOfLines = 0
+    let optional = UILabel()
+    optional.text = "Optional"
+    optional.font = .preferredFont(forTextStyle: .caption1)
+    optional.adjustsFontForContentSizeCategory = true
+    optional.textColor = SharePalette.secondary
+    optional.setContentHuggingPriority(.required, for: .horizontal)
+    let feedbackHeading = UIStackView(arrangedSubviews: [pencil, heading, optional])
+    feedbackHeading.axis = .horizontal
+    feedbackHeading.alignment = .center
+    feedbackHeading.spacing = 8
+    feedbackField.delegate = self
+    feedbackField.font = .preferredFont(forTextStyle: .body)
+    feedbackField.adjustsFontForContentSizeCategory = true
+    feedbackField.textColor = SharePalette.text
+    feedbackField.tintColor = SharePalette.accentText
+    feedbackField.backgroundColor = .clear
+    feedbackField.textContainerInset = UIEdgeInsets(top: 6, left: 0, bottom: 6, right: 0)
+    feedbackField.textContainer.lineFragmentPadding = 0
+    feedbackField.accessibilityLabel = "Feedback for this asset"
+    feedbackField.accessibilityHint = "Included with this asset when you upload."
+    feedbackHeight = feedbackField.heightAnchor.constraint(equalToConstant: 80)
+    feedbackHeight.priority = .defaultHigh
+    feedbackHeight.isActive = true
+    feedbackPlaceholder.text = "What needs to change?\nDescribe the improvement you have in mind…"
+    feedbackPlaceholder.font = .preferredFont(forTextStyle: .body)
+    feedbackPlaceholder.adjustsFontForContentSizeCategory = true
+    feedbackPlaceholder.textColor = SharePalette.secondary
+    feedbackPlaceholder.numberOfLines = 0
+    feedbackPlaceholder.isUserInteractionEnabled = false
+    feedbackPlaceholder.isAccessibilityElement = false
+    feedbackPlaceholder.translatesAutoresizingMaskIntoConstraints = false
+    feedbackField.addSubview(feedbackPlaceholder)
+    NSLayoutConstraint.activate([
+      feedbackPlaceholder.topAnchor.constraint(equalTo: feedbackField.frameLayoutGuide.topAnchor, constant: 6),
+      feedbackPlaceholder.leadingAnchor.constraint(equalTo: feedbackField.frameLayoutGuide.leadingAnchor),
+      feedbackPlaceholder.trailingAnchor.constraint(equalTo: feedbackField.frameLayoutGuide.trailingAnchor),
+    ])
+    let toolbar = UIToolbar()
+    toolbar.sizeToFit()
+    toolbar.items = [UIBarButtonItem(systemItem: .flexibleSpace), UIBarButtonItem(title: "Done", style: .done, target: self, action: #selector(finishWriting))]
+    feedbackField.inputAccessoryView = toolbar
+    feedbackStatus.font = .preferredFont(forTextStyle: .caption1)
+    feedbackStatus.adjustsFontForContentSizeCategory = true
+    feedbackStatus.textColor = SharePalette.secondary
+    feedbackStatus.numberOfLines = 0
+    let feedbackContent = UIStackView(arrangedSubviews: [feedbackHeading, feedbackField, feedbackStatus])
+    feedbackContent.axis = .vertical
+    feedbackContent.spacing = 8
+    feedbackContent.translatesAutoresizingMaskIntoConstraints = false
+    feedbackCard.addSubview(feedbackContent)
+    NSLayoutConstraint.activate([
+      feedbackContent.leadingAnchor.constraint(equalTo: feedbackCard.leadingAnchor, constant: 14),
+      feedbackContent.trailingAnchor.constraint(equalTo: feedbackCard.trailingAnchor, constant: -14),
+      feedbackContent.topAnchor.constraint(equalTo: feedbackCard.topAnchor, constant: 14),
+      feedbackContent.bottomAnchor.constraint(equalTo: feedbackCard.bottomAnchor, constant: -14),
+    ])
+    reviewPanel.addArrangedSubview(feedbackCard)
+    var projectConfiguration = UIButton.Configuration.gray()
+    projectConfiguration.baseForegroundColor = SharePalette.text
+    projectConfiguration.baseBackgroundColor = SharePalette.surface
+    projectConfiguration.image = UIImage(systemName: "chevron.up.chevron.down", withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .semibold))
+    projectConfiguration.imagePlacement = .trailing
+    projectConfiguration.imagePadding = 12
+    projectConfiguration.titleAlignment = .leading
+    projectConfiguration.titleLineBreakMode = .byTruncatingTail
+    projectConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 14)
+    projectConfiguration.background.cornerRadius = 12
+    changeProjectButton.configuration = projectConfiguration
+    changeProjectButton.contentHorizontalAlignment = .fill
+    let projectHeight = changeProjectButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
+    projectHeight.priority = .defaultHigh
+    projectHeight.isActive = true
+    changeProjectButton.isHidden = true
+    changeProjectButton.addTarget(self, action: #selector(changeProject), for: .touchUpInside)
+  }
+
+  private func configureNavigationButton(_ button: UIButton, title: String, symbol: String, action: Selector) {
+    var configuration = UIButton.Configuration.plain()
+    configuration.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
+    configuration.baseForegroundColor = SharePalette.text
+    button.configuration = configuration
+    button.accessibilityLabel = title
+    let width = button.widthAnchor.constraint(equalToConstant: 44)
+    width.priority = .defaultHigh
+    width.isActive = true
+    let height = button.heightAnchor.constraint(equalToConstant: 44)
+    height.priority = .defaultHigh
+    height.isActive = true
+    button.addTarget(self, action: action, for: .touchUpInside)
+  }
+
+  func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { review.files.count }
+
+  func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+    let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "asset", for: indexPath) as! ShareAssetCell
+    let file = review.files[indexPath.item]
+    cell.representedIndex = indexPath.item
+    cell.configure(number: indexPath.item + 1, file: file, selected: review.selectedIndex == indexPath.item)
+    if !file.mime.hasPrefix("video/") {
+      DispatchQueue.global(qos: .userInitiated).async { [weak self, weak cell] in
+        guard let self else { return }
+        let thumbnail = self.imagePreview(file.url, maxPixelSize: 160)
+        DispatchQueue.main.async {
+          guard !self.didClose, let cell, cell.representedIndex == indexPath.item else { return }
+          cell.imageView.image = thumbnail ?? UIImage(systemName: "photo")
+        }
+      }
+    }
+    return cell
+  }
+
+  func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+    selectAsset(indexPath.item)
+  }
+
+  private func updateFeedbackPresentation() {
+    let hasNote = !(feedbackField.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    feedbackStatus.text = hasNote ? "Included with this asset on upload" : "Add context, a problem, or the change you want."
+    feedbackStatus.textColor = hasNote ? SharePalette.mint : SharePalette.secondary
+    feedbackPlaceholder.isHidden = !(feedbackField.text ?? "").isEmpty
+    let notes = review.files.filter { !$0.comments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count
+    footerSummary.text = "\(review.files.count) asset\(review.files.count == 1 ? "" : "s") · \(notes) with feedback"
+    for indexPath in assetStrip.indexPathsForVisibleItems {
+      guard let cell = assetStrip.cellForItem(at: indexPath) as? ShareAssetCell else { continue }
+      cell.updateNote(!review.files[indexPath.item].comments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    let width = max(feedbackField.bounds.width, view.bounds.width - 72)
+    let textHeight = feedbackField.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+    feedbackHeight.constant = min(160, max(80, textHeight))
+  }
+
+  private func showReview() {
+    guard !didClose, !review.files.isEmpty, let project = selectedProject else { return }
+    spinner.stopAnimating()
+    spinner.isHidden = true
+    table.isHidden = true
+    signOutButton.isHidden = true
+    preview.isHidden = true
+    emailField.isHidden = true
+    passwordField.isHidden = true
+    signInButton.isHidden = true
+    titleLabel.text = "Share feedback"
+    detailLabel.isHidden = true
+    changeProjectButton.configuration?.title = project.name
+    changeProjectButton.configuration?.subtitle = "Upload to project"
+    changeProjectButton.accessibilityLabel = "Project: \(project.name). Change project"
+    changeProjectButton.isHidden = false
+    reviewPanel.isHidden = false
+    uploadButton.configuration?.title = "Upload \(review.files.count) asset\(review.files.count == 1 ? "" : "s")"
+    footerSummary.isHidden = false
+    uploadButton.accessibilityLabel = "Upload \(review.files.count) asset\(review.files.count == 1 ? "" : "s")"
+    uploadButton.isEnabled = true
+    uploadButton.alpha = 1
+    uploadButton.isHidden = false
+    preferredContentSize = CGSize(width: 0, height: 760)
+    showAsset()
+    scroll.setContentOffset(.zero, animated: false)
+  }
+
+  private func showAsset() {
+    guard review.files.indices.contains(review.selectedIndex) else { return }
+    let file = review.files[review.selectedIndex]
+    assetLabel.text = "\(review.selectedIndex + 1) / \(review.files.count)"
+    mediaLabel.text = file.mime.hasPrefix("video/") ? "Recording" : "Screenshot"
+    previousButton.isHidden = review.files.count == 1
+    nextButton.isHidden = review.files.count == 1
+    assetStrip.isHidden = review.files.count == 1
+    assetPreviewHeight.constant = review.files.count == 1 ? 210 : 160
+    assetNameLabel.text = file.name
+    previousButton.isEnabled = review.selectedIndex > 0
+    nextButton.isEnabled = review.selectedIndex + 1 < review.files.count
+    previousButton.alpha = previousButton.isEnabled ? 1 : 0.35
+    nextButton.alpha = nextButton.isEnabled ? 1 : 0.35
+    feedbackField.text = file.comments
+    feedbackField.accessibilityLabel = "Feedback for asset \(review.selectedIndex + 1), \(file.name)"
+    feedbackPlaceholder.isHidden = !file.comments.isEmpty
+    playButton.isHidden = !file.mime.hasPrefix("video/")
+    assetStrip.reloadData()
+    assetStrip.layoutIfNeeded()
+    if assetStrip.numberOfItems(inSection: 0) > review.selectedIndex {
+      assetStrip.scrollToItem(at: IndexPath(item: review.selectedIndex, section: 0), at: .centeredHorizontally, animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+    updateFeedbackPresentation()
+    loadAssetPreview(file)
+  }
+
+  private func loadAssetPreview(_ file: SharedFile) {
+    previewGeneration += 1
+    let generation = previewGeneration
+    previewGenerator?.cancelAllCGImageGeneration()
+    previewGenerator = nil
+    assetPreview.image = nil
+    assetPreview.accessibilityLabel = "Loading preview for \(file.name)"
+    if file.mime.hasPrefix("video/") {
+      let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file.url))
+      generator.appliesPreferredTrackTransform = true
+      generator.maximumSize = CGSize(width: 1280, height: 1280)
+      previewGenerator = generator
+      generator.generateCGImageAsynchronously(for: .zero) { [weak self] image, _, _ in
+        DispatchQueue.main.async {
+          guard let self, !self.didClose, self.previewGeneration == generation else { return }
+          self.displayAssetPreview(image.map { UIImage(cgImage: $0) }, file: file)
+        }
+      }
+    } else {
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        guard let self else { return }
+        let image = self.imagePreview(file.url)
+        DispatchQueue.main.async {
+          guard !self.didClose, self.previewGeneration == generation else { return }
+          self.displayAssetPreview(image, file: file)
+        }
+      }
+    }
+  }
+
+  private func displayAssetPreview(_ image: UIImage?, file: SharedFile) {
+    assetPreview.image = image ?? UIImage(systemName: file.mime.hasPrefix("video/") ? "video" : "photo")
+    assetPreview.tintColor = UIColor(red: 168 / 255, green: 176 / 255, blue: 205 / 255, alpha: 1)
+    assetPreview.accessibilityLabel = image == nil ? "Preview unavailable for \(file.name)" : "Preview of \(file.name)"
+    assetNameLabel.text = file.name + (image == nil ? " · Preview unavailable" : "")
+  }
+
+  private func saveCurrentFeedback() {
+    review.updateComments(feedbackField.text ?? "")
+  }
+
+  func textViewDidChange(_ textView: UITextView) {
+    saveCurrentFeedback()
+    updateFeedbackPresentation()
+  }
+
+  func textViewDidEndEditing(_ textView: UITextView) {
+    feedbackCard.layer.borderColor = SharePalette.line.cgColor
+  }
+
+  func textViewDidBeginEditing(_ textView: UITextView) {
+    feedbackCard.layer.borderColor = SharePalette.accent.cgColor
+    scroll.scrollRectToVisible(textView.convert(textView.bounds, to: scroll), animated: true)
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    if feedbackField.isFirstResponder {
+      scroll.scrollRectToVisible(feedbackField.convert(feedbackField.bounds, to: scroll), animated: false)
+    }
+  }
+
+  @objc private func previousAsset() { selectAsset(review.selectedIndex - 1) }
+  @objc private func nextAsset() { selectAsset(review.selectedIndex + 1) }
+
+  private func selectAsset(_ index: Int) {
+    saveCurrentFeedback()
+    review.select(index)
+    showAsset()
+    UISelectionFeedbackGenerator().selectionChanged()
+  }
+
+  @objc private func finishWriting() { view.endEditing(true) }
+
+  @objc private func changeProject() {
+    saveCurrentFeedback()
+    view.endEditing(true)
+    reviewPanel.isHidden = true
+    changeProjectButton.isHidden = true
+    uploadButton.isHidden = true
+    footerSummary.isHidden = true
+    titleLabel.text = "Choose a project"
+    detailLabel.isHidden = false
+    detailLabel.text = "Your asset feedback stays with your files."
+    table.isHidden = false
+    table.reloadData()
+    signOutButton.isHidden = false
+    scroll.setContentOffset(.zero, animated: false)
+  }
+
+  @objc private func playRecording() {
+    guard review.files.indices.contains(review.selectedIndex) else { return }
+    view.endEditing(true)
+    let controller = AVPlayerViewController()
+    controller.player = AVPlayer(url: review.files[review.selectedIndex].url)
+    present(controller, animated: true) { controller.player?.play() }
   }
 
   private func configureCredentialField(_ field: UITextField, placeholder: String, secure: Bool) {
@@ -256,18 +668,22 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           self.detailLabel.text = "Please create a project on uploadiny.com,\nthen share your files again."
           self.table.isHidden = true
           self.uploadButton.isHidden = true
+          self.footerSummary.isHidden = true
           self.preferredContentSize = CGSize(width: 0, height: 360)
           return
         }
+        self.detailLabel.isHidden = false
         self.titleLabel.text = "Choose a project"
         self.titleLabel.textAlignment = .left
         self.detailLabel.textAlignment = .left
         self.detailLabel.text = "\(self.providers.count) file\(self.providers.count == 1 ? "" : "s") will stay together in one feedback group."
-        self.uploadButton.setTitle("Upload \(self.providers.count) file\(self.providers.count == 1 ? "" : "s")", for: .normal)
         self.tableHeight.constant = min(320, CGFloat(self.projects.count) * 88)
         self.table.isHidden = false
-        self.uploadButton.isHidden = false
         self.table.reloadData()
+        self.uploadButton.isHidden = true
+        self.footerSummary.isHidden = true
+        self.reviewPanel.isHidden = true
+        self.changeProjectButton.isHidden = true
       }
     }.resume()
   }
@@ -278,13 +694,17 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       self.spinner.isHidden = true
       self.emptyProjectIcon.isHidden = true
       self.preview.isHidden = true
+      self.reviewPanel.isHidden = true
+      self.changeProjectButton.isHidden = true
       self.table.isHidden = true
       self.uploadButton.isHidden = true
+      self.footerSummary.isHidden = true
       self.signOutButton.isHidden = true
       self.emailField.isHidden = false
       self.passwordField.isHidden = false
       self.signInButton.isHidden = false
       self.signInButton.isEnabled = true
+      self.detailLabel.isHidden = false
       self.titleLabel.text = "Sign in to Uploadiny"
       self.titleLabel.textAlignment = .left
       self.detailLabel.text = message
@@ -350,7 +770,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     UploadinyDeviceTokenStore.delete()
     token = ""
     draftID = nil
-    cleanupFiles()
+    // Keep prepared assets and their notes available after signing in again.
     showSignIn(message)
   }
 
@@ -380,13 +800,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     content.text = project.name
     content.secondaryText = project.description?.isEmpty == false ? project.description : project.slug
     content.textProperties.font = .preferredFont(forTextStyle: .headline)
-    content.textProperties.color = .white
+    content.textProperties.color = SharePalette.text
     content.textProperties.numberOfLines = 2
     content.secondaryTextProperties.font = .preferredFont(forTextStyle: .subheadline)
-    content.secondaryTextProperties.color = UIColor(red: 168 / 255, green: 180 / 255, blue: 210 / 255, alpha: 1)
+    content.secondaryTextProperties.color = SharePalette.secondary
     content.secondaryTextProperties.numberOfLines = 2
     content.image = UIImage(systemName: selected ? "folder.fill" : "folder")
-    content.imageProperties.tintColor = UIColor(red: 166 / 255, green: 182 / 255, blue: 255 / 255, alpha: 1)
+    content.imageProperties.tintColor = SharePalette.accentText
     content.imageProperties.maximumSize = CGSize(width: 28, height: 28)
     content.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 18, leading: 16, bottom: 18, trailing: 12)
     cell.contentConfiguration = content
@@ -409,29 +829,48 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     selectedProject = projects[indexPath.row]
-    uploadButton.isEnabled = true
-    uploadButton.alpha = 1
-    table.reloadData()
-    let feedback = UISelectionFeedbackGenerator()
-    feedback.selectionChanged()
-  }
-
-  @objc private func beginUpload() {
-    guard selectedProject != nil, serverURL != nil, !token.isEmpty else { return }
-    uploadButton.isEnabled = false
-    uploadButton.isHidden = true
+    UISelectionFeedbackGenerator().selectionChanged()
     table.isHidden = true
     signOutButton.isHidden = true
-    titleLabel.text = "Uploading…"
-    detailLabel.text = "Preparing your feedback chunk"
+    if review.files.count == providers.count {
+      showReview()
+      return
+    }
+    isPreparing = true
+    titleLabel.text = "Preparing your files…"
+    detailLabel.text = "Then add feedback to each screenshot or recording."
     spinner.isHidden = false
     spinner.startAnimating()
     prepareProvider(at: 0)
   }
 
+  @objc private func beginUpload() {
+    guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, !isPreparing else { return }
+    saveCurrentFeedback()
+    view.endEditing(true)
+    review.prepareForUpload()
+    previewGeneration += 1
+    previewGenerator?.cancelAllCGImageGeneration()
+    reviewPanel.isHidden = true
+    changeProjectButton.isHidden = true
+    uploadButton.isEnabled = false
+    uploadButton.isHidden = true
+    footerSummary.isHidden = true
+    table.isHidden = true
+    signOutButton.isHidden = true
+    titleLabel.text = "Uploading…"
+    detailLabel.isHidden = false
+    detailLabel.text = "Keeping your files and feedback together."
+    spinner.isHidden = false
+    spinner.startAnimating()
+    do { try uploadChunk() } catch { showError("The feedback group could not be started.") }
+  }
+
   private func prepareProvider(at index: Int) {
+    guard !didClose else { return }
     guard index < providers.count else {
-      do { try uploadChunk() } catch { showError("The files could not be prepared for upload.") }
+      isPreparing = false
+      showReview()
       return
     }
     let provider = providers[index]
@@ -459,24 +898,29 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       do {
         // The provider's temporary URL is valid only during this callback.
         try FileManager.default.copyItem(at: fileURL, to: copyURL)
-        let copiedName = fileName
+        let mime = UTType(identifier)?.preferredMIMEType ?? "application/octet-stream"
+        let prepared: SharedFile
+        let ownedURLs: [URL]
+        if ["image/heic", "image/heif", "image/tiff"].contains(mime) {
+          let jpeg = try self.jpegRepresentation(copyURL)
+          ownedURLs = [copyURL, jpeg]
+          let jpegName = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent + ".jpg"
+          prepared = SharedFile(url: jpeg, name: jpegName, mime: "image/jpeg")
+        } else {
+          ownedURLs = [copyURL]
+          prepared = SharedFile(url: copyURL, name: fileName, mime: mime)
+        }
         DispatchQueue.main.async {
-          guard !self.didClose else { try? FileManager.default.removeItem(at: copyURL); return }
-          self.temporaryURLs.append(copyURL)
-          do {
-            let mime = UTType(identifier)?.preferredMIMEType ?? "application/octet-stream"
-            if ["image/heic", "image/heif", "image/tiff"].contains(mime) {
-              let jpeg = try self.jpegRepresentation(copyURL)
-              self.temporaryURLs.append(jpeg)
-              let jpegName = URL(fileURLWithPath: copiedName).deletingPathExtension().lastPathComponent + ".jpg"
-              self.preparedFiles.append(SharedFile(url: jpeg, name: jpegName, mime: "image/jpeg"))
-            } else {
-              self.preparedFiles.append(SharedFile(url: copyURL, name: copiedName, mime: mime))
-            }
-            self.prepareProvider(at: providerIndex + 1)
-          } catch { self.showError("One of the files could not be prepared. No chunk was uploaded.") }
+          guard !self.didClose else {
+            for url in ownedURLs { try? FileManager.default.removeItem(at: url) }
+            return
+          }
+          self.temporaryURLs.append(contentsOf: ownedURLs)
+          self.review.files.append(prepared)
+          self.prepareProvider(at: providerIndex + 1)
         }
       } catch {
+        try? FileManager.default.removeItem(at: copyURL)
         DispatchQueue.main.async {
           guard !self.didClose else { return }
           self.showError("One of the files could not be prepared. No chunk was uploaded.")
@@ -491,7 +935,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     var request = authorizedRequest(url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(withJSONObject: ["image_count": preparedFiles.count])
+    request.httpBody = try JSONSerialization.data(withJSONObject: ["image_count": review.files.count])
     request.timeoutInterval = 30
     startingDraft = true
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
@@ -527,9 +971,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   private func uploadFile(at index: Int) {
     guard !didClose, let base = serverURL, let draftID else { return }
-    guard index < preparedFiles.count else { completeChunk(); return }
-    detailLabel.text = "Uploading file \(index + 1) of \(preparedFiles.count)"
-    let file = preparedFiles[index]
+    guard index < review.files.count else { completeChunk(); return }
+    detailLabel.text = "Uploading file \(index + 1) of \(review.files.count)"
+    let file = review.files[index]
     let boundary = "Uploadiny-\(UUID().uuidString)"
     do {
       let bodyURL = try multipartBody(file: file, boundary: boundary)
@@ -550,6 +994,11 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
             self.showError(self.serverError(data, response))
             return
           }
+          guard let data, let result = try? JSONDecoder().decode(AppendResult.self, from: data),
+                result.confirms(file, receivedCount: index + 1) else {
+            self.showError("Your feedback could not be confirmed. This group was not published. Your notes are still here.")
+            return
+          }
           self.uploadFile(at: index + 1)
         }
       }.resume()
@@ -559,23 +1008,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func multipartBody(file: SharedFile, boundary: String) throws -> URL {
     let bodyURL = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).multipart")
     temporaryURLs.append(bodyURL)
-    FileManager.default.createFile(atPath: bodyURL.path, contents: nil)
-    let output = try FileHandle(forWritingTo: bodyURL)
-    defer { try? output.close() }
-    let safeName = file.name.replacingOccurrences(of: "\\", with: "_").replacingOccurrences(of: "\"", with: "_").replacingOccurrences(of: "\r", with: "_").replacingOccurrences(of: "\n", with: "_")
-    let header = "--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\nContent-Type: \(file.mime)\r\n\r\n"
-    try output.write(contentsOf: Data(header.utf8))
-    guard let input = InputStream(url: file.url) else { throw UploadError.cannotReadFile }
-    input.open()
-    defer { input.close() }
-    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-    while input.hasBytesAvailable {
-      let count = input.read(&buffer, maxLength: buffer.count)
-      if count < 0 { throw UploadError.cannotReadFile }
-      if count == 0 { break }
-      try output.write(contentsOf: Data(buffer[0..<count]))
-    }
-    try output.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+    try file.writeMultipart(to: bodyURL, boundary: boundary)
     return bodyURL
   }
 
@@ -592,12 +1025,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           return
         }
         guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
-              let data, let result = try? JSONDecoder().decode(ChunkResult.self, from: data), result.images.count == self.preparedFiles.count else {
-          self.showError("Check your project before trying again: the final upload response was unavailable.")
+              let data, let result = try? JSONDecoder().decode(ChunkResult.self, from: data), result.images.count == self.review.files.count else {
+          self.showError("The final response was unavailable. Check your project in the workspace before sharing again; it may already be uploaded.", allowRetry: false)
           return
         }
         self.draftID = nil
-        let thumbnail = self.preparedFiles.first.flatMap { self.imagePreview($0.url) }
+        let thumbnail = self.review.files.first.flatMap { self.imagePreview($0.url) }
         self.cleanupFiles()
         self.spinner.stopAnimating()
         self.spinner.isHidden = true
@@ -605,7 +1038,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.detailLabel.text = result.images.prefix(3).map { $0.name }.joined(separator: "\n") + (result.images.count > 3 ? "\n+ \(result.images.count - 3) more files" : "") + "\nTap anywhere to close"
         self.titleLabel.textAlignment = .center
         self.detailLabel.textAlignment = .center
-        self.closeButton.setTitle("Done", for: .normal)
+        self.closeButton.accessibilityLabel = "Done"
         self.closeButton.configuration?.image = UIImage(systemName: "checkmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
         self.preview.image = thumbnail
         self.preview.isHidden = thumbnail == nil
@@ -646,23 +1079,41 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     return targetURL
   }
 
-  private func imagePreview(_ url: URL) -> UIImage? {
+  private func imagePreview(_ url: URL, maxPixelSize: Int = 1280) -> UIImage? {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1280]
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxPixelSize]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
     return UIImage(cgImage: image)
   }
 
-  private func showError(_ text: String) {
+  private func showError(_ text: String, allowRetry: Bool = true) {
     DispatchQueue.main.async {
-      self.cancelDraft()
-      self.cleanupFiles()
+      guard !self.didClose else { return }
+      self.isPreparing = false
+      self.previewGeneration += 1
+      self.previewGenerator?.cancelAllCGImageGeneration()
       self.spinner.stopAnimating()
       self.spinner.isHidden = true
       self.table.isHidden = true
+      self.reviewPanel.isHidden = true
+      self.changeProjectButton.isHidden = true
       self.uploadButton.isHidden = true
+      self.footerSummary.isHidden = true
+      self.detailLabel.isHidden = false
       self.titleLabel.text = "Upload could not finish"
       self.detailLabel.text = text
+      self.cancelDraft {
+        guard !self.didClose, self.review.files.count == self.providers.count, !self.review.files.isEmpty else { return }
+        self.reviewPanel.isHidden = false
+        self.changeProjectButton.isHidden = !allowRetry
+        self.showAsset()
+        guard allowRetry else { return }
+        self.uploadButton.configuration?.title = "Try upload again"
+        self.footerSummary.isHidden = false
+        self.uploadButton.isEnabled = true
+        self.uploadButton.alpha = 1
+        self.uploadButton.isHidden = false
+      }
     }
   }
 
@@ -674,7 +1125,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   @objc private func closeExtension() {
     guard !didClose else { return }
     didClose = true
+    view.endEditing(true)
+    previewGenerator?.cancelAllCGImageGeneration()
     closeButton.isEnabled = false
+    detailLabel.isHidden = false
     detailLabel.text = "Closing…"
     if startingDraft { return }
     uploadSession?.invalidateAndCancel()
@@ -693,11 +1147,147 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 }
 
+private enum SharePalette {
+  static let canvas = UIColor(red: 7 / 255, green: 11 / 255, blue: 24 / 255, alpha: 1)
+  static let surface = UIColor(red: 16 / 255, green: 22 / 255, blue: 42 / 255, alpha: 1)
+  static let accent = UIColor(red: 79 / 255, green: 99 / 255, blue: 234 / 255, alpha: 1)
+  static let accentText = UIColor(red: 166 / 255, green: 182 / 255, blue: 255 / 255, alpha: 1)
+  static let text = UIColor(red: 247 / 255, green: 248 / 255, blue: 255 / 255, alpha: 1)
+  static let secondary = UIColor(red: 168 / 255, green: 176 / 255, blue: 205 / 255, alpha: 1)
+  static let line = UIColor(red: 36 / 255, green: 45 / 255, blue: 80 / 255, alpha: 1)
+  static let mint = UIColor(red: 98 / 255, green: 230 / 255, blue: 167 / 255, alpha: 1)
+}
+
+private final class ShareAssetCell: UICollectionViewCell {
+  var representedIndex: Int?
+  let imageView = UIImageView()
+  private let numberLabel = UILabel()
+  private let noteBadge = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    contentView.backgroundColor = SharePalette.surface
+    contentView.layer.cornerRadius = 12
+    contentView.layer.borderWidth = 2
+    contentView.clipsToBounds = true
+    imageView.contentMode = .scaleAspectFill
+    imageView.tintColor = SharePalette.secondary
+    imageView.clipsToBounds = true
+    imageView.layer.cornerRadius = 8
+    numberLabel.font = .preferredFont(forTextStyle: .caption2)
+    numberLabel.textColor = .white
+    numberLabel.backgroundColor = SharePalette.canvas.withAlphaComponent(0.9)
+    numberLabel.textAlignment = .center
+    numberLabel.layer.cornerRadius = 6
+    numberLabel.clipsToBounds = true
+    noteBadge.tintColor = SharePalette.mint
+    noteBadge.backgroundColor = SharePalette.canvas
+    noteBadge.layer.cornerRadius = 9
+    for child in [imageView, numberLabel, noteBadge] {
+      child.translatesAutoresizingMaskIntoConstraints = false
+      contentView.addSubview(child)
+    }
+    NSLayoutConstraint.activate([
+      imageView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+      imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 4),
+      imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -4),
+      imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -4),
+      numberLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
+      numberLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+      numberLabel.widthAnchor.constraint(equalToConstant: 20),
+      numberLabel.heightAnchor.constraint(equalToConstant: 20),
+      noteBadge.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -5),
+      noteBadge.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
+      noteBadge.widthAnchor.constraint(equalToConstant: 18),
+      noteBadge.heightAnchor.constraint(equalToConstant: 18),
+    ])
+    isAccessibilityElement = true
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func prepareForReuse() {
+    super.prepareForReuse()
+    representedIndex = nil
+    imageView.image = nil
+  }
+
+  func configure(number: Int, file: SharedFile, selected: Bool) {
+    numberLabel.text = "\(number)"
+    imageView.image = UIImage(systemName: file.mime.hasPrefix("video/") ? "video.fill" : "photo")
+    imageView.contentMode = file.mime.hasPrefix("video/") ? .center : .scaleAspectFill
+    contentView.layer.borderColor = (selected ? SharePalette.accentText : SharePalette.line).cgColor
+    accessibilityTraits = selected ? [.button, .selected] : [.button]
+    accessibilityLabel = "Asset \(number), \(file.name)"
+    updateNote(!file.comments.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+  }
+
+  func updateNote(_ hasNote: Bool) {
+    noteBadge.isHidden = !hasNote
+    accessibilityValue = hasNote ? "Feedback added" : "No feedback"
+  }
+}
+
 private struct ProjectList: Decodable { let projects: [Project] }
 private struct Project: Decodable { let id: Int; let name: String; let slug: String; let description: String? }
-private struct SharedFile { let url: URL; let name: String; let mime: String }
+private struct SharedFile {
+  let url: URL
+  let name: String
+  let mime: String
+  var comments = ""
+
+  func writeMultipart(to bodyURL: URL, boundary: String) throws {
+    FileManager.default.createFile(atPath: bodyURL.path, contents: nil)
+    let output = try FileHandle(forWritingTo: bodyURL)
+    defer { try? output.close() }
+    let safeName = name.replacingOccurrences(of: "\\", with: "_").replacingOccurrences(of: "\"", with: "_").replacingOccurrences(of: "\r", with: "_").replacingOccurrences(of: "\n", with: "_")
+    let header = "--\(boundary)\r\nContent-Disposition: form-data; name=\"comments\"\r\n\r\n\(comments)\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\nContent-Type: \(mime)\r\n\r\n"
+    try output.write(contentsOf: Data(header.utf8))
+    guard let input = InputStream(url: url) else { throw UploadError.cannotReadFile }
+    input.open()
+    defer { input.close() }
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while input.hasBytesAvailable {
+      let count = input.read(&buffer, maxLength: buffer.count)
+      if count < 0 { throw UploadError.cannotReadFile }
+      if count == 0 { break }
+      try output.write(contentsOf: Data(buffer[0..<count]))
+    }
+    try output.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+  }
+}
+
+private struct ShareReview {
+  var files: [SharedFile] = []
+  private(set) var selectedIndex = 0
+
+  mutating func select(_ index: Int) {
+    guard files.indices.contains(index) else { return }
+    selectedIndex = index
+  }
+
+  mutating func updateComments(_ comments: String) {
+    guard files.indices.contains(selectedIndex) else { return }
+    files[selectedIndex].comments = comments
+  }
+
+  mutating func prepareForUpload() {
+    for index in files.indices {
+      files[index].comments = files[index].comments.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+  }
+}
+
+private struct AppendResult: Decodable {
+  let received_images: Int
+  let image: UploadedImage?
+
+  func confirms(_ file: SharedFile, receivedCount: Int) -> Bool {
+    received_images == receivedCount && image?.comments == file.comments
+  }
+}
 private struct ChunkResult: Decodable { let id: String; let images: [UploadedImage] }
-private struct UploadedImage: Decodable { let id: String; let name: String }
+private struct UploadedImage: Decodable { let id: String; let name: String; let comments: String }
 private enum UploadError: Error { case cannotReadFile }
 
 private struct DraftResult: Decodable { let id: String }

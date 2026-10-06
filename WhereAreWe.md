@@ -1,5 +1,34 @@
 # Where Are We — Uploadiny
 
+## 2026-10-06 — v0.2.0 candidate, not deployed
+
+- iOS 0.2.0 build 11 adds screenshot/recording previews, thumbnail and previous/
+  next navigation, individual asset remarks, recording playback, and a refined
+  Share review screen. Remarks remain attached through navigation and retry;
+  publication requires each append response to confirm its saved remark.
+- The private backoffice generates, reveals/copies, rotates, and revokes the
+  read-only agent API key without disconnecting the iPhone. Every project has
+  a permanent six-letter code; existing slug URLs stay compatible.
+- Laravel MCP is a production dependency. `/mcp` exposes `list_projects`,
+  `get_feedback`, `get_asset`, and `get_recording_frames` using the same bearer
+  key. REST and MCP share feedback payloads; image content and timestamped
+  JPEG recording frames retain exact asset remarks and revisions.
+- Recording inspection requires FFmpeg on the web server. Configure its path
+  with `UPLOADINY_FFMPEG_BINARY` when the web process cannot find `ffmpeg`.
+- One additive migration assigns project codes while preserving existing
+  projects, uploads, and feedback. Application rollback leaves this schema
+  addition in place; the previous code can still create projects with a null
+  canonical. Do not reverse migrations during shipping rollback.
+- Local HTTPS MCP smoke passed for authentication, tool discovery, exact
+  feedback, original/annotated images, real recording frames, and revocation.
+  Provider connection and physical Share interaction remain separate checks.
+- Preparation baseline: historical verified v0.1.5 at `9535c016`, deployed
+  2026-10-04 with website/API health and signed iPhone 0.1.5 build 10 proof.
+  Fresh physical Share Extension API proof was waived for that release.
+  No successful receipt exists yet in the new manual shipping workflow;
+  its duration and completion timestamp are not available. No receipt is
+  reconstructed from a tag.
+
 ## 2026-04-22 — DB removed, filesystem is the only source of truth
 
 ### Session summary

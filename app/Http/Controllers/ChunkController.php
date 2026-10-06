@@ -57,9 +57,12 @@ class ChunkController extends Controller
     {
         abort_unless($chunk->status === 'uploading' && $chunk->upload_project_id, 409);
         $project = Project::findOrFail($chunk->upload_project_id);
-        $storage->store($project, [$request->file('file')], $chunk);
+        $stored = $storage->store($project, [$request->file('file')], $chunk, [$request->validated('comments') ?? '']);
 
-        return response()->json(['received_images' => $chunk->images()->count()], 201);
+        return response()->json([
+            'received_images' => $stored->images->count(),
+            'image' => $stored->images->sortBy('id')->last()->agentData(),
+        ], 201);
     }
 
     public function complete(UploadChunk $chunk): JsonResponse

@@ -36,6 +36,7 @@ return [
     ],
 
     'uploadiny' => [
+        'ffmpeg_binary' => env('UPLOADINY_FFMPEG_BINARY', 'ffmpeg'),
         'device_token_expiration_days' => (int) env('UPLOADINY_DEVICE_TOKEN_EXPIRATION_DAYS', 90),
         'vision_key' => env('OPENAI_API_KEY'),
         'vision_model' => env('UPLOADINY_VISION_MODEL', 'gpt-4.1-nano'),

@@ -11,6 +11,9 @@ to `https://uploadiny.com/api`.
 
 ## Product behavior
 
+- The Share Extension previews screenshots and recordings before upload, with
+  independent feedback per asset, thumbnail navigation, and a review screen.
+  It verifies each saved remark before publishing the group.
 - Browser and Share Extension uploads create a draft chunk, append each image,
   and publish only after every expected image arrives.
 - Originals and annotated PNGs are private. Browser image routes require an
@@ -20,8 +23,16 @@ to `https://uploadiny.com/api`.
   `projects:read`/`uploads:write` token in the device-only Keychain. It never
   stores a password or embeds a usable credential in the app.
 - The coding-agent token is separate and read-only for project feedback. The
-  workspace can revoke iPhone access, and the private `uploadiny:agent-token`
-  command rotates or revokes agent access without exposing the token in output.
+  backoffice’s **Agent API access** page generates, copies, rotates, or revokes
+  it without disconnecting the iPhone. Keys generated there do not expire;
+  rotation immediately invalidates previous agent keys. The private
+  `uploadiny:agent-token` command also rotates or revokes the same credential
+  without exposing it in output (its default lifetime remains 90 days).
+- Every project has a unique, permanent six-letter `canonical`, displayed as
+  its **Project code**. Existing projects receive codes during migration.
+  Agents retrieve the latest completed batch using
+  `GET /api/feedback/{canonical}` with the read-only bearer key. Existing
+  project URLs and slug-based API endpoints remain available.
 - Projects retain current images when images are moved. Deleting a project
   removes only the images still assigned to it.
 - Feedback stores normalized drawings, comments, annotated images, and a
@@ -45,6 +56,42 @@ npm run build
 
 Create the private account with `php artisan uploadiny:account`, then run a
 database queue worker with `php artisan queue:work` while testing vision jobs.
+
+## MCP access
+
+The read-only Laravel MCP server is served at `/mcp` over HTTP. Locally, use
+`https://uploadiny.test/mcp`; after deployment, use `https://uploadiny.com/mcp`.
+Configure the client with the backoffice's Agent API access key as an
+`Authorization: Bearer` header. Rotating or revoking that key immediately
+changes both REST and MCP access. Phone keys and browser sessions cannot use
+the MCP server.
+
+The server exposes four tools:
+
+- `list_projects`: discover project names and their six-letter codes.
+- `get_feedback(project_canonical)`: retrieve the latest completed batch,
+  including exact comments, annotations, asset IDs, and feedback revisions.
+- `get_asset(asset_id, variant)`: inspect the original or annotated screenshot
+  as image content. Original recordings return metadata and a private download
+  URL instead; that URL requires the same bearer key.
+- `get_recording_frames(asset_id, timestamps)`: inspect up to five JPEG frames
+  at specified seconds, with the original feedback alongside them. Omitting
+  timestamps returns the first frame. Frames stay within 1280 pixels per side
+  without upscaling and are not saved as new assets.
+
+Recording inspection requires FFmpeg on the application server. Set
+`UPLOADINY_FFMPEG_BINARY` to its executable path when the web process cannot
+find `ffmpeg` on its PATH. Client configuration and provider acceptance must
+be checked separately from server verification; no OAuth flow is provided.
+
+Run `php artisan uploadiny:mcp-smoke` against the configured `APP_URL` to check
+real HTTP authentication, initialization, all tools, image/frame delivery,
+and revocation. It requires an existing private account and working FFmpeg,
+uses temporary projects, assets, and five-minute keys, and cleans its fixtures
+on exit without rotating the managed key. The URL must point to this same
+application and database. For Herd HTTPS trust, pass
+`--ca="/Users/falcaob/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem"`;
+certificate verification remains enabled.
 
 ## Verification
 
@@ -78,5 +125,6 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The iOS marketing version is `0.1.5`; this release build is `10`.
+The release candidate is `v0.2.0`, not deployed. Its iOS marketing version is
+`0.2.0`; this release build is `11`.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

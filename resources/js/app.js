@@ -1,4 +1,6 @@
 import './bootstrap';
+import { enhanceAgentAccess } from './agent-access';
+enhanceAgentAccess();
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
 import {

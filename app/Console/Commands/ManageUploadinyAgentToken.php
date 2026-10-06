@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Services\AgentTokenStorage;
-use App\UploadinyTokenAbility;
+use App\Services\AgentAccess;
 use App\User;
 use Illuminate\Console\Command;
 
 final class ManageUploadinyAgentToken extends Command
 {
-    public const TOKEN_NAME = 'coding-agent';
+    public const TOKEN_NAME = AgentAccess::TOKEN_NAME;
 
     /** @var string */
     protected $signature = 'uploadiny:agent-token {--revoke : Revoke the coding-agent credential without issuing another} {--expires=90 : Credential lifetime in days}';
@@ -19,7 +18,7 @@ final class ManageUploadinyAgentToken extends Command
     /** @var string */
     protected $description = 'Issue or revoke the private least-privilege credential for the Uploadiny feedback command';
 
-    public function __construct(private AgentTokenStorage $tokenStorage)
+    public function __construct(private AgentAccess $access)
     {
         parent::__construct();
     }
@@ -39,15 +38,12 @@ final class ManageUploadinyAgentToken extends Command
             return self::FAILURE;
         }
 
-        $token = $user->createToken(self::TOKEN_NAME, UploadinyTokenAbility::agent(), now()->addDays($days));
-        if (! $this->tokenStorage->replace($token->plainTextToken)) {
-            $token->accessToken->delete();
+        if (! $this->access->rotate($user, now()->addDays($days))) {
             $this->error('The private coding-agent credential could not be stored.');
 
             return self::FAILURE;
         }
 
-        $user->tokens()->where('name', self::TOKEN_NAME)->whereKeyNot($token->accessToken->getKey())->delete();
         $this->info('A new coding-agent credential was written to protected private storage.');
 
         return self::SUCCESS;
@@ -55,7 +51,7 @@ final class ManageUploadinyAgentToken extends Command
 
     private function revoke(User $user): int
     {
-        $user->tokens()->where('name', self::TOKEN_NAME)->delete();
+        $this->access->revoke($user);
         $this->info('Coding-agent access was revoked.');
 
         return self::SUCCESS;
