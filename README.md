@@ -142,16 +142,16 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.10.0`, candidate, not deployed. Its iOS
-marketing version is `0.10.0`; this release build is `23`. The website upload
-area gains an "Add to the last upload" switch (on by default, remembered per
-browser) covering paste, drag-and-drop and file picking. The Share Extension's
-success screen counts down and closes itself after 5 seconds; error screens
-stay open.
+The release candidate is `v0.10.1`, candidate, not deployed. Its iOS
+marketing version is `0.10.1`; this release build is `24`. Deleting a file in
+the editor no longer returns to the project screen: the editor stays open on
+the next file of the same upload (the previous one when the deleted file was
+last), with the file counter reduced by one. The project screen is only
+reached when the deleted file was the last one in its upload.
 
-The previous release, `v0.9.4` (`2064a717b9`), completed FAST shipping on
-6 October 2026 at 22:27:17 UTC after a resumed run. Its local completed
-receipt records website/API verification and signed physical iPhone 0.9.4
-build 22 installation and launch. Manual browser, Share Sheet, and
-provider-client acceptance remain separate.
+The previous release, `v0.10.0` (`d3e9129e45`), completed FAST shipping on
+6 October 2026 at 22:41:03 UTC in 298 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.10.0 build 23
+installation and launch. Manual browser, Share Sheet, and provider-client
+acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -261,6 +261,24 @@ test('deleting a file waits for its background save and cancels pending autosave
     assert.equal(ui.assets.two.revision, 0);
 });
 
+test('deleting a file stays in the editor on the next file with one less in the chunk', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.node('delete-image').click(); await ui.settle(); await ui.settle();
+    assert.deepEqual(ui.deletions, ['one']);
+    assert.equal(ui.reloads, 0);
+    assert.equal(ui.node('editor').hidden, false);
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 2');
+    assert.equal(ui.where.search, '?image=two');
+});
+
+test('deleting the only file in a chunk returns to the project', async t => {
+    const ui = workspace(t); await ui.open();
+    for (let remaining = 3; remaining > 0; remaining--) { ui.node('delete-image').click(); await ui.settle(); await ui.settle(); }
+    assert.deepEqual(ui.deletions, ['one', 'two', 'three']);
+    assert.equal(ui.reloads, 1);
+});
+
 test('Select tool picks a mark, Delete removes it through autosave and Undo restores it', async t => {
     const ui = workspace(t); await ui.open(); ui.annotate('Remove me'); await ui.autosave();
     assert.equal(ui.assets.one.annotations.length, 1);

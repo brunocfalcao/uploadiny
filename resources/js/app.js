@@ -751,9 +751,23 @@ if (workspace) {
         if (!active || saving || navigating || transferring || !confirm('Permanently delete this file and all of its feedback?')) return;
         transferring = true; comments.disabled = true; clearTimeout(autosaveTimer); updateChunkNavigation();
         event.currentTarget.disabled = true;
-        try { if (savePromise) await savePromise; await request(`/images/${active.id}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); syncImageUrl(null); location.reload(); }
+        const deleted = active.id;
+        const files = currentChunk(); const index = files.indexOf(deleted);
+        const neighbour = index < 0 ? null : files[index + 1] ?? files[index - 1] ?? null;
+        let removed = false;
+        try { if (savePromise) await savePromise; await request(`/images/${deleted}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); removed = true; }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
         finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
+        if (!removed) return;
+        if (!neighbour) { syncImageUrl(null); location.reload(); return; }
+        const card = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(deleted));
+        if (card) card.dataset.chunkImages = JSON.stringify(JSON.parse(card.dataset.chunkImages).filter(id => id !== deleted));
+        chunkGroups = readChunkGroups();
+        leaveEditor(false);
+        await openImage(neighbour, false, true);
+        if (!active) { syncImageUrl(null); location.reload(); return; }
+        event.target.disabled = false;
+        notifyTransient('File deleted.');
     });
     window.addEventListener('pagehide', () => {
         if (uploadingChunk) fetch(`/chunks/${uploadingChunk}`, { method: 'DELETE', keepalive: true, headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token } }).catch(() => {});

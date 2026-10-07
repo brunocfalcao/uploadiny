@@ -1,7 +1,20 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.10.0 candidate, not deployed
+## 2026-10-07 — v0.10.1 candidate, not deployed
 
+- Candidate iOS metadata: 0.10.1 build 24; no mobile behavior change.
+- Website editor: deleting a file keeps the editor open on the next file in
+  the same upload (previous one when the deleted file was last) and drops the
+  chunk counter by one; the project screen is only reached when the upload has
+  no files left. Covered by two new `workspace-editor` tests.
+- Dependency: `laravel/prompts` v0.3.24 → v0.3.25 (runtime vendor, console
+  only). No migration or environment change.
+
+## 2026-10-07 — v0.10.0 deployed via FAST
+
+- Shipped `d3e9129e45` on 2026-10-06 at 22:41:03 UTC in 298 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.10.0
+  build 23 installation and launch.
 - Candidate iOS metadata: 0.10.0 build 23. The Share Extension success screen
   shows "Closing in N…" and closes after 5 seconds; error screens never
   auto-close. Device acceptance pending.
