@@ -142,16 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.11.0`, candidate, not deployed. Its iOS
-marketing version is `0.11.0`; this release build is `26`. The editor's
-"Copy or move to chunk" list now starts with "New upload chunk in <project>":
-copying or moving a file there creates a brand-new upload holding only that
-file, with its annotations and comments, at the top of the project. The chunk
-list also shows each upload's latest-file time instead of its first.
+The release candidate is `v0.11.1`, candidate, not deployed. Its iOS
+marketing version is `0.11.1`; this release build is `27`. Opening an upload
+from the project screen starts on its first file the first time; reopening it
+in the same browser returns to the file last viewed in that upload (first file
+again when that file has left the upload). The position lives in the browser.
 
-The previous release, `v0.10.2` (`9de038d589`), completed FAST shipping on
-7 October 2026 at 21:25:29 UTC in 93 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.10.2 build 25
+The previous release, `v0.11.0` (`4f18a91bea`), completed FAST shipping on
+7 October 2026 at 22:12:04 UTC in 107 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.11.0 build 26
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -1,5 +1,6 @@
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
+import { chunkStartFile, rememberChunkFile } from './chunk-memory';
 import { clipboardFiles } from './clipboard-files';
 import { appendTarget, formatLastUpload, localizeTimes, readAppendPreference, writeAppendPreference } from './append-to-last';
 enhanceAgentAccess();
@@ -329,12 +330,17 @@ if (workspace) {
         await openImage(id, false, true);
         if (active && active.id !== id) syncImageUrl(active.id);
     });
+    let viewStore = null;
+    try { viewStore = localStorage; } catch { viewStore = null; }
     const boundTiles = new WeakSet();
     function bindGallery() {
         document.querySelectorAll('[data-open-image]').forEach(button => {
             if (boundTiles.has(button)) return;
             boundTiles.add(button);
-            button.addEventListener('click', () => openImage(button.dataset.openImage, button.dataset.playRecording === 'true'));
+            button.addEventListener('click', () => {
+                const start = chunkStartFile(viewStore, button.dataset.chunk, JSON.parse(button.dataset.chunkImages)) ?? button.dataset.openImage;
+                openImage(start, start === button.dataset.openImage && button.dataset.playRecording === 'true');
+            });
         });
     }
     bindGallery();
@@ -358,6 +364,8 @@ if (workspace) {
             if (active && !leaveEditor(false)) { finishNavigation(); return; }
             calloutEditor.reset(); selectedIndex = null;
             active = data; dirty = false; source = null;
+            const viewedCard = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(data.id));
+            rememberChunkFile(viewStore, viewedCard?.dataset.chunk, data.id);
             syncImageUrl(data.id, fromGallery && !fromUrl ? 'push' : 'replace');
             loadChunkDestinations(data.id);
             ({ strokes, undo, redo } = resetDrawingHistory(data.annotations)); draft = null; eraseStart = null; zoom = 1; fitView = true;

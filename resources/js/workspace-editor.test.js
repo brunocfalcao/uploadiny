@@ -5,6 +5,7 @@ import { runInNewContext } from 'node:vm';
 import * as drawing from './drawing.js';
 import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
+import { chunkStartFile, rememberChunkFile } from './chunk-memory.js';
 import { appendTarget, formatChunkTime, formatLastUpload, localizeTimes as localizeChunkTimes, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
@@ -63,7 +64,7 @@ function workspace(t, search = '', storage = memoryStorage()) {
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, setRecordingPoster() {},
+        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
