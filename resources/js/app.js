@@ -710,7 +710,7 @@ if (workspace) {
             if (active?.id !== id) return;
             const currentCard = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(id));
             const choices = data.destinations.filter(chunk => !(chunk.chunk_id === currentCard?.dataset.chunk && chunk.project_id === config.project.id));
-            targetChunk.replaceChildren(new Option(choices.length ? 'Choose an upload chunk…' : 'No other chunks yet', ''));
+            targetChunk.replaceChildren(new Option('Choose an upload chunk…', ''), new Option(`New upload chunk in ${config.project.name}`, JSON.stringify({ new_chunk: true, project_id: config.project.id })));
             for (const chunk of choices) {
                 targetChunk.append(new Option(`${chunk.project_name} · ${new Date(chunk.uploaded_at).toLocaleString()} · ${chunk.file_count} files`, JSON.stringify({ chunk_id: chunk.chunk_id, project_id: chunk.project_id })));
             }

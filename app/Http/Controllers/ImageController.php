@@ -110,7 +110,7 @@ class ImageController extends Controller
 
     public function transferChunk(TransferChunkImageRequest $request, UploadImage $image, ChunkTransfer $transfer): JsonResponse
     {
-        $result = $transfer->transfer($image, $request->string('chunk_id')->toString(), $request->integer('project_id'), $request->string('action')->toString());
+        $result = $transfer->transfer($image, $request->boolean('new_chunk') ? null : $request->string('chunk_id')->toString(), $request->integer('project_id'), $request->string('action')->toString());
 
         return response()->json(['image' => $result->agentData(), 'project_url' => route('projects.show', $result->project)]);
     }

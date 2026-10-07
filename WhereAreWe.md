@@ -1,6 +1,18 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.10.2 candidate, not deployed
+## 2026-10-08 — v0.11.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.11.0 build 26; no mobile behavior change.
+- Website editor: copy or move a file into a brand-new upload chunk in the
+  current project. The chunk picker shows each upload's latest-file time.
+  Covered by a new `WorkspaceTest` case. No migration, dependency or
+  environment change.
+
+## 2026-10-07 — v0.10.2 deployed via FAST
+
+- Shipped `9de038d589` on 2026-10-07 at 21:25:29 UTC in 93 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.10.2
+  build 25 installation and launch.
 
 - Candidate iOS metadata: 0.10.2 build 25; no mobile behavior change.
 - Website: upload cards show the time the latest file joined, in the viewer's

@@ -17,7 +17,8 @@ class TransferChunkImageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'chunk_id' => ['required', 'uuid', 'exists:upload_chunks,uuid'],
+            'new_chunk' => ['sometimes', 'boolean'],
+            'chunk_id' => ['exclude_if:new_chunk,true', 'required', 'uuid', 'exists:upload_chunks,uuid'],
             'project_id' => ['required', 'integer', 'exists:projects,id'],
             'action' => ['required', 'in:copy,move'],
         ];

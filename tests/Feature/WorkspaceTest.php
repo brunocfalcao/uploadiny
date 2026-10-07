@@ -420,6 +420,40 @@ class WorkspaceTest extends TestCase
         $this->assertSame('2', Storage::disk('local')->get('.uploadiny-sequence'));
     }
 
+    public function test_a_file_can_be_moved_or_copied_into_a_brand_new_upload_chunk(): void
+    {
+        $this->prepare();
+        $project = Project::factory()->create(['slug' => 'new-chunk-target']);
+        $other = Project::factory()->create(['slug' => 'new-chunk-other']);
+        $upload = $this->upload($project, 3)->assertCreated();
+        [$moved, $copied, $staying] = array_map(static fn (string $id): UploadImage => UploadImage::where('uuid', $id)->sole(), array_column($upload->json('images'), 'id'));
+        $moved->update(['comments' => 'Travel with the file']);
+        $this->travel(2)->hours();
+
+        $this->postJson(route('images.transfer-chunk', $moved), ['action' => 'move', 'new_chunk' => true, 'project_id' => $project->id])->assertOk();
+
+        $newChunk = $moved->fresh()->chunk;
+        $this->assertNotSame($upload->json('id'), $newChunk->uuid);
+        $this->assertSame('complete', $newChunk->status);
+        $this->assertSame($project->id, $newChunk->upload_project_id);
+        $this->assertSame('Travel with the file', $moved->fresh()->comments);
+        $this->assertSame([$moved->id], $newChunk->images()->pluck('id')->all());
+        $this->assertSame([$copied->id, $staying->id], UploadChunk::where('uuid', $upload->json('id'))->sole()->images()->orderBy('id')->pluck('id')->all());
+        $this->getJson(route('chunks.index'))->assertOk()->assertJsonPath('destinations.0.chunk_id', $newChunk->uuid)
+            ->assertJsonPath('destinations.0.uploaded_at', $newChunk->completed_at->toIso8601String());
+
+        $response = $this->postJson(route('images.transfer-chunk', $copied), ['action' => 'copy', 'new_chunk' => true, 'project_id' => $other->id])->assertOk();
+        $copy = UploadImage::where('uuid', $response->json('image.id'))->sole();
+        $this->assertNotContains($copy->chunk_id, [$newChunk->id, $copied->chunk_id]);
+        $this->assertSame($other->id, $copy->project_id);
+        $this->assertSame($upload->json('id'), $copied->fresh()->chunk->uuid);
+        $this->assertSame(3, UploadChunk::where('status', 'complete')->count());
+
+        $this->postJson(route('images.transfer-chunk', $staying), ['action' => 'move', 'project_id' => $project->id])->assertUnprocessable()->assertJsonValidationErrors('chunk_id');
+        $this->postJson(route('images.transfer-chunk', $staying), ['action' => 'move', 'new_chunk' => true, 'project_id' => 999999])->assertUnprocessable()->assertJsonValidationErrors('project_id');
+        $this->assertSame(3, UploadChunk::count());
+    }
+
     public function test_moving_to_a_chunk_preserves_file_feedback_and_rejects_draft_destinations(): void
     {
         $user = $this->prepare();

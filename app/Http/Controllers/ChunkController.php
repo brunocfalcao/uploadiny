@@ -29,12 +29,12 @@ class ChunkController extends Controller
             ->orderBy('project_id')
             ->get()
             ->groupBy('chunk_id');
-        $chunks = UploadChunk::query()->whereKey($counts->keys())->newestFinishedFirst()->get(['id', 'uuid', 'created_at']);
+        $chunks = UploadChunk::query()->whereKey($counts->keys())->newestFinishedFirst()->get(['id', 'uuid', 'created_at', 'completed_at']);
         $destinations = $chunks->flatMap(static fn (UploadChunk $chunk) => $counts[$chunk->id]->map(static fn (UploadImage $row): array => [
             'chunk_id' => $chunk->uuid,
             'project_id' => $row->project_id,
             'project_name' => $projects[$row->project_id],
-            'uploaded_at' => $chunk->created_at->toIso8601String(),
+            'uploaded_at' => ($chunk->completed_at ?? $chunk->created_at)->toIso8601String(),
             'file_count' => (int) $row->getAttribute('file_count'),
         ]))->values();
 
@@ -55,7 +55,7 @@ class ChunkController extends Controller
             DescribeUploadImage::dispatch($image->id)->afterCommit();
         }
 
-        return response()->json(['id' => $chunk->uuid, 'uploaded_at' => $chunk->created_at->toIso8601String(), 'images' => $chunk->images->map(static fn (UploadImage $image): array => $image->agentData())->values()], 201);
+        return response()->json(['id' => $chunk->uuid, 'uploaded_at' => ($chunk->completed_at ?? $chunk->created_at)->toIso8601String(), 'images' => $chunk->images->map(static fn (UploadImage $image): array => $image->agentData())->values()], 201);
     }
 
     public function start(StartChunkRequest $request, Project $project): JsonResponse
