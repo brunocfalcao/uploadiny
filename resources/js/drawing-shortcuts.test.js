@@ -68,3 +68,18 @@ test('Delete and Backspace remove the selected mark only outside text fields', (
         }
     }
 });
+
+test('Escape returns to the project only when nothing is selected and no field has focus', () => {
+    const escape = overrides => shortcutEvent({ key: 'Escape', ctrlKey: false, ...overrides });
+    const editableTarget = { closest: selector => selector.includes('textarea') ? {} : null };
+
+    assert.equal(drawingShortcutAction(escape(), readyEditor), 'close-editor');
+    assert.equal(drawingShortcutAction(escape(), { ...readyEditor, selected: true }), null);
+    assert.equal(drawingShortcutAction(escape({ target: editableTarget }), readyEditor), null);
+    assert.equal(drawingShortcutAction(escape(), { ...readyEditor, modalOpen: true }), null);
+    assert.equal(drawingShortcutAction(escape(), { ...readyEditor, draft: {} }), null);
+    assert.equal(drawingShortcutAction(escape(), { ...readyEditor, saving: true }), null);
+    assert.equal(drawingShortcutAction(escape(), { ...readyEditor, active: null }), null);
+    assert.equal(drawingShortcutAction(escape({ shiftKey: true }), readyEditor), null);
+    assert.equal(drawingShortcutAction(escape({ metaKey: true }), readyEditor), null);
+});

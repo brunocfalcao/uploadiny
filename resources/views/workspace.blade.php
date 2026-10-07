@@ -87,7 +87,7 @@
             @forelse($chunks as $chunk)
                 @php($image = $chunk->images->last())
                 <article class="chunk-card" aria-labelledby="chunk-{{ $chunk->uuid }}">
-                    <header class="chunk-card-heading"><h3 id="chunk-{{ $chunk->uuid }}"><time datetime="{{ $chunk->created_at->toIso8601String() }}">{{ $chunk->created_at->format('d M Y, H:i') }}</time></h3>@if($loop->first)<span class="badge">Latest</span>@endif</header>
+                    <header class="chunk-card-heading"><h3 id="chunk-{{ $chunk->uuid }}">@php($uploadedAt = $chunk->completed_at ?? $chunk->created_at)<time datetime="{{ $uploadedAt->toIso8601String() }}" data-local-time>{{ $uploadedAt->format('d M Y, H:i') }}</time></h3>@if($loop->first)<span class="badge">Latest</span>@endif</header>
                     <button class="image-tile chunk-stack {{ $chunk->images->count() > 1 ? 'has-stack' : '' }}" type="button" data-open-image="{{ $image->uuid }}" data-play-recording="{{ $image->isVideo() ? 'true' : 'false' }}" data-chunk="{{ $chunk->uuid }}" data-chunk-images="{{ $chunk->images->pluck('uuid')->toJson() }}" aria-label="Open {{ $chunk->images->count() }} {{ Str::plural('file', $chunk->images->count()) }} in this upload chunk">
                         @foreach($chunk->images->reverse()->slice(1)->take(2) as $previous)
                             <span class="stack-layer stack-layer-{{ $loop->iteration }}" aria-hidden="true">@if($previous->isVideo())<span class="stack-recording-preview" data-recording-preview="{{ route('images.preview', $previous) }}"></span>@else<img src="{{ route('images.preview', $previous) }}" alt="" loading="lazy">@endif</span>

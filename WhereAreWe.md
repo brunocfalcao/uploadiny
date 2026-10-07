@@ -1,6 +1,20 @@
 # Where Are We — Uploadiny
 
-## 2026-10-07 — v0.10.1 candidate, not deployed
+## 2026-10-07 — v0.10.2 candidate, not deployed
+
+- Candidate iOS metadata: 0.10.2 build 25; no mobile behavior change.
+- Website: upload cards show the time the latest file joined, in the viewer's
+  timezone (was the first file's time, in UTC). Escape in the editor returns
+  to the project screen when nothing is selected and no field has focus.
+- Dependencies (development only): `larastan/larastan` v3.12.3 → v3.13.0,
+  `laravel/boost` v2.10.2 → v2.10.3, `symfony/polyfill-deepclone` v1.43.0 →
+  v1.43.1. No migration or environment change.
+
+## 2026-10-07 — v0.10.1 deployed via FAST
+
+- Shipped `830b7294d7` on 2026-10-07 at 09:02:46 UTC in 108 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.10.1
+  build 24 installation and launch.
 
 - Candidate iOS metadata: 0.10.1 build 24; no mobile behavior change.
 - Website editor: deleting a file keeps the editor open on the next file in

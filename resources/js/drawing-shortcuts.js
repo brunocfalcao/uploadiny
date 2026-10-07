@@ -2,6 +2,7 @@ const editableSelector = 'input,textarea,select,[contenteditable],[role=combobox
 
 export function drawingShortcutAction(event, { active, source, saving, draft, modalOpen, selected }) {
     if (!active || saving || draft || modalOpen || event.defaultPrevented || event.isComposing || event.altKey) return null;
+    if (!event.metaKey && !event.ctrlKey && !event.shiftKey && event.key === 'Escape') return selected || event.target?.closest(editableSelector) ? null : 'close-editor';
     if (!event.metaKey && !event.ctrlKey) return selected && source && !event.shiftKey && ['Delete', 'Backspace'].includes(event.key) && !event.target?.closest(editableSelector) ? 'delete-mark' : null;
 
     const key = event.key.toLowerCase();

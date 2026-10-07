@@ -26,3 +26,16 @@ export function formatLastUpload(completedAt, count, now = new Date(), locale = 
     else when = `${new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(date)} ${time}`;
     return `Last upload: ${when} · ${files}`;
 }
+
+export function formatChunkTime(value, locale = 'en-GB') {
+    const date = new Date(value);
+    if (!value || Number.isNaN(date.getTime())) return null;
+    return new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date);
+}
+
+export function localizeTimes(root) {
+    for (const time of root.querySelectorAll('time[data-local-time]')) {
+        const text = formatChunkTime(time.dateTime);
+        if (text) time.textContent = text;
+    }
+}

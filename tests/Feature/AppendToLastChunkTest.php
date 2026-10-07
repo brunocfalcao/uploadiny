@@ -81,6 +81,20 @@ class AppendToLastChunkTest extends TestCase
         $this->assertNotSame($newer['id'], $joined['id']);
     }
 
+    public function test_the_upload_card_shows_when_the_latest_file_joined_not_when_the_first_arrived(): void
+    {
+        [$project, $token] = $this->prepare();
+        $this->travelTo('2026-10-07 11:57:00');
+        $first = $this->share($project, $token, 1);
+        $this->travelTo('2026-10-07 20:50:00');
+        $this->share($project, $token, 1, $first['id']);
+
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders()->actingAs(User::factory()->create())->get(route('projects.show', $project))->assertOk()
+            ->assertSee('<time datetime="2026-10-07T20:50:00+00:00" data-local-time>07 Oct 2026, 20:50</time>', false)
+            ->assertDontSee('07 Oct 2026, 11:57');
+    }
+
     public function test_joining_an_upload_describes_only_the_newly_shared_images(): void
     {
         [$project, $token] = $this->prepare();

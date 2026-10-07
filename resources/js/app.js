@@ -1,7 +1,7 @@
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
 import { clipboardFiles } from './clipboard-files';
-import { appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference } from './append-to-last';
+import { appendTarget, formatLastUpload, localizeTimes, readAppendPreference, writeAppendPreference } from './append-to-last';
 enhanceAgentAccess();
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
@@ -24,6 +24,7 @@ import { enhanceRecordingPreviews, setRecordingPoster } from './recording-previe
 const workspace = document.querySelector('[data-workspace]');
 if (workspace) {
     enhanceRecordingPreviews(workspace);
+    localizeTimes(workspace);
     const config = JSON.parse(document.getElementById('workspace-config').textContent);
     const token = document.querySelector('meta[name="csrf-token"]').content;
     const dialog = document.getElementById('project-dialog');
@@ -800,6 +801,7 @@ if (workspace) {
         chunkGroups = readChunkGroups();
         bindGallery();
         enhanceRecordingPreviews(current);
+        localizeTimes(current);
         if (window.scrollY !== scroll) window.scrollTo?.(0, scroll);
         pageVersion++;
         if (message.textContent === arrivalNotice) message.hidden = true;

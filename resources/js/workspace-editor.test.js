@@ -5,7 +5,7 @@ import { runInNewContext } from 'node:vm';
 import * as drawing from './drawing.js';
 import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
-import { appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference } from './append-to-last.js';
+import { appendTarget, formatChunkTime, formatLastUpload, localizeTimes as localizeChunkTimes, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
 const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -63,7 +63,7 @@ function workspace(t, search = '', storage = memoryStorage()) {
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, setRecordingPoster() {},
+        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
@@ -711,6 +711,18 @@ test('append caption reads Today, Yesterday or a short date with 24h time', () =
     assert.equal(formatLastUpload(new Date(2026, 9, 6, 9, 10).toISOString(), 1, now, 'en-GB'), 'Last upload: Yesterday 09:10 · 1 file');
     assert.equal(formatLastUpload(new Date(2026, 9, 3, 18, 5).toISOString(), 2, now, 'en-GB'), 'Last upload: 3 Oct 18:05 · 2 files');
     assert.equal(formatLastUpload('', 4, now, 'en-GB'), 'Last upload: 4 files');
+});
+
+test('upload cards show the latest upload time in the viewer timezone', () => {
+    const local = new Date(2026, 9, 7, 22, 50);
+    assert.equal(formatChunkTime(local.toISOString()), '07 Oct 2026, 22:50');
+    assert.equal(formatChunkTime(''), null);
+    assert.equal(formatChunkTime('not a date'), null);
+    const valid = { dateTime: local.toISOString(), textContent: '07 Oct 2026, 20:50' };
+    const invalid = { dateTime: 'broken', textContent: 'server text' };
+    localizeChunkTimes({ querySelectorAll: selector => selector === 'time[data-local-time]' ? [valid, invalid] : [] });
+    assert.equal(valid.textContent, '07 Oct 2026, 22:50');
+    assert.equal(invalid.textContent, 'server text');
 });
 
 test('upload asks to join the last upload when the switch is ON, pinned at start', async t => {
