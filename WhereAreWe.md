@@ -1,6 +1,18 @@
 # Where Are We — Uploadiny
 
-## 2026-10-08 — v0.11.1 candidate, not deployed
+## 2026-10-08 — v0.11.2 candidate, not deployed
+
+- Candidate iOS metadata: 0.11.2 build 28; no mobile behavior change.
+- Website: going back from the editor keeps already loaded previews, so the
+  project screen shows them instantly. Private no-store image headers are
+  unchanged. Covered by new `gallery-images` tests. No migration, dependency
+  or environment change.
+
+## 2026-10-08 — v0.11.1 deployed via FAST
+
+- Shipped `bc4af84fe8` on 2026-10-07 at 22:42:28 UTC in 99 seconds. The
+  completed receipt records website/API verification and signed iPhone 0.11.1
+  build 27 installation and launch.
 
 - Candidate iOS metadata: 0.11.1 build 27; no mobile behavior change.
 - Website: an upload opens on its first file the first time and on the last

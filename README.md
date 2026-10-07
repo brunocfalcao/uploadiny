@@ -142,15 +142,15 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.11.1`, candidate, not deployed. Its iOS
-marketing version is `0.11.1`; this release build is `27`. Opening an upload
-from the project screen starts on its first file the first time; reopening it
-in the same browser returns to the file last viewed in that upload (first file
-again when that file has left the upload). The position lives in the browser.
+The release candidate is `v0.11.2`, candidate, not deployed. Its iOS
+marketing version is `0.11.2`; this release build is `28`. Returning from the
+editor to the project screen reuses previews already shown on the page, so
+they appear instantly; previews stay `private, no-store` and are never kept in
+the browser's disk cache.
 
-The previous release, `v0.11.0` (`4f18a91bea`), completed FAST shipping on
-7 October 2026 at 22:12:04 UTC in 107 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.11.0 build 26
+The previous release, `v0.11.1` (`bc4af84fe8`), completed FAST shipping on
+7 October 2026 at 22:42:28 UTC in 99 seconds. Its local completed receipt
+records website/API verification and signed physical iPhone 0.11.1 build 27
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

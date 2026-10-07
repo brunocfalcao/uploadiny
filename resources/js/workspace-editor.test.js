@@ -64,7 +64,7 @@ function workspace(t, search = '', storage = memoryStorage()) {
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
+        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, keepLoadedImages() {}, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },

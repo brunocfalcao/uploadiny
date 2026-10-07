@@ -2,6 +2,7 @@ import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory';
 import { clipboardFiles } from './clipboard-files';
+import { keepLoadedImages } from './gallery-images';
 import { appendTarget, formatLastUpload, localizeTimes, readAppendPreference, writeAppendPreference } from './append-to-last';
 enhanceAgentAccess();
 import { enhanceProjectSelect } from './select';
@@ -801,6 +802,7 @@ if (workspace) {
         const list = page.getElementById('chunk-list'); const next = page.querySelector('[data-workspace]'); const current = document.getElementById('chunk-list');
         if (!list || !next || !current) return false;
         const scroll = window.scrollY;
+        keepLoadedImages(current, list);
         current.replaceChildren(...list.childNodes);
         const nav = document.querySelector('.project-nav'); const nextNav = page.querySelector('.project-nav');
         if (nav && nextNav) nav.replaceChildren(...nextNav.childNodes);
