@@ -59,7 +59,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var previewGenerator: AVAssetImageGenerator?
   private var previewGeneration = 0
   private var isPreparing = false
-  private var uploadSession: URLSession?
+  private let uploads = ShareUploadCoordinator()
+  private var appendLookup = ShareAppendDecision()
   private var temporaryURLs: [URL] = []
   private var didStart = false
   private var canDismiss = false
@@ -456,9 +457,25 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   @objc private func appendPreferenceChanged() {
     appendToLastUpload = appendSwitch.isOn
     UploadinyAppendPreferenceStore.write(appendSwitch.isOn)
+    updateUploadAvailability()
+  }
+
+  private func updateUploadAvailability() {
+    guard !review.files.isEmpty, !isPreparing, !reviewPanel.isHidden else { return }
+    let retry = appendToLastUpload && appendLookup.failed
+    uploadButton.isEnabled = !appendToLastUpload || !appendLookup.loading
+    uploadButton.alpha = uploadButton.isEnabled ? 1 : 0.5
+    uploadButton.configuration?.title = retry ? "Retry last upload lookup" : "Upload \(review.files.count) asset\(review.files.count == 1 ? "" : "s")"
+    uploadButton.accessibilityLabel = uploadButton.configuration?.title
   }
 
   private func updateAppendRow() {
+    if appendLookup.loading || appendLookup.failed {
+      appendRow.isHidden = false
+      appendCaption.text = appendLookup.loading ? "Checking the last upload…" : "Lookup failed. Retry before adding to the last upload."
+      updateUploadAvailability()
+      return
+    }
     guard let lastUpload, lastUpload.projectID == selectedProject?.id else {
       appendRow.isHidden = true
       return
@@ -485,24 +502,39 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func fetchLastUpload(for project: Project) {
     lastUploadGeneration += 1
     let generation = lastUploadGeneration
+    appendLookup.begin(projectID: project.id, generation: generation)
     lastUpload = nil
     updateAppendRow()
     guard let base = serverURL, !token.isEmpty else { return }
     var request = authorizedRequest(base.appendingPathComponent("projects").appendingPathComponent(project.slug).appendingPathComponent("last-chunk"))
     request.timeoutInterval = 30
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
-    session.dataTask(with: request) { [weak self] data, response, error in
+    uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       DispatchQueue.main.async {
-        // Ignore answers for an earlier project choice; on any failure the row stays hidden.
         guard let self, !self.didClose, self.lastUploadGeneration == generation, self.selectedProject?.id == project.id else { return }
+        if let response = response as? HTTPURLResponse, response.statusCode == 401 {
+          self.requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
+          return
+        }
         guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
-              let data, let result = try? JSONDecoder().decode(LastUploadResult.self, from: data),
-              let chunk = result.chunk, let completedAt = ISO8601DateFormatter().date(from: chunk.completed_at) else { return }
-        self.lastUpload = LastUploadSummary(projectID: project.id, id: chunk.id, completedAt: completedAt, fileCount: chunk.file_count)
+              let data, let result = try? JSONDecoder().decode(LastUploadResult.self, from: data) else {
+          self.appendLookup.resolve(projectID: project.id, generation: generation, success: false)
+          self.updateAppendRow()
+          return
+        }
+        if let chunk = result.chunk {
+          guard let completedAt = ISO8601DateFormatter().date(from: chunk.completed_at) else {
+            self.appendLookup.resolve(projectID: project.id, generation: generation, success: false)
+            self.updateAppendRow()
+            return
+          }
+          self.lastUpload = LastUploadSummary(projectID: project.id, id: chunk.id, completedAt: completedAt, fileCount: chunk.file_count)
+        }
+        self.appendLookup.resolve(projectID: project.id, generation: generation, success: true)
         self.updateAppendRow()
+        self.updateUploadAvailability()
       }
     }.resume()
-    session.finishTasksAndInvalidate()
   }
 
   private func configureNavigationButton(_ button: UIButton, title: String, symbol: String, action: Selector) {
@@ -584,6 +616,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     uploadButton.isEnabled = true
     uploadButton.alpha = 1
     uploadButton.isHidden = false
+    updateUploadAvailability()
     preferredContentSize = CGSize(width: 0, height: 760)
     showAsset()
     scroll.setContentOffset(.zero, animated: false)
@@ -769,7 +802,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     var request = authorizedRequest(base.appendingPathComponent("projects"))
     request.timeoutInterval = 30
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
-    session.dataTask(with: request) { [weak self] data, response, error in
+    uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       guard let self else { return }
       if let response = response as? HTTPURLResponse, response.statusCode == 401 {
         self.requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
@@ -872,7 +905,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     request.timeoutInterval = 30
     request.httpBody = body
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
-    session.dataTask(with: request) { [weak self] data, response, error in
+    uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       guard let self else { return }
       guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 201,
             let data, let result = try? JSONDecoder().decode(DeviceTokenResult.self, from: data) else {
@@ -910,14 +943,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   private func secureSession(requestTimeout: TimeInterval = 600, resourceTimeout: TimeInterval = 600) -> URLSession {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.timeoutIntervalForRequest = requestTimeout
-    configuration.timeoutIntervalForResource = resourceTimeout
-    configuration.urlCache = nil
-    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-    let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    uploadSession = session
-    return session
+    return uploads.session(delegate: self, requestTimeout: requestTimeout, resourceTimeout: resourceTimeout)
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
@@ -1010,6 +1036,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   @objc private func beginUpload() {
     guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, !isPreparing else { return }
+    if appendToLastUpload && !appendLookup.canUpload {
+      if appendLookup.failed, let project = selectedProject { fetchLastUpload(for: project) }
+      return
+    }
     let sizeLimit = 95 * 1024 * 1024
     if let oversized = review.files.first(where: { ((try? $0.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > sizeLimit }) {
       showError("\(oversized.name) is larger than 95 MB. Trim the video before sharing it.", allowRetry: false)
@@ -1076,7 +1106,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         let ownedURLs: [URL]
         if ["image/heic", "image/heif", "image/tiff"].contains(mime) {
           let jpeg = try self.jpegRepresentation(copyURL)
-          ownedURLs = [copyURL, jpeg]
+          try? FileManager.default.removeItem(at: copyURL)
+          ownedURLs = [jpeg]
           let jpegName = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent + ".jpg"
           prepared = SharedFile(url: jpeg, name: jpegName, mime: "image/jpeg")
         } else {
@@ -1118,7 +1149,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     request.timeoutInterval = 30
     startingDraft = true
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
-    session.dataTask(with: request) { [weak self] data, response, error in
+    uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       DispatchQueue.main.async {
         guard let self else { return }
         self.startingDraft = false
@@ -1156,13 +1187,16 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     currentFileIndex = index
     showUploadProgress(index: index, fileFraction: 0)
     let boundary = "Uploadiny-\(UUID().uuidString)"
-    do {
-      let bodyURL = try multipartBody(file: file, boundary: boundary)
-      var request = authorizedRequest(base.appendingPathComponent("chunks").appendingPathComponent(draftID).appendingPathComponent("images"))
+    uploads.stage(file: file, boundary: boundary) { [weak self] result in
+      guard let self else { if case .success(let url) = result { try? FileManager.default.removeItem(at: url) }; return }
+      guard !self.didClose else { if case .success(let url) = result { try? FileManager.default.removeItem(at: url) }; return }
+      guard case .success(let bodyURL) = result else { self.showError("A file could not be prepared. The incomplete group was not published."); return }
+      self.temporaryURLs.append(bodyURL)
+      var request = self.authorizedRequest(base.appendingPathComponent("chunks").appendingPathComponent(draftID).appendingPathComponent("images"))
       request.httpMethod = "POST"
       request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-      let session = secureSession()
-      let task = session.uploadTask(with: request, fromFile: bodyURL) { [weak self] data, response, error in
+      let session = self.secureSession()
+      let task = self.uploads.uploadTask(session: session, with: request, fromFile: bodyURL) { [weak self] data, response, error in
         DispatchQueue.main.async {
           guard let self, !self.didClose else { return }
           try? FileManager.default.removeItem(at: bodyURL)
@@ -1185,16 +1219,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           self.uploadFile(at: index + 1)
         }
       }
-      currentUploadTask = task
+      self.currentUploadTask = task
       task.resume()
-    } catch { showError("A file could not be prepared. The incomplete group was not published.") }
-  }
-
-  private func multipartBody(file: SharedFile, boundary: String) throws -> URL {
-    let bodyURL = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).multipart")
-    temporaryURLs.append(bodyURL)
-    try file.writeMultipart(to: bodyURL, boundary: boundary)
-    return bodyURL
+    }
   }
 
   private func completeChunk() {
@@ -1202,7 +1229,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     var request = authorizedRequest(base.appendingPathComponent("chunks").appendingPathComponent(draftID).appendingPathComponent("complete"))
     request.httpMethod = "POST"
     let session = secureSession()
-    session.dataTask(with: request) { [weak self] data, response, error in
+    uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       DispatchQueue.main.async {
         guard let self, !self.didClose else { return }
         if let response = response as? HTTPURLResponse, response.statusCode == 401 {
@@ -1258,7 +1285,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     var request = authorizedRequest(base.appendingPathComponent("chunks").appendingPathComponent(draftID))
     request.httpMethod = "DELETE"
     request.timeoutInterval = 10
-    secureSession(requestTimeout: 10, resourceTimeout: 10).dataTask(with: request) { _, _, _ in
+    uploads.dataTask(session: secureSession(requestTimeout: 10, resourceTimeout: 10), with: request) { _, _, _ in
       DispatchQueue.main.async { completion() }
     }.resume()
   }
@@ -1347,12 +1374,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     detailLabel.isHidden = false
     detailLabel.text = "Closing…"
     if startingDraft { return }
-    uploadSession?.invalidateAndCancel()
+    uploads.cancel()
     cancelDraft { self.finishClosing() }
   }
 
   private func finishClosing() {
-    uploadSession?.invalidateAndCancel()
+    uploads.cancel()
     cleanupFiles()
     extensionContext?.completeRequest(returningItems: nil)
   }
@@ -1446,13 +1473,111 @@ private final class ShareAssetCell: UICollectionViewCell {
 
 private struct ProjectList: Decodable { let projects: [Project] }
 private struct Project: Decodable { let id: Int; let name: String; let slug: String; let description: String? }
+private struct ShareAppendDecision {
+  private var projectID: Int?
+  private var generation = 0
+  private(set) var loading = false
+  private(set) var failed = false
+  var canUpload: Bool { !loading && !failed && projectID != nil }
+
+  mutating func begin(projectID: Int, generation: Int) {
+    self.projectID = projectID
+    self.generation = generation
+    loading = true
+    failed = false
+  }
+
+  mutating func resolve(projectID: Int, generation: Int, success: Bool) {
+    guard self.projectID == projectID, self.generation == generation else { return }
+    loading = false
+    failed = !success
+  }
+}
+
+private final class ShareUploadCoordinator {
+  private let lock = NSLock()
+  private var sessions: [ObjectIdentifier: URLSession] = [:]
+  private let staging = OperationQueue()
+  private var stagingGeneration = 0
+  private let configuration: () -> URLSessionConfiguration
+
+  init(configuration: @escaping () -> URLSessionConfiguration = { .ephemeral }) {
+    self.configuration = configuration
+    staging.maxConcurrentOperationCount = 1
+    staging.qualityOfService = .utility
+  }
+
+  func session(delegate: URLSessionDelegate, requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
+    let configuration = self.configuration()
+    configuration.timeoutIntervalForRequest = requestTimeout
+    configuration.timeoutIntervalForResource = resourceTimeout
+    configuration.urlCache = nil
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+    lock.lock(); sessions[ObjectIdentifier(session)] = session; lock.unlock()
+    return session
+  }
+
+  func dataTask(session: URLSession, with request: URLRequest, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionDataTask {
+    return session.dataTask(with: request) { [self] data, response, error in
+      finish(session)
+      completion(data, response, error)
+    }
+  }
+
+  func uploadTask(session: URLSession, with request: URLRequest, fromFile url: URL, completion: @escaping (Data?, URLResponse?, Error?) -> Void) -> URLSessionUploadTask {
+    return session.uploadTask(with: request, fromFile: url) { [self] data, response, error in
+      finish(session)
+      completion(data, response, error)
+    }
+  }
+
+  func finish(_ session: URLSession) {
+    session.finishTasksAndInvalidate()
+    lock.lock(); sessions.removeValue(forKey: ObjectIdentifier(session)); lock.unlock()
+  }
+
+  func cancel() {
+    staging.cancelAllOperations()
+    lock.lock(); stagingGeneration += 1; let current = Array(sessions.values); sessions.removeAll(); lock.unlock()
+    for session in current { session.invalidateAndCancel() }
+  }
+
+  func stage(file: SharedFile, boundary: String, completion: @escaping (Result<URL, Error>) -> Void) {
+    lock.lock(); let generation = stagingGeneration; lock.unlock()
+    staging.addOperation { [self] in
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).multipart")
+      let result: Result<URL, Error>
+      do {
+        try file.writeMultipart(to: url, boundary: boundary, cancelled: { self.stagingCancelled(generation) })
+        result = .success(url)
+      } catch {
+        try? FileManager.default.removeItem(at: url)
+        result = .failure(error)
+      }
+      DispatchQueue.main.async {
+        if self.stagingCancelled(generation) {
+          try? FileManager.default.removeItem(at: url)
+          completion(.failure(URLError(.cancelled)))
+        } else { completion(result) }
+      }
+    }
+  }
+
+  private func stagingCancelled(_ generation: Int) -> Bool {
+    lock.lock(); defer { lock.unlock() }
+    return stagingGeneration != generation
+  }
+}
+
 private struct SharedFile {
   let url: URL
   let name: String
   let mime: String
   var comments = ""
 
-  func writeMultipart(to bodyURL: URL, boundary: String) throws {
+  func writeMultipart(to bodyURL: URL, boundary: String, cancelled: () -> Bool = { false }) throws {
+    if cancelled() { throw URLError(.cancelled) }
     FileManager.default.createFile(atPath: bodyURL.path, contents: nil)
     let output = try FileHandle(forWritingTo: bodyURL)
     defer { try? output.close() }
@@ -1464,6 +1589,7 @@ private struct SharedFile {
     defer { input.close() }
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while input.hasBytesAvailable {
+      if cancelled() { throw URLError(.cancelled) }
       let count = input.read(&buffer, maxLength: buffer.count)
       if count < 0 { throw UploadError.cannotReadFile }
       if count == 0 { break }

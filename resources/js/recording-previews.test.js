@@ -36,7 +36,7 @@ async function withFakeMedia(options, callback) {
                 width: 0,
                 height: 0,
                 getContext: () => ({ drawImage: () => {} }),
-                toDataURL: () => 'data:image/jpeg;base64,first-frame',
+                toDataURL: () => options.dataURL ?? 'data:image/jpeg;base64,first-frame',
             };
             harness.canvases.push(canvas);
             return canvas;
@@ -82,5 +82,17 @@ test('does not apply a late first frame after the active recording changes', asy
         await applying;
 
         assert.equal(player.poster, undefined);
+    });
+});
+
+
+test('a long session evicts old frames by retained bytes while keeping recent frames cached', async () => {
+    await withFakeMedia({ dataURL: 'data:image/jpeg;base64,' + 'x'.repeat(1024 * 1024) }, async harness => {
+        for (let index = 0; index < 8; index++) await recordingFirstFrame(`/budget/${index}.mov`);
+        const before = harness.videos.length;
+        await recordingFirstFrame('/budget/7.mov');
+        assert.equal(harness.videos.length, before);
+        await recordingFirstFrame('/budget/0.mov');
+        assert.equal(harness.videos.length, before + 1);
     });
 });

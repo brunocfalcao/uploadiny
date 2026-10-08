@@ -38,9 +38,11 @@ to `https://uploadiny.com/api`.
 - Projects retain current images when images are moved. Deleting a project
   removes only the images still assigned to it.
 - Feedback stores normalized drawings, comments, annotated images, and a
-  revision number so stale editor writes are rejected.
+  revision number so stale editor writes are rejected. Keyboard users can add
+  and select annotations without a pointer.
 - Vision descriptions run asynchronously on the database queue. Pending or
-  failed descriptions never block feedback or retrieval.
+  failed descriptions never block feedback or retrieval. Queue failure keeps
+  the published upload and leaves a retryable description.
 
 ## Local development
 
@@ -58,6 +60,9 @@ npm run build
 
 Create the private account with `php artisan uploadiny:account`, then run a
 database queue worker with `php artisan queue:work` while testing vision jobs.
+Run the Laravel scheduler (locally, `php artisan schedule:work`) to retry
+committed staged-file cleanup each minute. Deployment must apply the new
+failed-job and staged-cleanup migrations and keep the scheduler active.
 
 ## MCP access
 
@@ -72,21 +77,26 @@ The server exposes five tools:
 
 - `list_projects`: discover project names and their six-letter codes.
 - `get_feedback(project_canonical)`: retrieve the latest completed batch,
-  including exact comments, annotations, asset IDs, and feedback revisions.
+  including exact comments, annotations, asset IDs, feedback revisions, and
+  the `review_token` identifying those reviewed contents.
 - `get_asset(asset_id, variant)`: inspect the original or annotated screenshot
   as image content. Original recordings return metadata and a private download
-  URL instead; that URL requires the same bearer key.
+  URL instead; that URL requires the same bearer key. Images that cannot
+  safely fit the PHP inline-response memory budget return a safe error with
+  this authenticated original-download link; originals remain intact.
 - `get_recording_frames(asset_id, timestamps)`: inspect up to five JPEG frames
   at specified seconds, with the original feedback alongside them. Omitting
   timestamps returns the first frame. Frames stay within 1280 pixels per side
   without upscaling and are not saved as new assets.
-- `delete_chunk(project_canonical, chunk_id)`: permanently delete the exact
+- `delete_chunk(project_canonical, chunk_id, review_token)`: permanently delete the exact
   completed feedback chunk's assets currently in that project, including
   comments, annotations, and private files. Assets moved elsewhere survive;
   the shared chunk record survives while other projects still have assets.
   The tool uses the same agent key and is marked destructive. Call it only
   after the owner explicitly requests deletion, retaining the reviewed UUID
-  rather than selecting a newer upload.
+  and `review_token` rather than selecting a newer upload. If files, notes,
+  annotations, or descriptions changed after review, review the updated
+  chunk and obtain fresh explicit cleanup consent.
 
 `do uploadiny <request>` uses the shared command at
 `~/Herd/.dynamic-commands/uploadiny.md` to select a project, inspect its latest
@@ -110,6 +120,23 @@ application and database. For Herd HTTPS trust, pass
 `--ca="/Users/falcaob/Library/Application Support/Herd/config/valet/CA/LaravelValetCASelfSigned.pem"`;
 certificate verification remains enabled.
 
+## Upload and history recovery
+
+The browser uses 30-second control requests and ten-minute file/publication
+requests, matching the iPhone limits. Cancel stops the active transfer and
+cancels its unpublished draft. A lost final response asks the owner to check
+the project before uploading again; completed groups cannot be cancelled.
+The iPhone requires a successful current-project last-upload lookup in append
+mode. A failed lookup offers retry and retains prepared media and notes.
+Multipart staging runs on a serial background worker; each sent multipart
+copy is removed while review originals remain available for sign-in/retry.
+
+The gallery pages 24 completed chunks and fetches full feedback when a file
+opens. Direct links to older files retain navigation within their chunk.
+Transfer choices are reused within the page and invalidated after changes.
+Recording posters retain at most 8 MiB of decoded data-URL string storage in
+an LRU cache; expired posters can be regenerated from the private original.
+
 ## Verification
 
 ```sh
@@ -131,7 +158,7 @@ For iPhone source checks, run these from `mobile/`:
 npm ci
 npm run typecheck
 npm run test:share-extension
-npx expo-doctor
+npm run doctor
 ```
 
 ## Release targets
@@ -142,15 +169,16 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.11.2`, candidate, not deployed. Its iOS
-marketing version is `0.11.2`; this release build is `28`. Returning from the
-editor to the project screen reuses previews already shown on the page, so
-they appear instantly; previews stay `private, no-store` and are never kept in
-the browser's disk cache.
+The release candidate is `v0.12.0`, candidate, not deployed. Its iOS
+marketing version is `0.12.0`; this release build is `29`. It hardens upload
+recovery, prevents cleanup of feedback changed since review, paginates project
+history, adds keyboard annotation controls, and retains failed file cleanup
+for scheduled retry. Two additive migrations create staged cleanup intents
+and failed-job storage. No new environment keys are required.
 
-The previous release, `v0.11.1` (`bc4af84fe8`), completed FAST shipping on
-7 October 2026 at 22:42:28 UTC in 99 seconds. Its local completed receipt
-records website/API verification and signed physical iPhone 0.11.1 build 27
+The previous release, `v0.11.2` (`a212081588`), completed FAST shipping on
+7 October 2026 at 22:57:34 UTC in 101 seconds. Its matching completed receipt
+records website/API verification and signed physical iPhone 0.11.2 build 28
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

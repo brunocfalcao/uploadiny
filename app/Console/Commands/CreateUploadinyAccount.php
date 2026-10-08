@@ -40,24 +40,29 @@ class CreateUploadinyAccount extends Command
 
             return self::FAILURE;
         }
-        if ($this->option('generate')) {
-            $path = Storage::disk('local')->path('initial-login.txt');
-            if (is_file($path)) {
-                $this->error('An initial credentials file already exists.');
-
-                return self::FAILURE;
-            }
-            if (! Storage::disk('local')->put('initial-login.txt', "Email: {$email}\nPassword: {$password}\n")) {
-                $this->error('Credentials could not be saved.');
-
-                return self::FAILURE;
-            }
-            chmod($path, 0600);
-        }
+        $createdFile = false;
         try {
+            if ($this->option('generate')) {
+                $path = Storage::disk('local')->path('initial-login.txt');
+                if (is_file($path)) {
+                    $this->error('An initial credentials file already exists.');
+
+                    return self::FAILURE;
+                }
+                $createdFile = true;
+                if (! Storage::disk('local')->put('initial-login.txt', "Email: {$email}\nPassword: {$password}\n")) {
+                    Storage::disk('local')->delete('initial-login.txt');
+                    $this->error('Credentials could not be saved.');
+
+                    return self::FAILURE;
+                }
+                if (! chmod($path, 0600)) {
+                    throw new \RuntimeException('Initial credentials could not be secured.');
+                }
+            }
             User::create(['name' => 'Bruno', 'email' => $email, 'password' => $password]);
         } catch (Throwable $error) {
-            if ($this->option('generate')) {
+            if ($createdFile) {
                 Storage::disk('local')->delete('initial-login.txt');
             }
             throw $error;

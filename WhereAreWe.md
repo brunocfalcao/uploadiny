@@ -1,6 +1,29 @@
 # Where Are We — Uploadiny
 
-## 2026-10-08 — v0.11.2 candidate, not deployed
+## 2026-10-08 — v0.12.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.12.0 build 29. Share Extension append mode requires
+  a successful current-project lookup; retry retains originals and notes.
+  Upload sessions finish cleanly and multipart staging runs off the main thread.
+- Website: bounded upload requests, cancel/reconciliation recovery, paginated
+  history, keyboard annotation controls, stable editor operation ownership,
+  and bounded recording-poster caching.
+- Backend/MCP: cleanup requires unchanged reviewed feedback, oversized inline
+  screenshots keep authenticated original access, optional vision failures
+  preserve published uploads, and committed file cleanup retries each minute.
+- Two additive tables: staged_file_deletions and failed_jobs. No new environment
+  keys or destructive migration review flag. Previously shipped code remains
+  compatible with the additional tables.
+- Development dependencies added: expo-doctor 1.20.4 and pod-install 1.1.0.
+  Shipped app dependencies unchanged.
+- Local overnight findings resolved. Browser and physical Share Sheet acceptance
+  remain separate; Expo Directory metadata availability is an external check.
+
+## 2026-10-08 — v0.11.2 deployed via FAST
+
+- Shipped `a212081588` on 2026-10-07 at 22:57:34 UTC in 101 seconds. The
+  matching completed receipt records website/API verification and signed
+  iPhone 0.11.2 build 28 installation and launch.
 
 - Candidate iOS metadata: 0.11.2 build 28; no mobile behavior change.
 - Website: going back from the editor keeps already loaded previews, so the

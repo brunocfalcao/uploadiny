@@ -1,3 +1,5 @@
+import { requestJson } from './workspace-request';
+import { createWorkspaceOperations } from './workspace-operations';
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory';
@@ -34,6 +36,7 @@ if (workspace) {
     const nameInput = document.getElementById('project-name');
     const slugInput = document.getElementById('project-slug');
     let slugEdited = false;
+    const operations = createWorkspaceOperations();
     let active = null;
     let source = null;
     let strokes = [];
@@ -50,13 +53,34 @@ if (workspace) {
     let dirtyVersion = 0;
     let autosaveTimer = null;
     let savePromise = null;
-    let saving = false;
-    let navigating = false;
-    let transferring = false;
+    const cardMembership = new WeakMap();
+    const fileCards = new Map();
+    let openChunkFiles = config.open_chunk_images ?? [];
     let chunkGroups = readChunkGroups();
-    function readChunkGroups() { return [...document.querySelectorAll('[data-chunk-images]')].map(button => JSON.parse(button.dataset.chunkImages)); }
-    let loading = false;
+    function membership(card) {
+        if (!cardMembership.has(card)) cardMembership.set(card, JSON.parse(card.dataset.chunkImages));
+        return cardMembership.get(card);
+    }
+    function chunkCard(id) { return fileCards.get(id); }
+    function chunkIdentity(id) { return chunkCard(id)?.dataset.chunk ?? (openChunkFiles.includes(id) ? config.open_chunk_id : null); }
+    function updateMembership(card, files) {
+        if (card) { card.dataset.chunkImages = JSON.stringify(files); cardMembership.set(card, files); }
+        else openChunkFiles = files;
+        chunkGroups = readChunkGroups();
+    }
+    function readChunkGroups() {
+        fileCards.clear();
+        const groups = [...document.querySelectorAll('[data-chunk-images]')].map(card => {
+            const files = membership(card);
+            for (const id of files) fileCards.set(id, card);
+            return files;
+        });
+        if (openChunkFiles.length && !groups.some(files => files.includes(openChunkFiles[0]))) groups.push(openChunkFiles);
+        return groups;
+    }
     let uploadingChunk = null;
+    let uploadController = null;
+    let uploadRequest = null;
     let pollTimer = null;
     let loadGeneration = 0;
     const canvas = document.getElementById('annotation-canvas');
@@ -91,7 +115,7 @@ if (workspace) {
     const calloutEditor = createCalloutEditor({
         canvas, overlay: document.getElementById('callout-overlay'),
         point: event => positionOnCanvas(event, canvas),
-        getStrokes: () => strokes, editable: () => Boolean(source) && !saving && !navigating && !transferring,
+        getStrokes: () => strokes, editable: () => Boolean(source) && !operations.saving && !operations.navigating && !operations.transferring,
         color: () => ink.value, width: () => normalizedStrokeWidth(thickness.value, canvas.width),
         onSelect: stroke => { ink.value = stroke.color; thickness.value = Math.round(stroke.width * canvas.width); updateInkControls(); },
         replace: (next, changed = false) => { strokes = next; if (changed) setDirty(); repaint(); },
@@ -103,20 +127,7 @@ if (workspace) {
         message.classList.toggle('error-message', error);
         message.hidden = false;
     }
-    async function request(url, options = {}) {
-        const response = await fetch(url, {
-            ...options,
-            headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token, ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...options.headers },
-        });
-        let payload;
-        try { payload = await response.json(); } catch { throw new Error('The server did not return a valid response. Reload and try again.'); }
-        if (!response.ok) {
-            const error = new Error(Object.values(payload.errors || {}).flat()[0] || payload.message || 'The request failed. Try again.');
-            error.status = response.status;
-            throw error;
-        }
-        return payload;
-    }
+    function request(url, options = {}) { return requestJson(url, options, token); }
     function projectForm(editing) {
         form.action = editing ? config.project_url : config.create_url;
         document.getElementById('project-method').value = editing ? 'PATCH' : 'POST';
@@ -174,13 +185,16 @@ if (workspace) {
         if (appendCaption) appendCaption.textContent = latest ? formatLastUpload(workspace.dataset.latestCompleted, workspace.dataset.latestCount) : '';
     }
     syncAppendTarget();
+    document.getElementById('cancel-upload')?.addEventListener('click', () => { uploadController?.abort(); uploadRequest?.abort(); });
     async function upload(files) {
-        if (!files.length || loading) return;
+        if (!files.length || operations.busy || draft || eraseStart || calloutEditor.busy()) return;
         if (files.some(file => /\.(heic|heif|tiff?)$/i.test(file.name))) { notify('Use JPEG, PNG, WebP, GIF or BMP here. The iPhone share button converts HEIC photos automatically.', true); return; }
         const oversized = files.find(file => file.size > 95 * 1024 * 1024);
         if (oversized) { notify(`${oversized.name} is larger than 95 MB. Trim or compress it before uploading.`, true); return; }
         if (active) { calloutEditor.finishText(); if (dirty && !await saveFeedback()) return; if (!leaveEditor()) return; }
-        loading = true;
+        operations.loading = true;
+        uploadController = new AbortController();
+        let publishing = false;
         const appendTo = appendTarget(Boolean(appendSwitch?.checked), workspace.dataset.latest);
         let chunkId = null;
         const progress = document.getElementById('upload-progress');
@@ -193,14 +207,17 @@ if (workspace) {
             progress.querySelector('span').textContent = `${index + 1} / ${files.length} · ${percent}%`;
         }
         try {
-            const draft = await request(config.upload_url, { method: 'POST', body: JSON.stringify(appendTo ? { image_count: files.length, append_to: appendTo } : { image_count: files.length }) });
+            const draft = await request(config.upload_url, { signal: uploadController.signal, method: 'POST', body: JSON.stringify(appendTo ? { image_count: files.length, append_to: appendTo } : { image_count: files.length }) });
             chunkId = draft.id;
             uploadingChunk = chunkId;
             for (let index = 0; index < files.length; index++) {
+                if (uploadController.signal.aborted) throw new Error('Upload cancelled.');
                 const file = files[index];
                 await new Promise((resolve, reject) => {
                     const body = new FormData(); body.append('file', file);
                     const xhr = new XMLHttpRequest();
+                    uploadRequest = xhr;
+                    xhr.timeout = 600000;
                     xhr.open('POST', `/chunks/${chunkId}/images`);
                     xhr.setRequestHeader('X-CSRF-TOKEN', token);
                     xhr.setRequestHeader('Accept', 'application/json');
@@ -212,25 +229,43 @@ if (workspace) {
                             reject(new Error(Object.values(payload.errors || {}).flat()[0] || payload.message || `File upload failed (${xhr.status}).`));
                         }
                     });
+                    xhr.addEventListener('timeout', () => reject(new Error('File upload timed out. Try again when the connection is stable.')));
                     xhr.addEventListener('error', () => reject(new Error('Connection interrupted. Check your project before trying again.')));
                     xhr.addEventListener('abort', () => reject(new Error('Upload cancelled.')));
                     xhr.send(body);
                 });
                 sentBytes += file.size; showProgress(sentBytes, index);
             }
-            await request(`/chunks/${chunkId}/complete`, { method: 'POST' });
-            uploadingChunk = null; loading = false;
+            publishing = true;
+            await request(`/chunks/${chunkId}/complete`, { signal: uploadController.signal, timeoutMs: 600000, method: 'POST' });
+            uploadingChunk = null; operations.loading = false;
             location.reload();
         } catch (error) {
-            if (chunkId) { try { await request(`/chunks/${chunkId}`, { method: 'DELETE' }); } catch { /* Never delete a completed group after a lost response. */ } }
-            uploadingChunk = null; loading = false; progress.hidden = true;
-            notify(`${error.message} Incomplete groups are not published.`, true);
-        }
+            if (chunkId) { try { await request(`/chunks/${chunkId}`, { method: 'DELETE', timeoutMs: 10000 }); } catch { /* Never delete a completed group after a lost response. */ } }
+            uploadingChunk = null; operations.loading = false; progress.hidden = true;
+            notify(`${error.message} ${publishing ? 'Check your project before uploading again; this group may already be published.' : 'Incomplete groups are not published.'}`, true);
+        } finally { uploadRequest = null; uploadController = null; }
     }
 
+    canvas.addEventListener('keydown', event => {
+        if (!source || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
+        if (event.key === 'Enter' && tool === 'callout') {
+            event.preventDefault();
+            const box = canvas.getBoundingClientRect();
+            calloutEditor.place({ clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }, true);
+        } else if (event.key === 'Tab' && tool === 'callout' && strokes.some(stroke => stroke.tool === 'callout')) {
+            event.preventDefault(); calloutEditor.selectNext();
+        }
+    });
+    document.getElementById('add-callout')?.addEventListener('click', () => {
+        if (!source || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
+        const box = canvas.getBoundingClientRect();
+        calloutEditor.place({ clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }, true);
+    });
+    document.getElementById('select-callout')?.addEventListener('click', () => calloutEditor.selectNext());
     function currentChunk() { return chunkGroups.find(files => files.includes(active?.id)) || (active ? [active.id] : []); }
     function updateChunkNavigation() {
-        const files = currentChunk(); const index = files.indexOf(active?.id); const busy = saving || navigating || transferring;
+        const files = currentChunk(); const index = files.indexOf(active?.id); const busy = operations.editorBusy;
         document.getElementById('chunk-position').textContent = files.length ? `${index + 1} of ${files.length}` : '';
         document.getElementById('first-file').disabled = busy || index <= 0;
         document.getElementById('previous-file').disabled = busy || index <= 0;
@@ -246,29 +281,30 @@ if (workspace) {
         });
     }
     document.getElementById('duplicate-image').addEventListener('click', async () => {
-        if (!active || active.media_type === 'video' || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
+        if (!active || active.media_type === 'video' || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
         const id = active.id;
-        transferring = true; comments.disabled = true; updateChunkNavigation();
+        operations.transferring = true; comments.disabled = true; updateChunkNavigation();
         let copy;
         try {
             copy = await request(`/images/${id}/duplicate`, { method: 'POST' });
-            const card = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(id));
-            if (card) card.dataset.chunkImages = JSON.stringify([...JSON.parse(card.dataset.chunkImages), copy.id]);
-            chunkGroups = readChunkGroups();
+            const card = chunkCard(id);
+            updateMembership(card, [...(card ? membership(card) : currentChunk()), copy.id]);
+            if (chunkIdentity(id) === workspace.dataset.latest) workspace.dataset.latestCount = String(Number(workspace.dataset.latestCount) + 1);
+            chunkDestinations = null; pageVersion++;
         } catch (error) { notify(error.message, true); }
-        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
+        finally { operations.transferring = false; comments.disabled = false; updateChunkNavigation(); }
         if (!copy) return;
         await openImage(copy.id);
         if (active?.id === copy.id) notify("Duplicated — you're editing the copy.");
     });
-    function finishNavigation() { navigating = false; comments.disabled = false; updateChunkNavigation(); }
+    function finishNavigation() { operations.navigating = false; comments.disabled = false; updateChunkNavigation(); }
     function scheduleAutosave() {
         clearTimeout(autosaveTimer);
         autosaveTimer = setTimeout(() => {
             if (!active || !dirty) return;
-            if (draft || eraseStart || calloutEditor.busy() || saving || navigating || transferring) { scheduleAutosave(); return; }
+            if (draft || eraseStart || calloutEditor.busy() || operations.editorBusy) { scheduleAutosave(); return; }
             saveFeedback(true);
         }, 700);
     }
@@ -279,10 +315,10 @@ if (workspace) {
         ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
         [...strokes, ...(draft ? [draft] : [])].forEach(stroke => drawAnnotation(ctx, stroke, canvas.width, canvas.height));
         if (showSelection && strokes[selectedIndex]) drawSelection(ctx, strokes[selectedIndex], canvas.width, canvas.height);
-        document.getElementById('delete-mark').disabled = saving || !strokes[selectedIndex];
-        document.getElementById('undo-drawing').disabled = saving || !undo.length;
-        document.getElementById('redo-drawing').disabled = saving || !redo.length;
-        document.getElementById('clear-drawing').disabled = saving || !strokes.length;
+        document.getElementById('delete-mark').disabled = operations.saving || !strokes[selectedIndex];
+        document.getElementById('undo-drawing').disabled = operations.saving || !undo.length;
+        document.getElementById('redo-drawing').disabled = operations.saving || !redo.length;
+        document.getElementById('clear-drawing').disabled = operations.saving || !strokes.length;
         calloutEditor.render();
     }
     function syncImageUrl(id, mode = 'replace') {
@@ -294,7 +330,7 @@ if (workspace) {
         history[mode === 'push' ? 'pushState' : 'replaceState'](null, '', url);
     }
     function leaveEditor(invalidate = true) {
-        if (saving) { notify('Wait for your feedback to finish saving.'); return false; }
+        if (operations.saving) { notify('Wait for your feedback to finish saving.'); return false; }
         calloutEditor.finishText();
         if (dirty && !confirm('Leave without saving your feedback?')) return false;
         clearTimeout(autosaveTimer);
@@ -309,14 +345,14 @@ if (workspace) {
         return true;
     }
     async function closeEditor() {
-        if (saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
+        if (operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
         if (!leaveEditor()) return;
         const announced = arrivalAnnounced; arrivalAnnounced = null;
         const outcome = await refreshGallery(true);
         if (outcome === 'failed' || outcome === 'stale') location.reload();
-        else if (announced) notifyTransient('New upload arrived.');
+        else { document.getElementById('gallery').focus(); if (announced) notifyTransient('New upload arrived.'); }
     }
     document.getElementById('close-editor').addEventListener('click', closeEditor);
     window.addEventListener('popstate', async () => {
@@ -339,7 +375,7 @@ if (workspace) {
             if (boundTiles.has(button)) return;
             boundTiles.add(button);
             button.addEventListener('click', () => {
-                const start = chunkStartFile(viewStore, button.dataset.chunk, JSON.parse(button.dataset.chunkImages)) ?? button.dataset.openImage;
+                const start = chunkStartFile(viewStore, button.dataset.chunk, membership(button)) ?? button.dataset.openImage;
                 openImage(start, start === button.dataset.openImage && button.dataset.playRecording === 'true');
             });
         });
@@ -351,11 +387,11 @@ if (workspace) {
         else leaveEditor();
     }
     async function openImage(id, playRecording = false, fromUrl = false) {
-        if (saving || navigating || transferring || active?.id === id) return;
+        if (operations.editorBusy || active?.id === id) return;
         if (draft || eraseStart || calloutEditor.busy()) { notify('Finish your current drawing before switching files.'); return; }
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
-        navigating = true; comments.disabled = true; updateChunkNavigation();
+        operations.navigating = true; comments.disabled = true; updateChunkNavigation();
         document.getElementById('save-feedback').disabled = true;
         const generation = ++loadGeneration;
         try {
@@ -365,8 +401,7 @@ if (workspace) {
             if (active && !leaveEditor(false)) { finishNavigation(); return; }
             calloutEditor.reset(); selectedIndex = null;
             active = data; dirty = false; source = null;
-            const viewedCard = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(data.id));
-            rememberChunkFile(viewStore, viewedCard?.dataset.chunk, data.id);
+            rememberChunkFile(viewStore, chunkIdentity(data.id), data.id);
             syncImageUrl(data.id, fromGallery && !fromUrl ? 'push' : 'replace');
             loadChunkDestinations(data.id);
             ({ strokes, undo, redo } = resetDrawingHistory(data.annotations)); draft = null; eraseStart = null; zoom = 1; fitView = true;
@@ -384,6 +419,7 @@ if (workspace) {
             imageError.hidden = true;
             canvas.hidden = true;
             const recording = data.media_type === 'video';
+            document.getElementById('annotation-actions').hidden = recording;
             document.getElementById('drawing-workspace').hidden = recording;
             document.getElementById('video-workspace').hidden = !recording;
             document.getElementById('vision-section').hidden = recording;
@@ -557,7 +593,7 @@ if (workspace) {
 
     stage.addEventListener('wheel', event => {
         if (!source || !event.deltaY) return;
-        if (saving || navigating || transferring || draft || eraseStart || calloutEditor.busy() || panning) { if (event.ctrlKey) event.preventDefault(); return; }
+        if (operations.editorBusy || draft || eraseStart || calloutEditor.busy() || panning) { if (event.ctrlKey) event.preventDefault(); return; }
         event.preventDefault();
         const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
         const delta = Math.max(-100, Math.min(100, event.deltaY * lines));
@@ -575,7 +611,7 @@ if (workspace) {
         else { panning = null; stage.classList.toggle('panning', false); if (hintElement.textContent === panHint) hintElement.textContent = hintBeforePan; }
     }
     function startPan(event) {
-        if (panning || event.button !== 0 || saving || navigating || transferring) return;
+        if (panning || event.button !== 0 || operations.editorBusy) return;
         event.preventDefault(); event.stopPropagation();
         try { stage.setPointerCapture(event.pointerId); } catch { return; }
         panning = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: stage.scrollLeft || 0, top: stage.scrollTop || 0 };
@@ -612,7 +648,7 @@ if (workspace) {
         repaint();
     }
     canvas.addEventListener('pointerdown', event => {
-        if (!source || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy() || event.button !== 0) return;
+        if (!source || operations.editorBusy || draft || eraseStart || calloutEditor.busy() || event.button !== 0) return;
         event.preventDefault();
         if (panMode) return;
         if (tool === 'callout') { calloutEditor.place(event); return; }
@@ -653,17 +689,17 @@ if (workspace) {
         }
     });
     canvas.addEventListener('pointercancel', event => { if (event.pointerId !== drawingPointer) return; drawingPointer = null; if (eraseStart) strokes = restoreCancelledErase(eraseStart); eraseStart = null; draft = null; repaint(); });
-    document.getElementById('undo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && undo.length) { ({ strokes, undo, redo } = undoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
-    document.getElementById('redo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && redo.length) { ({ strokes, undo, redo } = redoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
-    document.getElementById('clear-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!saving && !navigating && !transferring && !draft && !eraseStart && strokes.length) commitStrokes([]); else repaint(); });
+    document.getElementById('undo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!operations.saving && !operations.navigating && !operations.transferring && !draft && !eraseStart && undo.length) { ({ strokes, undo, redo } = undoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('redo-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!operations.saving && !operations.navigating && !operations.transferring && !draft && !eraseStart && redo.length) { ({ strokes, undo, redo } = redoDrawingHistory({ strokes, undo, redo })); setDirty(); repaint(); } });
+    document.getElementById('clear-drawing').addEventListener('click', () => { if (calloutEditor.busy()) return; calloutEditor.reset(); selectedIndex = null; if (!operations.saving && !operations.navigating && !operations.transferring && !draft && !eraseStart && strokes.length) commitStrokes([]); else repaint(); });
     document.getElementById('delete-mark').addEventListener('click', () => {
         if (calloutEditor.busy()) return; calloutEditor.reset();
-        if (saving || navigating || transferring || draft || eraseStart || !strokes[selectedIndex]) return;
+        if (operations.editorBusy || draft || eraseStart || !strokes[selectedIndex]) return;
         const index = selectedIndex; selectedIndex = null;
         commitStrokes(strokes.filter((_, position) => position !== index));
     });
     document.addEventListener('keydown', event => {
-        const action = drawingShortcutAction(event, { active, source, saving: saving || navigating || transferring, draft: draft || eraseStart || calloutEditor.busy(), modalOpen: dialog.open, selected: selectedIndex !== null });
+        const action = drawingShortcutAction(event, { active, source, saving: operations.editorBusy, draft: draft || eraseStart || calloutEditor.busy(), modalOpen: dialog.open, selected: selectedIndex !== null });
         if (!action) { if (event.key === 'Escape' && selectedIndex !== null && !dialog.open) { selectedIndex = null; repaint(); } return; }
         event.preventDefault();
         if (action === 'undo' || action === 'redo') calloutEditor.finishText();
@@ -675,26 +711,26 @@ if (workspace) {
             const saved = await savePromise;
             if (!saved || automatic || !dirty) return saved;
         }
-        if (!active || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return false;
+        if (!active || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return false;
         calloutEditor.finishText();
         clearTimeout(autosaveTimer);
         const image = active; const version = dirtyVersion;
         if (strokes.length && source) repaint(false);
         const payload = { comments: comments.value, annotations: strokes, revision: image.revision, annotated_image: strokes.length && source ? canvas.toDataURL('image/png') : null };
-        saving = !automatic; updateChunkNavigation();
+        operations.saving = !automatic; updateChunkNavigation();
         repaint();
         const button = document.getElementById('save-feedback'); button.disabled = !automatic;
         comments.disabled = !automatic; saveState.textContent = 'Saving…';
         savePromise = (async () => {
             let saved = false;
             try {
-                const data = await request(`/images/${image.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+                const data = await request(`/images/${image.id}`, { timeoutMs: 600000, method: 'PATCH', body: JSON.stringify(payload) });
                 image.revision = data.revision;
                 dirty = dirtyVersion !== version;
                 saveState.textContent = dirty ? 'Unsaved changes' : 'Saved'; saved = true; return true;
             } catch (error) { clearTimeout(autosaveTimer); saveState.textContent = 'Not saved'; notify(error.message, true); return false; }
             finally {
-                savePromise = null; saving = false; button.disabled = navigating || transferring; comments.disabled = navigating || transferring; updateChunkNavigation(); repaint();
+                savePromise = null; operations.saving = false; button.disabled = operations.navigating || operations.transferring; comments.disabled = operations.navigating || operations.transferring; updateChunkNavigation(); repaint();
                 if (saved && dirty) scheduleAutosave();
             }
         })();
@@ -709,16 +745,17 @@ if (workspace) {
         catch (error) { notify(error.message, true); }
         finally { document.getElementById('retry-description').disabled = false; }
     });
+    let chunkDestinations = null;
     const targetChunk = document.getElementById('target-chunk');
     async function loadChunkDestinations(id) {
         targetChunk.replaceChildren(new Option('Loading upload chunks…', ''));
         document.getElementById('copy-to-chunk').disabled = true;
         document.getElementById('move-to-chunk').disabled = true;
         try {
-            const data = await request('/chunks');
+            const data = await (chunkDestinations ??= request('/chunks').catch(error => { chunkDestinations = null; throw error; }));
             if (active?.id !== id) return;
-            const currentCard = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(id));
-            const choices = data.destinations.filter(chunk => !(chunk.chunk_id === currentCard?.dataset.chunk && chunk.project_id === config.project.id));
+            const currentChunkId = chunkIdentity(id);
+            const choices = data.destinations.filter(chunk => !(chunk.chunk_id === currentChunkId && chunk.project_id === config.project.id));
             targetChunk.replaceChildren(new Option('Choose an upload chunk…', ''), new Option(`New upload chunk in ${config.project.name}`, JSON.stringify({ new_chunk: true, project_id: config.project.id })));
             for (const chunk of choices) {
                 targetChunk.append(new Option(`${chunk.project_name} · ${new Date(chunk.uploaded_at).toLocaleString()} · ${chunk.file_count} files`, JSON.stringify({ chunk_id: chunk.chunk_id, project_id: chunk.project_id })));
@@ -730,50 +767,52 @@ if (workspace) {
         document.getElementById('move-to-chunk').disabled = !targetChunk.value;
     });
     for (const action of ['copy', 'move']) document.getElementById(`${action}-to-chunk`).addEventListener('click', async () => {
-        if (!active || saving || navigating || transferring || !targetChunk.value || draft || eraseStart || calloutEditor.busy()) return;
+        if (!active || operations.editorBusy || !targetChunk.value || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
-        transferring = true; updateChunkNavigation();
+        operations.transferring = true; updateChunkNavigation();
         document.getElementById('copy-to-chunk').disabled = true;
         document.getElementById('move-to-chunk').disabled = true;
         comments.disabled = true;
         try {
             const result = await request(`/images/${active.id}/chunk`, { method: 'POST', body: JSON.stringify({ ...JSON.parse(targetChunk.value), action }) });
-            dirty = false; transferring = false; syncImageUrl(null); location.href = result.project_url;
+            dirty = false; operations.transferring = false; syncImageUrl(null); location.href = result.project_url;
         } catch (error) {
-            transferring = false; comments.disabled = false; updateChunkNavigation();
+            operations.transferring = false; comments.disabled = false; updateChunkNavigation();
             document.getElementById('copy-to-chunk').disabled = !targetChunk.value;
             document.getElementById('move-to-chunk').disabled = !targetChunk.value;
             notify(error.message, true);
         }
     });
     document.getElementById('move-image').addEventListener('click', async event => {
-        if (!active || saving || navigating || transferring || draft || eraseStart || calloutEditor.busy()) return;
+        if (!active || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
         if (dirty && !await saveFeedback()) return;
-        transferring = true; comments.disabled = true; updateChunkNavigation();
+        operations.transferring = true; comments.disabled = true; updateChunkNavigation();
         event.currentTarget.disabled = true;
         try { const result = await request(`/images/${active.id}/project`, { method: 'PATCH', body: JSON.stringify({ project_id: Number(document.getElementById('move-project').value) }) }); dirty = false; syncImageUrl(null); location.href = result.project_url; }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
-        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
+        finally { operations.transferring = false; comments.disabled = false; updateChunkNavigation(); }
     });
     document.getElementById('delete-image').addEventListener('click', async event => {
-        if (!active || saving || navigating || transferring || !confirm('Permanently delete this file and all of its feedback?')) return;
-        transferring = true; comments.disabled = true; clearTimeout(autosaveTimer); updateChunkNavigation();
+        if (!active || operations.editorBusy || draft || eraseStart || calloutEditor.busy() || !confirm('Permanently delete this file and all of its feedback?')) return;
+        operations.transferring = true; comments.disabled = true; clearTimeout(autosaveTimer); updateChunkNavigation();
         event.currentTarget.disabled = true;
         const deleted = active.id;
+        const deletedChunk = chunkIdentity(deleted);
         const files = currentChunk(); const index = files.indexOf(deleted);
         const neighbour = index < 0 ? null : files[index + 1] ?? files[index - 1] ?? null;
         let removed = false;
         try { if (savePromise) await savePromise; await request(`/images/${deleted}`, { method: 'DELETE' }); dirty = false; clearTimeout(autosaveTimer); removed = true; }
         catch (error) { notify(error.message, true); event.target.disabled = false; }
-        finally { transferring = false; comments.disabled = false; updateChunkNavigation(); }
+        finally { operations.transferring = false; comments.disabled = false; updateChunkNavigation(); }
         if (!removed) return;
         if (!neighbour) { syncImageUrl(null); location.reload(); return; }
-        const card = [...document.querySelectorAll('[data-chunk-images]')].find(button => JSON.parse(button.dataset.chunkImages).includes(deleted));
-        if (card) card.dataset.chunkImages = JSON.stringify(JSON.parse(card.dataset.chunkImages).filter(id => id !== deleted));
-        chunkGroups = readChunkGroups();
-        leaveEditor(false);
+        const card = chunkCard(deleted);
+        updateMembership(card, (card ? membership(card) : files).filter(id => id !== deleted));
+        if (deletedChunk === workspace.dataset.latest) workspace.dataset.latestCount = String(Math.max(0, Number(workspace.dataset.latestCount) - 1));
+        chunkDestinations = null; pageVersion++;
+        if (!leaveEditor(false)) return;
         await openImage(neighbour, false, true);
         if (!active) { syncImageUrl(null); location.reload(); return; }
         event.target.disabled = false;
@@ -782,7 +821,7 @@ if (workspace) {
     window.addEventListener('pagehide', () => {
         if (uploadingChunk) fetch(`/chunks/${uploadingChunk}`, { method: 'DELETE', keepalive: true, headers: { Accept: 'application/json', 'X-CSRF-TOKEN': token } }).catch(() => {});
     });
-    window.addEventListener('beforeunload', event => { if (dirty || saving || loading || navigating || transferring) { event.preventDefault(); event.returnValue = ''; } });
+    window.addEventListener('beforeunload', event => { if (dirty || operations.saving || operations.loading || operations.navigating || operations.transferring) { event.preventDefault(); event.returnValue = ''; } });
     const lastChunkInterval = 8000;
     const arrivalNotice = 'New upload arrived — it will appear when you go back to the project.';
     let refreshSequence = 0;
@@ -795,7 +834,7 @@ if (workspace) {
         clearTimeout(noticeTimer);
         noticeTimer = setTimeout(() => { if (message.textContent === text) message.hidden = true; }, 6000);
     }
-    function galleryBusy() { return Boolean(active) || loading || dialog.open || navigating || transferring || saving; }
+    function galleryBusy() { return Boolean(active) || operations.loading || dialog.open || operations.navigating || operations.transferring || operations.saving; }
     function pageState(chunk) { return [chunk?.id ?? '', chunk?.completed_at ?? '', String(chunk?.file_count ?? '')].join('|'); }
     function shownState() { return [workspace.dataset.latest ?? '', workspace.dataset.latestCompleted ?? '', workspace.dataset.latestCount ?? ''].join('|'); }
     function applyPage(page) {
@@ -813,14 +852,16 @@ if (workspace) {
         enhanceRecordingPreviews(current);
         localizeTimes(current);
         if (window.scrollY !== scroll) window.scrollTo?.(0, scroll);
-        pageVersion++;
+        chunkDestinations = null; pageVersion++;
         if (message.textContent === arrivalNotice) message.hidden = true;
         return true;
     }
     async function refreshGallery(force = false) {
         const sequence = ++refreshSequence;
         try {
-            const response = await fetch(config.project_url, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+            const pageNumber = new URLSearchParams(location.search).get('page');
+            const galleryUrl = config.project_url + (pageNumber ? `?page=${encodeURIComponent(pageNumber)}` : '');
+            const response = await fetch(galleryUrl, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
             if (!response.ok) return 'failed';
             const page = new DOMParser().parseFromString(await response.text(), 'text/html');
             if (sequence !== refreshSequence) return 'stale';
@@ -837,9 +878,10 @@ if (workspace) {
             if (version !== pageVersion) return;
             const seen = pageState(result.chunk);
             if (seen === shownState()) return;
+            const arrival = Boolean(result.chunk) && (!workspace.dataset.latest || (result.chunk.id !== workspace.dataset.latest && result.chunk.completed_at >= workspace.dataset.latestCompleted && ![...document.querySelectorAll('[data-chunk-images]')].some(card => card.dataset?.chunk === result.chunk.id)) || result.chunk.completed_at > (workspace.dataset.latestCompleted ?? '') || (result.chunk.id === workspace.dataset.latest && result.chunk.file_count > Number(workspace.dataset.latestCount)));
             const outcome = galleryBusy() ? 'busy' : await refreshGallery();
-            if (outcome === 'applied') { arrivalAnnounced = null; notifyTransient('New upload arrived.'); }
-            else if (outcome === 'busy' && arrivalAnnounced !== seen) { arrivalAnnounced = seen; notify(arrivalNotice); }
+            if (outcome === 'applied') { arrivalAnnounced = null; if (arrival) notifyTransient('New upload arrived.'); }
+            else if (arrival && outcome === 'busy' && arrivalAnnounced !== seen) { arrivalAnnounced = seen; notify(arrivalNotice); }
         } catch { /* Keep the existing workspace visible during connectivity interruptions. */ }
         finally { polling = false; }
     }

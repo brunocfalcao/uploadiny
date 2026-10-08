@@ -34,7 +34,7 @@ class ChunkController extends Controller
             'chunk_id' => $chunk->uuid,
             'project_id' => $row->project_id,
             'project_name' => $projects[$row->project_id],
-            'uploaded_at' => ($chunk->completed_at ?? $chunk->created_at)->toIso8601String(),
+            'uploaded_at' => $chunk->uploadedAt()->toIso8601String(),
             'file_count' => (int) $row->getAttribute('file_count'),
         ]))->values();
 
@@ -52,10 +52,10 @@ class ChunkController extends Controller
     {
         $chunk = $storage->store($project, $request->file('files'));
         foreach ($chunk->images->where('description_status', 'pending') as $image) {
-            DescribeUploadImage::dispatch($image->id)->afterCommit();
+            DescribeUploadImage::schedule($image->id);
         }
 
-        return response()->json(['id' => $chunk->uuid, 'uploaded_at' => ($chunk->completed_at ?? $chunk->created_at)->toIso8601String(), 'images' => $chunk->images->map(static fn (UploadImage $image): array => $image->agentData())->values()], 201);
+        return response()->json(['id' => $chunk->uuid, 'uploaded_at' => $chunk->uploadedAt()->toIso8601String(), 'images' => $chunk->images->map(static fn (UploadImage $image): array => $image->agentData())->values()], 201);
     }
 
     public function start(StartChunkRequest $request, Project $project): JsonResponse
@@ -90,7 +90,7 @@ class ChunkController extends Controller
             $locked = UploadChunk::query()->lockForUpdate()->findOrFail($chunk->id);
             abort_unless($locked->status === 'uploading', 409, 'This chunk has already finished.');
             abort_unless($locked->images()->count() === $locked->expected_images, 409, 'Some images are missing. This chunk has not been published.');
-            $target = $locked->append_to_chunk_id ? UploadChunk::query()->lockForUpdate()->whereKey($locked->append_to_chunk_id)->where('status', 'complete')->first() : null;
+            $target = $locked->append_to_chunk_id ? UploadChunk::query()->lockForUpdate()->whereKey($locked->append_to_chunk_id)->where('status', 'complete')->whereHas('images', fn ($query) => $query->where('project_id', $locked->upload_project_id))->first() : null;
             $newImageIds = $locked->images()->pluck('id')->all();
             if ($target) {
                 $locked->images()->update(['chunk_id' => $target->id]);
@@ -104,10 +104,10 @@ class ChunkController extends Controller
             return $locked->load('images');
         });
         foreach ($completed->images->whereIn('id', $newImageIds)->where('description_status', 'pending') as $image) {
-            DescribeUploadImage::dispatch($image->id)->afterCommit();
+            DescribeUploadImage::schedule($image->id);
         }
 
-        return response()->json(['id' => $completed->uuid, 'uploaded_at' => $completed->created_at->toIso8601String(), 'images' => $completed->images->map(static fn (UploadImage $image): array => $image->agentData())->values()]);
+        return response()->json(['id' => $completed->uuid, 'uploaded_at' => $completed->uploadedAt()->toIso8601String(), 'images' => $completed->images->map(static fn (UploadImage $image): array => $image->agentData())->values()]);
     }
 
     public function cancel(UploadChunk $chunk, WorkspaceDeletion $deletion): JsonResponse

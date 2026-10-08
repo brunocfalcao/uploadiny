@@ -1,7 +1,10 @@
 const previews = new Map();
+const previewByteBudget = 8 * 1024 * 1024;
+const previewSizes = new Map();
+let previewBytes = 0;
 
 export function recordingFirstFrame(source) {
-    if (previews.has(source)) return previews.get(source);
+    if (previews.has(source)) { const cached = previews.get(source); previews.delete(source); previews.set(source, cached); return cached; }
 
     const preview = new Promise(resolve => {
         const video = document.createElement('video');
@@ -36,6 +39,18 @@ export function recordingFirstFrame(source) {
         video.load();
     });
     previews.set(source, preview);
+    preview.then(image => {
+        if (previews.get(source) !== preview) return;
+        if (!image) { previews.delete(source); return; }
+        const bytes = image.length * 2;
+        previewSizes.set(source, bytes); previewBytes += bytes;
+        for (const key of previews.keys()) {
+            if (previewBytes <= previewByteBudget) break;
+            const size = previewSizes.get(key);
+            if (size === undefined) continue;
+            previews.delete(key); previewSizes.delete(key); previewBytes -= size;
+        }
+    });
     return preview;
 }
 

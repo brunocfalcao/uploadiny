@@ -48,7 +48,26 @@ class UploadChunk extends Model
     /** @param Builder<UploadChunk> $query */
     public function scopeNewestFinishedFirst(Builder $query): void
     {
-        $query->orderByDesc('completed_at')->orderByDesc('id');
+        $query->orderByRaw('COALESCE(completed_at, created_at) DESC')->orderByDesc('id');
+    }
+
+    /** @param \Illuminate\Support\Collection<int, UploadImage>|null $images */
+    public function reviewToken(Project $project, ?\Illuminate\Support\Collection $images = null): string
+    {
+        $images ??= $this->images()->where('project_id', $project->id)->orderBy('id')->get();
+
+        return hash('sha256', json_encode([
+            $this->uuid, $project->canonical, $this->completed_at?->toIso8601String(),
+            $images->sortBy('id')->map(fn (UploadImage $image): array => $image->only([
+                'uuid', 'project_id', 'feedback_revision', 'comments', 'annotations',
+                'description', 'description_status', 'description_error', 'updated_at',
+            ]))->values()->all(),
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    public function uploadedAt(): Carbon
+    {
+        return $this->completed_at ?? $this->created_at;
     }
 
     public function getRouteKeyName(): string

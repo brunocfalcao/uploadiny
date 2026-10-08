@@ -7,7 +7,6 @@ namespace App\Services;
 use App\UploadImage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use RuntimeException;
 
 class VisionDescription
 {
@@ -15,12 +14,12 @@ class VisionDescription
     {
         $key = config('services.uploadiny.vision_key');
         if (! is_string($key) || $key === '') {
-            throw new RuntimeException('Vision is not configured yet.');
+            throw new VisionFailure('missing_configuration', 'Vision is not configured yet.');
         }
         $path = Storage::disk('local')->path($image->path);
         $dimensions = @getimagesize($path);
         if (! $dimensions || $dimensions[0] * $dimensions[1] > 24000000) {
-            throw new RuntimeException('This image cannot be prepared for a vision description.');
+            throw new VisionFailure('unsupported_image', 'This image cannot be prepared for a vision description.');
         }
         $source = match ($image->mime_type) {
             'image/jpeg' => @imagecreatefromjpeg($path),
@@ -31,7 +30,7 @@ class VisionDescription
             default => false,
         };
         if (! $source) {
-            throw new RuntimeException('Vision cannot read this image format.');
+            throw new VisionFailure('unsupported_format', 'Vision cannot read this image format.');
         }
         $ratio = min(1, 1536 / max(imagesx($source), imagesy($source)));
         $preview = imagecreatetruecolor(max(1, (int) round(imagesx($source) * $ratio)), max(1, (int) round(imagesy($source) * $ratio)));
@@ -50,11 +49,11 @@ class VisionDescription
             ]]],
         ]);
         if (! $response->successful()) {
-            throw new RuntimeException('The vision provider could not describe this image. Try again later.');
+            throw new VisionFailure('provider_refusal', 'The vision provider could not describe this image. Try again later.', $response->status());
         }
         $description = $response->json('choices.0.message.content');
         if (! is_string($description) || trim($description) === '') {
-            throw new RuntimeException('The vision provider returned an empty description.');
+            throw new VisionFailure('malformed_response', 'The vision provider returned an empty description.');
         }
 
         return trim($description);

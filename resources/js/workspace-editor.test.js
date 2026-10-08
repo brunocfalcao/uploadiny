@@ -1,14 +1,18 @@
+import { createWorkspaceOperations } from './workspace-operations.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { spawnSync } from 'node:child_process';
 import * as drawing from './drawing.js';
 import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
+import { keepLoadedImages } from './gallery-images.js';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory.js';
 import { appendTarget, formatChunkTime, formatLastUpload, localizeTimes as localizeChunkTimes, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
-const app = readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
+const requestSource = readFileSync(new URL('./workspace-request.js', import.meta.url), 'utf8').replace('export ', '');
+const app = requestSource + '\n' + readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function memoryStorage(initial = {}) {
@@ -16,7 +20,7 @@ function memoryStorage(initial = {}) {
     return { getItem: key => data[key] ?? null, setItem: (key, value) => { data[key] = String(value); }, data };
 }
 
-function workspace(t, search = '', storage = memoryStorage()) {
+function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) {
     const previousDocument = globalThis.document;
     const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0; const popstate = []; const urlCalls = [];
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
@@ -37,9 +41,18 @@ function workspace(t, search = '', storage = memoryStorage()) {
         focus() { document.activeElement?.blur(); document.activeElement = this; this.emit('focus'); }
         blur() { if (document.activeElement === this) { document.activeElement = null; this.emit('blur'); } }
         closest(selector) { return (selector === '.callout-text' && this.className === 'callout-text') || (selector.includes('textarea') && this.tagName === 'textarea') || (selector.startsWith('input,') && this.tagName === 'input') ? this : null; }
-        append(...children) { this.children.push(...children); }
-        replaceChildren(...children) { this.children = children; }
-        setAttribute() {} removeAttribute() {} toggleAttribute() {} setPointerCapture() {}
+        append(...children) { for (const child of children) { if (typeof child === 'object') child.parentElement = this; this.children.push(child); } }
+        replaceChildren(...children) { this.children = []; this.append(...children); }
+        setAttribute(name, value) { this.attributeMap ??= new Map(); this.attributeMap.set(name, value); }
+        getAttribute(name) { return this.attributeMap?.get(name); }
+        get attributes() { return [...(this.attributeMap ?? new Map())].map(([name, value]) => ({ name, value })); }
+        removeAttribute() {} toggleAttribute() {} setPointerCapture() {}
+        querySelector(selector) { return this.children.find(child => child.tagName === selector) ?? node(`${this.id}:${selector}`); }
+        querySelectorAll(selector) {
+            const all = this.children.flatMap(child => [child, ...(child.querySelectorAll?.('*') ?? [])]);
+            return all.filter(child => selector === '*' || selector === 'img[src]' && child.tagName === 'img' && child.getAttribute('src') || selector === 'time[data-local-time]' && child.tagName === 'time' && child.dataset.localTime !== undefined);
+        }
+        replaceWith(other) { const list = this.parentElement.children; list.splice(list.indexOf(this), 1, other); other.parentElement = this.parentElement; }
         getBoundingClientRect() { return { left: 0, top: 0, width: 640, height: 480 }; }
         getContext() { return new Proxy({ measureText: text => ({ width: text.length * 10 }) }, { get: (target, key) => target[key] ?? (() => {}) }); }
         toDataURL() { return 'data:image/png;base64,snapshot'; }
@@ -48,6 +61,7 @@ function workspace(t, search = '', storage = memoryStorage()) {
     const node = id => { if (!nodes.has(id)) nodes.set(id, new Element(id, id === 'image-comments' ? 'textarea' : id === 'drawing-color-hex' ? 'input' : 'div')); return nodes.get(id); };
     const document = new Element(); document.getElementById = node; document.createElement = tag => new Element('', tag);
     const card = new Element(); card.dataset = { chunkImages: '["one","two","three"]', openImage: 'one', chunk: 'chunk-one' };
+    node('chunk-list').append(card);
     const tool = new Element(); tool.dataset.tool = 'callout';
     const selectTool = new Element(); selectTool.dataset.tool = 'select';
     document.visibilityState = 'visible';
@@ -56,26 +70,34 @@ function workspace(t, search = '', storage = memoryStorage()) {
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
     const cards = () => node('chunk-list').children.length ? node('chunk-list').children : [card];
     document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : [];
-    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', upload_url: '/projects/1/chunks/start' });
+    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', upload_url: '/projects/1/chunks/start', ...extraConfig });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
     const writes = []; const starts = []; const deletions = []; const duplicates = []; let respond = async () => {};
     globalThis.document = document;
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
-        ...drawing, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes() {}, keepLoadedImages() {}, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
+        ...drawing, createWorkspaceOperations, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
+        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes: localizeChunkTimes, keepLoadedImages, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
-        history, URLSearchParams,
+        history, URLSearchParams, AbortController,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
         Image: class { naturalWidth = 640; naturalHeight = 480; set src(value) { this.onload(); } },
-        Option: class {}, FormData: class {}, structuredClone, clearTimeout: id => timers.delete(id),
+        Option: class {}, FormData: class { append() {} }, structuredClone,
+        XMLHttpRequest: class extends Element {
+            constructor() { super(); delete this.open; this.upload = new Element(); this.status = 201; this.responseText = '{}'; }
+            open(method, url) { this.url = url; }
+            setRequestHeader() {}
+            send() { remote.xhr = this; if (!remote.holdUpload) this.emit('load'); }
+            abort() { this.emit('abort'); }
+        }, clearTimeout: id => timers.delete(id),
         setTimeout: callback => { timers.set(++timerId, callback); return timerId; }, setInterval: callback => { intervals.push(callback); return intervals.length; }, clearInterval() {},
         location: where, confirm: () => true,
         DOMParser: class {
             parseFromString() {
                 const next = remote.page;
-                return { getElementById: id => id === 'chunk-list' && !next.noList ? { childNodes: next.cards } : null, querySelector: selector => selector === '[data-workspace]' ? { dataset: next.dataset } : selector === '.project-nav' ? { childNodes: ['nav'] } : null };
+                const list = new Element('chunk-list'); list.append(...next.cards); list.childNodes = list.children;
+                return { getElementById: id => id === 'chunk-list' && !next.noList ? list : null, querySelector: selector => selector === '[data-workspace]' ? { dataset: next.dataset } : selector === '.project-nav' ? { childNodes: ['nav'] } : null };
             }
         },
         fetch: async (url, options = {}) => {
@@ -89,6 +111,8 @@ function workspace(t, search = '', storage = memoryStorage()) {
                 if (remote.pageResponse) return remote.pageResponse();
                 return { ok: true, text: async () => '<html></html>' };
             }
+            if (url === '/chunks/draft-1/complete') { remote.completions = (remote.completions ?? 0) + 1; if (remote.completeResponse) return remote.completeResponse(); return { ok: true, json: async () => ({ id: 'chunk-one' }) }; }
+            if (url === '/chunks/draft-1' && options.method === 'DELETE') { remote.cancelled = (remote.cancelled ?? 0) + 1; return { ok: !remote.completions, status: remote.completions ? 409 : 200, json: async () => ({}) }; }
             if (url === '/projects/1/chunks/start') { starts.push(JSON.parse(options.body)); return { ok: true, status: 201, json: async () => ({ id: 'draft-1' }) }; }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
             const id = url.split('/')[2];
@@ -110,7 +134,7 @@ function workspace(t, search = '', storage = memoryStorage()) {
     });
     return {
         where, urlCalls, async pop(search) { where.search = search; for (const listener of popstate) listener({}); await tick(); await tick(); },
-        node, assets, writes, starts, storage, deletions, duplicates, document, tool, selectTool, remote, timers,
+        node, assets, writes, starts, storage, deletions, duplicates, document, tool, selectTool, remote, timers, card, Element,
         get reloads() { return reloads; },
         async poll() { intervals[0](); await tick(); },
         arrive(id = 'chunk-two', count = 1) {
@@ -765,4 +789,166 @@ test('a browser that blocks storage still uploads and defaults the switch on', a
     ui.node('append-to-last').checked = false; ui.node('append-to-last').emit('change');
     await ui.open();
     assert.equal(ui.node('editor').hidden, false);
+});
+
+
+test('deleting a local file updates the last-chunk count without announcing a new upload', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.node('delete-image').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    ui.remote.chunk.file_count = 2;
+    await ui.poll();
+    assert.equal(ui.node('workspace').dataset.latestCount, '2');
+    assert.notEqual(ui.node('workspace-message').textContent, 'New upload arrived — it will appear when you go back to the project.');
+});
+
+test('a remote deletion does not masquerade as a new upload while editing', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.chunk.file_count = 2;
+    await ui.poll();
+    assert.equal(ui.node('workspace-message').hidden, true);
+    assert.equal(ui.node('editor-name').textContent, 'one');
+});
+
+test('delete waits until the current drawing gesture finishes', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.selectTool.dataset.tool = 'pen'; ui.selectTool.click();
+    ui.node('annotation-canvas').emit('pointerdown', { button: 0, clientX: 320, clientY: 240, pointerId: 7 });
+    ui.node('delete-image').click(); await ui.settle();
+    assert.deepEqual(ui.deletions, []);
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    ui.node('annotation-canvas').emit('pointerup', { pointerId: 7, clientX: 330, clientY: 250 });
+    ui.node('delete-image').click(); await ui.settle(); await ui.settle();
+    assert.deepEqual(ui.deletions, ['one']);
+    assert.equal(ui.node('editor-name').textContent, 'two');
+});
+
+test('closing the editor deliberately returns focus to the visible gallery', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.arrive();
+    ui.node('close-editor').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.document.activeElement, ui.node('gallery'));
+    assert.equal(ui.node('gallery').hidden, false);
+});
+
+
+test('keyboard users can add an annotation and select it without a pointer', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.node('add-callout').click(); await ui.settle();
+    const field = ui.node('callout-overlay').children[1].children[1];
+    assert.equal(ui.document.activeElement, field);
+    field.value = 'Keyboard note'; field.emit('input');
+    ui.node('select-callout').click();
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].text, 'Keyboard note');
+    assert.equal(ui.assets.two.revision, 0);
+});
+
+
+test('remembered position reopens the chunk at the last viewed surviving file', async t => {
+    const storage = memoryStorage({ 'uploadiny.lastViewedFile': '{"chunk-one":"two"}' });
+    const ui = workspace(t, '', storage);
+    ui.card.click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    ui.node('next-file').click(); await ui.settle();
+    assert.equal(JSON.parse(storage.data['uploadiny.lastViewedFile'])['chunk-one'], 'three');
+    ui.arrive('chunk-one', 3);
+    ui.remote.page.cards = [ui.card];
+    ui.node('close-editor').click(); await ui.settle(); await ui.settle();
+    ui.card.click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'three');
+});
+
+test('refresh preserves decoded preview identity and localizes the new UTC timestamp', async t => {
+    const ui = workspace(t);
+    const kept = new ui.Element('', 'img'); kept.setAttribute('src', '/private/one'); kept.complete = true; kept.naturalWidth = 640;
+    ui.card.append(kept);
+    const fresh = ui.arrive();
+    const replacement = new ui.Element('', 'img'); replacement.setAttribute('src', '/private/one'); replacement.setAttribute('alt', 'Updated caption');
+    const time = new ui.Element('', 'time'); time.dataset.localTime = ''; time.dateTime = '2026-10-08T12:34:00Z';
+    fresh.append(replacement, time);
+    await ui.poll();
+    assert.equal(ui.node('chunk-list').children[0], fresh);
+    assert.equal(fresh.children[0], kept);
+    assert.equal(kept.getAttribute('alt'), 'Updated caption');
+    assert.equal(time.textContent, formatChunkTime('2026-10-08T12:34:00Z'));
+});
+
+test('browser upload completes all file requests with the native ten-minute timeout', async t => {
+    const ui = workspace(t); await ui.uploadFiles();
+    assert.ok(ui.remote.xhr, ui.node('workspace-message').textContent);
+    assert.equal(ui.remote.xhr.timeout, 600000);
+    assert.equal(ui.remote.completions, 1);
+    assert.equal(ui.remote.cancelled, undefined);
+    assert.equal(ui.reloads, 1);
+});
+
+test('cancelling a stalled file upload removes its draft and restores navigation', async t => {
+    const ui = workspace(t); ui.remote.holdUpload = true; await ui.uploadFiles();
+    assert.ok(ui.remote.xhr);
+    ui.node('cancel-upload').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.remote.cancelled, 1);
+    assert.equal(ui.remote.completions, undefined);
+    assert.equal(ui.node('upload-progress').hidden, true);
+    await ui.open();
+    assert.equal(ui.node('editor-name').textContent, 'one');
+});
+
+test('a file timeout cancels the unpublished draft and allows a retry', async t => {
+    const ui = workspace(t); ui.remote.holdUpload = true; await ui.uploadFiles();
+    assert.ok(ui.remote.xhr, ui.node('workspace-message').textContent);
+    ui.remote.xhr.emit('timeout'); await ui.settle(); await ui.settle();
+    assert.equal(ui.remote.cancelled, 1);
+    assert.match(ui.node('workspace-message').textContent, /timed out/);
+    ui.remote.holdUpload = false; await ui.uploadFiles();
+    assert.equal(ui.remote.completions, 1);
+    assert.equal(ui.reloads, 1);
+});
+
+test('a lost completion response requires reconciliation and cannot cancel a published group', async t => {
+    const ui = workspace(t); ui.remote.completeResponse = () => { throw new Error('Connection lost'); };
+    await ui.uploadFiles();
+    assert.equal(ui.remote.completions, 1);
+    assert.equal(ui.remote.cancelled, 1);
+    assert.equal(ui.reloads, 0);
+    assert.match(ui.node('workspace-message').textContent, /Check your project before uploading again; this group may already be published/);
+    assert.equal(ui.node('upload-progress').hidden, true);
+});
+
+test('Add annotation creates another note even when an existing note occupies the center', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.annotate('First');
+    ui.node('add-callout').click();
+    const field = ui.node('callout-overlay').children[1].children[1];
+    field.value = 'Second'; field.emit('input'); await ui.autosave();
+    assert.deepEqual(ui.assets.one.annotations.map(note => note.text), ['First', 'Second']);
+});
+
+
+test('fixed UTC timestamps render in the workspace using two explicit local timezones', () => {
+    const helper = new URL('./append-to-last.js', import.meta.url).href;
+    const code = `import { localizeTimes } from ${JSON.stringify(helper)}; const time = { dateTime: '2026-10-08T12:34:00Z' }; localizeTimes({ querySelectorAll: () => [time] }); process.stdout.write(time.textContent);`;
+    for (const [zone, expected] of [['UTC', '08 Oct 2026, 12:34'], ['Europe/Zurich', '08 Oct 2026, 14:34']]) {
+        const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8', env: { ...process.env, TZ: zone } });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, expected);
+    }
+});
+
+
+test('a direct link beyond the gallery page retains navigation, remembered position and changed membership', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { open_chunk_id: 'older-chunk', open_chunk_images: ['one', 'two'] });
+    await ui.settle();
+    const other = new ui.Element(); other.dataset = { chunkImages: '["three"]', openImage: 'three', chunk: 'other-chunk' };
+    ui.remote.page = { cards: [other], dataset: { latest: 'other-chunk', latestCompleted: 't2', latestCount: '1' } };
+    ui.node('close-editor').click(); await ui.settle(); await ui.settle();
+    await ui.pop('?image=one');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 2');
+    assert.equal(JSON.parse(ui.storage.data['uploadiny.lastViewedFile'])['older-chunk'], 'one');
+    ui.node('duplicate-image').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'copy');
+    assert.equal(ui.node('chunk-position').textContent, '3 of 3');
+    ui.node('delete-image').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('chunk-position').textContent, '2 of 2');
 });

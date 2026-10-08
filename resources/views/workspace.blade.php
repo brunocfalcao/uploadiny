@@ -1,6 +1,7 @@
 @extends('layouts.app', ['title' => ($project?->name ?? 'Projects').' · Uploadiny'])
 @section('content')
-<div class="workspace" data-workspace data-project="{{ $project?->slug }}" data-latest="{{ $chunks->first()?->uuid }}" data-latest-completed="{{ $chunks->first() ? ($chunks->first()->completed_at ?? $chunks->first()->created_at)->toIso8601String() : '' }}" data-latest-count="{{ $chunks->first()?->images->count() }}">
+@php($latestChunk = $latestChunk ?? $chunks->first())
+<div class="workspace" data-workspace data-project="{{ $project?->slug }}" data-latest="{{ $latestChunk?->uuid }}" data-latest-completed="{{ $latestChunk ? $latestChunk->uploadedAt()->toIso8601String() : '' }}" data-latest-count="{{ $latestChunk?->images_count }}">
     <aside class="sidebar">
         <a class="brand" href="{{ route('projects.index') }}"><span class="brand-symbol" aria-hidden="true">u</span>Uploadiny</a>
         <div class="sidebar-heading"><h2>Projects</h2><button type="button" class="sidebar-add" data-new-project aria-label="Create project">+</button></div>
@@ -34,7 +35,7 @@
                 <p class="copy-status muted" data-copy-status role="status" aria-live="polite"></p>
             </div>
         @endif
-        <section id="gallery" @if($openImage ?? null) hidden @endif>
+        <section id="gallery" tabindex="-1" aria-label="Project gallery" @if($openImage ?? null) hidden @endif>
         @if(!$project)
             @if($projects->isEmpty())
             <div class="empty-projects">
@@ -69,16 +70,15 @@
                 <span class="drop-button" aria-hidden="true">Choose files</span>
                 <p class="drop-formats">PNG · JPG · GIF · WebP · BMP · MP4 · MOV · up to 95 MB each</p>
             </div>
-            @php($latestChunk = $chunks->first())
             <div class="append-row" id="append-row" @if(! $latestChunk) hidden @endif>
                 <label class="append-switch" for="append-to-last">
                     <input type="checkbox" id="append-to-last" role="switch" aria-describedby="append-target" checked>
                     <span class="append-track" aria-hidden="true"><span class="append-knob"></span></span>
                     <span class="append-label">Add to the last upload</span>
                 </label>
-                <span class="append-caption" id="append-target">@if($latestChunk)Last upload: {{ $latestChunk->images->count() }} {{ Str::plural('file', $latestChunk->images->count()) }}@endif</span>
+                <span class="append-caption" id="append-target">@if($latestChunk)Last upload: {{ $latestChunk->images_count }} {{ Str::plural('file', $latestChunk->images_count) }}@endif</span>
             </div>
-            <div id="upload-progress" role="status" hidden><label>Uploading feedback <progress max="100" value="0"></progress><span></span></label></div>
+            <div id="upload-progress" role="status" hidden><label>Uploading feedback <progress max="100" value="0"></progress><span></span></label><button type="button" class="button" id="cancel-upload">Cancel upload</button></div>
             <div id="chunk-list">
             @if($chunks->isNotEmpty())
                 <header class="uploads-heading"><h2>Latest uploads</h2><p>Newest first</p></header>
@@ -87,14 +87,14 @@
             @forelse($chunks as $chunk)
                 @php($image = $chunk->images->last())
                 <article class="chunk-card" aria-labelledby="chunk-{{ $chunk->uuid }}">
-                    <header class="chunk-card-heading"><h3 id="chunk-{{ $chunk->uuid }}">@php($uploadedAt = $chunk->completed_at ?? $chunk->created_at)<time datetime="{{ $uploadedAt->toIso8601String() }}" data-local-time>{{ $uploadedAt->format('d M Y, H:i') }}</time></h3>@if($loop->first)<span class="badge">Latest</span>@endif</header>
+                    <header class="chunk-card-heading"><h3 id="chunk-{{ $chunk->uuid }}">@php($uploadedAt = $chunk->completed_at ?? $chunk->created_at)<time datetime="{{ $uploadedAt->toIso8601String() }}" data-local-time>{{ $uploadedAt->format('d M Y, H:i') }}</time></h3>@if($chunk->uuid === $latestChunk?->uuid)<span class="badge">Latest</span>@endif</header>
                     <button class="image-tile chunk-stack {{ $chunk->images->count() > 1 ? 'has-stack' : '' }}" type="button" data-open-image="{{ $image->uuid }}" data-play-recording="{{ $image->isVideo() ? 'true' : 'false' }}" data-chunk="{{ $chunk->uuid }}" data-chunk-images="{{ $chunk->images->pluck('uuid')->toJson() }}" aria-label="Open {{ $chunk->images->count() }} {{ Str::plural('file', $chunk->images->count()) }} in this upload chunk">
                         @foreach($chunk->images->reverse()->slice(1)->take(2) as $previous)
                             <span class="stack-layer stack-layer-{{ $loop->iteration }}" aria-hidden="true">@if($previous->isVideo())<span class="stack-recording-preview" data-recording-preview="{{ route('images.preview', $previous) }}"></span>@else<img src="{{ route('images.preview', $previous) }}" alt="" loading="lazy">@endif</span>
                         @endforeach
                         <span class="chunk-cover">
                             <span class="thumbnail">@if($image->isVideo())<span class="recording-thumbnail" data-recording-preview="{{ route('images.preview', $image) }}" data-recording-frame-alt="First frame of {{ $image->name }}"><span class="recording-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m10 8 6 4-6 4Z"/></svg><span>Screen recording</span></span><span class="recording-play-badge">Play recording</span></span>@else<img src="{{ route('images.preview', $image) }}" alt="{{ $image->name }}" loading="lazy">@endif<span class="chunk-file-count">{{ $chunk->images->count() }} {{ Str::plural('file', $chunk->images->count()) }}</span></span>
-                            <span class="image-caption"><strong>{{ $image->name }}</strong><span>{{ $chunk->images->count() > 1 ? 'Latest file · open to browse' : ($image->comments || $image->annotations ? 'Has feedback' : 'Add feedback') }}</span></span>
+                            <span class="image-caption"><strong>{{ $image->name }}</strong><span>{{ $chunk->images->count() > 1 ? 'Latest file · open to browse' : ($image->getAttribute('has_feedback') ? 'Has feedback' : 'Add feedback') }}</span></span>
                         </span>
                     </button>
                 </article>
@@ -102,6 +102,12 @@
                 <div class="empty-state"><h2>Your first feedback starts here.</h2><p>Upload screenshots or recordings from this page or share them from your iPhone. They will appear together in a chunk.</p></div>
             @endforelse
             </div>
+            @if($chunks instanceof \Illuminate\Pagination\Paginator)
+                <nav class="upload-pages" aria-label="Upload history">
+                    @if($chunks->previousPageUrl())<a class="button" href="{{ $chunks->previousPageUrl() }}">Newer uploads</a>@endif
+                    @if($chunks->nextPageUrl())<a class="button" href="{{ $chunks->nextPageUrl() }}">Older uploads</a>@endif
+                </nav>
+            @endif
             </div>
         @endif
         </section>
@@ -148,18 +154,19 @@
                             </div>
                         </div>
                     </div>
-                    <div class="canvas-stage" id="canvas-stage"><div class="canvas-bed"><div class="canvas-frame"><canvas id="annotation-canvas" aria-label="Draw on this image with your pointer"></canvas><div id="callout-overlay" class="callout-overlay" hidden></div></div></div><p id="image-load-error" class="error-message" hidden></p></div>
+                    <div class="canvas-stage" id="canvas-stage"><div class="canvas-bed"><div class="canvas-frame"><canvas id="annotation-canvas" tabindex="0" aria-label="Image annotation. With Annotation selected, press Enter to add a note, or Tab to select a note."></canvas><div id="callout-overlay" class="callout-overlay" hidden></div></div></div><p id="image-load-error" role="status" aria-live="polite" class="error-message" hidden></p></div>
                     <div class="canvas-footer"><p id="canvas-tool-hint">Pen: draw freely on the image.</p><span id="canvas-dimensions"></span><span class="original-hint">Original preserved</span></div>
                 </div>
                 <div class="video-workspace" id="video-workspace" @unless(($openImage ?? null)?->isVideo()) hidden @endunless>
                     <div class="video-stage"><video id="recording-player" controls playsinline preload="metadata" aria-label="Screen recording playback"></video></div>
                     <div class="video-footer"><button type="button" class="button button-primary recording-play-button" id="recording-play"><svg id="recording-play-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg><svg id="recording-pause-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" hidden><path d="M6 5h4v14H6Zm8 0h4v14h-4Z"/></svg><span id="recording-play-label">Play recording</span></button><strong>Screen recording</strong><span>Play, pause or scrub to review. Add timestamps in your feedback.</span></div>
-                    <p id="video-load-error" class="error-message" hidden>This browser cannot play this recording. Download the original to watch it.</p>
+                    <p id="video-load-error" role="status" aria-live="polite" class="error-message" hidden>This browser cannot play this recording. Download the original to watch it.</p>
                 </div>
                 <aside class="feedback-panel">
                     <label class="qr-field-label" for="image-comments">Your feedback</label><p class="muted">What is wrong? What should improve?</p><textarea class="qr-field qr-field-default qr-textarea" id="image-comments" rows="5" placeholder="Describe the changes you want…"></textarea>
                     <div class="save-row"><button type="button" class="button button-primary" id="save-feedback" title="Save feedback (⌘Enter / Ctrl+Enter)" aria-keyshortcuts="Meta+Enter Control+Enter">Save feedback</button><span id="save-state" role="status" aria-live="polite"></span></div>
                     <p class="field-hint">Annotations and feedback save automatically. ⌘Enter saves immediately.</p>
+                    <div class="chunk-transfer-actions" id="annotation-actions" @if(($openImage ?? null)?->isVideo()) hidden @endif><button type="button" class="button" id="add-callout">Add annotation</button><button type="button" class="button" id="select-callout">Select next annotation</button></div>
                     <details id="vision-section" class="vision-section" @if(($openImage ?? null)?->isVideo()) hidden @endif>
                         <summary class="vision-heading"><span class="vision-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></span><div><h3 id="vision-heading">Image context</h3><p class="vision-caption">AI-generated description</p></div><span id="vision-status" class="vision-status" role="status"></span><svg class="vision-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
                         <div class="vision-content" tabindex="0" role="region" aria-label="AI image description"><p id="vision-description"></p></div>
@@ -186,5 +193,5 @@
     </form>
     @if($project)<form id="delete-project-form" action="{{ route('projects.destroy', $project) }}" method="POST" class="delete-project">@csrf @method('DELETE')<p>Deleting this project permanently removes its files and annotations.</p><button class="text-button danger" type="submit">Delete project permanently</button></form>@endif
 </dialog>
-<script type="application/json" id="workspace-config">{!! json_encode(['project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'description' => $project->description] : null, 'create_url' => route('projects.store'), 'project_url' => $project ? route('projects.show', $project) : null, 'upload_url' => $project ? route('chunks.start', $project) : null, 'last_chunk_url' => $project ? route('projects.last-chunk', $project) : null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+<script type="application/json" id="workspace-config">{!! json_encode(['open_chunk_id' => ($openChunk ?? null)?->uuid, 'open_chunk_images' => ($openChunk ?? null)?->images->pluck('uuid')->all() ?? [], 'project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'description' => $project->description] : null, 'create_url' => route('projects.store'), 'project_url' => $project ? route('projects.show', $project) : null, 'upload_url' => $project ? route('chunks.start', $project) : null, 'last_chunk_url' => $project ? route('projects.last-chunk', $project) : null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection

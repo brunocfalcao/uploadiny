@@ -101,11 +101,13 @@ class WorkspaceTest extends TestCase
         $unpublished = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $draft->id, 'name' => 'draft.png']);
 
         $this->get('/projects/reload-project?image='.$second->uuid)->assertOk()
-            ->assertSee('<section id="gallery"  hidden >', false)
+            ->assertSee('<section id="gallery" tabindex="-1" aria-label="Project gallery"  hidden >', false)
             ->assertDontSee('id="editor" class="editor"  hidden', false)
             ->assertSee('<h2 id="editor-name" tabindex="-1">upload-2.png</h2>', false)
             ->assertSee('2 of 3')
             ->assertSee('id="chunk-list"', false)
+            ->assertSee('id="add-callout">Add annotation', false)
+            ->assertSee('id="select-callout">Select next annotation', false)
             ->assertSee('id="video-workspace"  hidden', false);
         $this->get('/projects/reload-project?image='.$recording->uuid)->assertOk()
             ->assertSee('id="drawing-workspace"  hidden', false)
@@ -113,7 +115,7 @@ class WorkspaceTest extends TestCase
 
         foreach (['00000000-0000-4000-8000-000000000001', $foreign->uuid, $unpublished->uuid] as $uuid) {
             $this->get('/projects/reload-project?image='.$uuid)->assertOk()
-                ->assertDontSee('<section id="gallery"  hidden >', false)
+                ->assertDontSee('<section id="gallery" tabindex="-1" aria-label="Project gallery"  hidden >', false)
                 ->assertSee('id="editor" class="editor"  hidden', false)
                 ->assertSee('<h2 id="editor-name" tabindex="-1"></h2>', false);
         }
@@ -186,7 +188,9 @@ class WorkspaceTest extends TestCase
         $first = $this->upload($project, 2)->assertCreated();
         $state = $this->getJson(route('projects.last-chunk', $project))->json('chunk');
         $this->assertSame($first->json('id'), $state['id']);
-        $this->get(route('projects.show', $project))->assertOk()->assertSee(sprintf('data-latest="%s" data-latest-completed="%s" data-latest-count="2"', $state['id'], $state['completed_at']), false)->assertSee('id="chunk-list"', false);
+        $this->get(route('projects.show', $project))->assertOk()->assertSee(sprintf('data-latest="%s" data-latest-completed="%s" data-latest-count="2"', $state['id'], $state['completed_at']), false)->assertSee('id="chunk-list"', false)
+            ->assertSee('id="add-callout">Add annotation', false)
+            ->assertSee('id="select-callout">Select next annotation', false);
 
         $this->travel(5)->minutes();
         $draft = $this->postJson(route('chunks.start', $project), ['image_count' => 1, 'append_to' => $first->json('id')])->assertCreated();

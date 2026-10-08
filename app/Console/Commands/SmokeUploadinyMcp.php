@@ -75,12 +75,21 @@ final class SmokeUploadinyMcp extends Command
             $this->step = 'tool discovery';
             $tools = $this->rpc($agent, 'tools/list');
             $this->require(array_column($tools->json('result.tools') ?? [], 'name') === ['list_projects', 'get_feedback', 'get_asset', 'get_recording_frames', 'delete_chunk'], 'Unexpected MCP tools.');
+            $deleteTool = [];
+            foreach ($tools->json('result.tools') ?? [] as $definition) {
+                if (($definition['name'] ?? null) === 'delete_chunk') {
+                    $deleteTool = $definition;
+                }
+            }
+            $this->require(in_array('review_token', $deleteTool['inputSchema']['required'] ?? [], true), 'Reviewed-content cleanup is not enforced.');
 
             $this->step = 'project and feedback retrieval';
             $projects = $this->callTool($agent, 'list_projects');
             $this->require(in_array($project->canonical, array_column($projects['structuredContent']['projects'], 'canonical'), true), 'The fixture project code was not listed.');
             $feedback = $this->callTool($agent, 'get_feedback', ['project_canonical' => $project->canonical]);
             $assets = $feedback['structuredContent']['chunk']['images'];
+            $reviewToken = $feedback['structuredContent']['chunk']['review_token'] ?? null;
+            $this->require(is_string($reviewToken) && preg_match('/^[a-f0-9]{64}\z/', $reviewToken) === 1, 'The reviewed feedback token was not delivered.');
             $this->require(count($assets) === 2 && $assets[0]['id'] === $images[0]->uuid && $assets[0]['comments'] === 'Make the buttons bigger.' && $assets[0]['revision'] === 2, 'Exact feedback was not delivered.');
 
             $this->step = 'private image delivery';
@@ -98,7 +107,7 @@ final class SmokeUploadinyMcp extends Command
             $this->require($frames['structuredContent']['frames'][1]['timestamp_seconds'] === 0.5, 'Frame timestamps were lost.');
 
             $this->step = 'explicit fixture deletion';
-            $deleted = $this->callTool($agent, 'delete_chunk', ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid]);
+            $deleted = $this->callTool($agent, 'delete_chunk', ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid, 'review_token' => $reviewToken]);
             $this->require($deleted['structuredContent'] === [
                 'project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid,
                 'deleted_asset_ids' => array_map(static fn (UploadImage $image): string => $image->uuid, $images),
@@ -149,7 +158,7 @@ final class SmokeUploadinyMcp extends Command
         if ($withId) {
             $body['id'] = 1;
         }
-        $request = Http::acceptJson()->timeout(30);
+        $request = Http::acceptJson()->withUserAgent('Uploadiny-MCP-Smoke/1.0')->timeout(30);
         if ($this->option('ca')) {
             $request = $request->withOptions(['verify' => $this->option('ca')]);
         }

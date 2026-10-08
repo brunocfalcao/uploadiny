@@ -1,5 +1,7 @@
 # PRD: Uploadiny iOS Share Extension
 
+Status: Superseded. Historical design for the former public file-sharing service. Current behavior is documented in `../README.md`, `../PROJECT.md`, and `../mobile/PROJECT.md`.
+
 ## Overview
 
 Uploadiny removes the manual step of transferring iPhone screenshots and files to the terminal workflow. Bruno shares any file from iOS, selects Uploadiny, and the file is uploaded immediately into the same server-backed upload collection used by `upload.waygou.com`. The existing `do screenshot` workflow can then retrieve the uploaded image from that shared location.

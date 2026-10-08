@@ -39,7 +39,7 @@ class ImageDuplicator
                 throw $error;
             }
             if ($copy->description_status === 'pending') {
-                DescribeUploadImage::dispatch($copy->id)->afterCommit();
+                DescribeUploadImage::schedule($copy->id);
             }
 
             return $copy;

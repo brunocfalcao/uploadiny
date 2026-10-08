@@ -102,3 +102,15 @@ test('callout text color and geometry undo and redo together without sharing mut
     assert.equal(history.strokes[0].text, '<script>literal feedback</script>');
     assert.equal(annotationContainsPoint(history.strokes[0], { x: .5, y: .5 }, 500, 900), true);
 });
+
+
+test('empty saved callouts keep their geometry without exporting editor placeholder words', async () => {
+    const { createCallout, drawCallout } = await import('./callouts.js');
+    const words = []; let rectangles = 0;
+    const ctx = new Proxy({ lineWidth: 2, strokeRect() { rectangles++; }, fillText(text) { if (text) words.push(text); }, measureText(text) { return { width: text.length * 10 }; } }, { get: (target, key) => target[key] ?? (() => {}) });
+    const mark = createCallout({ x: .5, y: .5 }, '#ef4444', .01);
+    drawCallout(ctx, mark, 640, 480);
+    assert.deepEqual(words, []); assert.equal(rectangles, 2);
+    mark.text = 'Exact note'; drawCallout(ctx, mark, 640, 480);
+    assert.deepEqual(words, ['Exact note']);
+});

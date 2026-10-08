@@ -48,6 +48,16 @@ class GetAsset extends Tool
             return Response::error('This image is larger than 250 MB and cannot be sent to the agent. Ask the user to share a smaller export.');
         }
 
+        // Raw bytes, base64, content JSON, and the final RPC envelope can coexist.
+        $limit = ini_parse_quantity((string) ini_get('memory_limit'));
+        $limit = $limit > 0 ? $limit : 256 * 1024 * 1024;
+        $available = max(0, $limit - memory_get_usage(true) - 32 * 1024 * 1024);
+        if ($disk->size($path) > intdiv($available, 6)) {
+            $download = $variant === 'annotated' ? $image->agentData()['annotated_image_url'] : $image->agentData()['image_url'];
+
+            return Response::make(Response::error('This image exceeds the safe inline memory budget. Its original is preserved. Download using the authenticated URL: '.$download))->withStructuredContent($metadata);
+        }
+
         return Response::make([Response::json($metadata), Response::image($disk->get($path), $variant === 'annotated' ? 'image/png' : $image->mime_type)])
             ->withStructuredContent($metadata);
     }

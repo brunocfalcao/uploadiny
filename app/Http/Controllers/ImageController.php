@@ -69,7 +69,7 @@ class ImageController extends Controller
         }
         DB::transaction(function () use ($data, $raster, $image): void {
             $locked = UploadImage::query()->lockForUpdate()->findOrFail($image->id);
-            abort_if((int) $locked->feedback_revision !== $data['revision'], 409, 'Feedback changed in another window. Reload before saving.');
+            abort_if((int) $locked->feedback_revision !== (int) $data['revision'], 409, 'Feedback changed in another window. Reload before saving.');
             $retainDrawing = $data['annotations'] !== [] && $raster === null && $data['annotations'] === $locked->annotations && $locked->annotated_path;
             if ($data['annotations'] !== [] && $raster === null && ! $retainDrawing) {
                 throw ValidationException::withMessages(['annotated_image' => 'Include the marked image when changing drawings.']);
@@ -134,9 +134,9 @@ class ImageController extends Controller
         abort_if($image->isVideo(), 422, 'Image descriptions are available for still images.');
         $changed = UploadImage::whereKey($image->id)->whereIn('description_status', ['failed', 'ready'])->update(['description_status' => 'pending', 'description_error' => null]);
         if ($changed) {
-            DescribeUploadImage::dispatch($image->id);
+            DescribeUploadImage::schedule($image->id);
         }
 
-        return response()->json(['description_status' => $image->fresh()->description_status]);
+        return response()->json($image->fresh()->agentData());
     }
 }

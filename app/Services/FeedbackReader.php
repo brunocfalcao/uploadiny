@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Project;
+use App\UploadChunk;
 use App\UploadImage;
 use Illuminate\Support\Carbon;
 
@@ -16,13 +17,25 @@ final class FeedbackReader
     /** @return array<string, mixed> */
     public function projects(): array
     {
-        return ['projects' => Project::withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])
-            ->orderBy('name')->get()->map(fn (Project $project) => [
+        $projects = Project::query()->withCount(['images' => fn ($query) => $query->whereHas('chunk', fn ($chunk) => $chunk->where('status', 'complete'))])
+            ->addSelect(['latest_chunk_id' => UploadChunk::query()->select('id')->where('status', 'complete')
+                ->whereHas('images', fn ($query) => $query->whereColumn('project_id', 'projects.id'))->newestFinishedFirst()->limit(1)])
+            ->orderBy('name')->get();
+        $ids = $projects->pluck('latest_chunk_id')->filter()->unique();
+        $chunks = UploadChunk::query()->whereKey($ids)->get(['id', 'uuid', 'completed_at'])->keyBy('id');
+        $counts = UploadImage::query()->selectRaw('chunk_id, project_id, count(*) as asset_count')->whereIn('chunk_id', $ids)
+            ->groupBy('chunk_id', 'project_id')->get()->keyBy(fn (UploadImage $row): string => $row->chunk_id.':'.$row->project_id);
+
+        return ['projects' => $projects->map(function (Project $project) use ($chunks, $counts): array {
+            $chunk = $chunks->get($project->getAttribute('latest_chunk_id'));
+
+            return [
                 'id' => $project->id, 'name' => $project->name, 'slug' => $project->slug,
                 'canonical' => $project->canonical, 'description' => $project->description,
                 'image_count' => $project->images_count,
-                'latest_chunk' => $this->latestChunk($project),
-            ])->all()];
+                'latest_chunk' => $chunk ? ['id' => $chunk->uuid, 'completed_at' => $chunk->completed_at?->toIso8601String(), 'asset_count' => (int) $counts->get($chunk->id.':'.$project->id)?->getAttribute('asset_count')] : null,
+            ];
+        })->all()];
     }
 
     /** @return array<string, mixed> */
@@ -36,7 +49,7 @@ final class FeedbackReader
 
         return [
             'project' => $this->projectData($project),
-            'chunk' => ['id' => $chunk->uuid, 'uploaded_at' => $chunk->created_at->toIso8601String(), 'settling' => in_array(true, array_column($images, 'feedback_settling'), true), 'images' => $images],
+            'chunk' => ['id' => $chunk->uuid, 'uploaded_at' => $chunk->uploadedAt()->toIso8601String(), 'review_token' => $chunk->reviewToken($project, $chunk->images), 'settling' => in_array(true, array_column($images, 'feedback_settling'), true), 'images' => $images],
         ];
     }
 
@@ -159,14 +172,5 @@ final class FeedbackReader
     private function third(float $value): int
     {
         return $value < 1 / 3 ? 0 : ($value < 2 / 3 ? 1 : 2);
-    }
-
-    /** @return array<int, array{id: string, completed_at: string|null, asset_count: int}> */
-    /** @return array{id: string, completed_at: string|null, asset_count: int}|null */
-    private function latestChunk(Project $project): ?array
-    {
-        $chunk = $project->chunks()->withCount(['images' => fn ($query) => $query->where('project_id', $project->id)])->newestFinishedFirst()->first();
-
-        return $chunk ? ['id' => $chunk->uuid, 'completed_at' => $chunk->completed_at?->toIso8601String(), 'asset_count' => $chunk->images_count] : null;
     }
 }

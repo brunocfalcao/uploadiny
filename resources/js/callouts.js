@@ -63,7 +63,7 @@ export function drawCallout(ctx, stroke, width, height) {
     ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`; ctx.textBaseline = 'top'; ctx.fillStyle = '#182337';
     ctx.beginPath(); ctx.rect(x + padding, y + padding, Math.max(0, w - padding * 2), Math.max(0, h - padding * 2)); ctx.clip();
     let line = ''; let row = 0;
-    for (const character of Array.from(stroke.text || 'Add a note…')) {
+    for (const character of Array.from(stroke.text || '')) {
         if (character === '\n' || (line && ctx.measureText(line + character).width > w - padding * 2)) {
             ctx.fillText(line, x + padding, y + padding + row++ * lineHeight); line = character === '\n' ? '' : character;
         } else line += character;

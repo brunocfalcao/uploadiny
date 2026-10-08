@@ -19,8 +19,8 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$MOBILE_ROOT"
-npx expo prebuild --platform ios --no-install
-npx pod-install ios
+npx --no-install expo prebuild --platform ios --no-install
+npx --no-install pod-install ios
 
 cd "$MOBILE_ROOT/ios"
 

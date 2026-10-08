@@ -26,13 +26,14 @@ class DeleteChunk extends Tool
 {
     protected string $name = 'delete_chunk';
 
-    protected string $description = 'Permanently delete a completed feedback chunk from the selected project, including its currently assigned assets, comments, annotations, and private files. Use only after the user explicitly requests deletion. Supply the exact reviewed chunk UUID, never a newly resolved latest chunk. Assets moved to another project or chunk are preserved. The same agent bearer key authorizes this tool.';
+    protected string $description = 'Permanently delete a completed feedback chunk from the selected project, including its currently assigned assets, comments, annotations, and private files. Use only after the user explicitly requests deletion. Supply the exact reviewed chunk UUID and review_token from get_feedback; changed feedback requires review again, never a newly resolved latest chunk. Assets moved to another project or chunk are preserved. The same agent bearer key authorizes this tool.';
 
     public function handle(Request $request, WorkspaceDeletion $deletion): Response|ResponseFactory
     {
         $data = $request->validate([
             'project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}\z/'],
             'chunk_id' => ['required', 'uuid'],
+            'review_token' => ['required', 'string', 'regex:/^[a-f0-9]{64}\z/'],
         ]);
         $project = Project::query()->where('canonical', $data['project_canonical'])->first();
         $chunk = UploadChunk::query()->where('uuid', $data['chunk_id'])->first();
@@ -41,7 +42,7 @@ class DeleteChunk extends Tool
         }
 
         try {
-            $result = $deletion->completedChunk($project, $chunk);
+            $result = $deletion->completedChunk($project, $chunk, $data['review_token']);
         } catch (HttpExceptionInterface $error) {
             return Response::error($error->getMessage());
         } catch (Throwable $error) {
@@ -62,6 +63,7 @@ class DeleteChunk extends Tool
     {
         return [
             'project_canonical' => $schema->string()->pattern('^[a-z]{6}$')->description('Permanent project code used when reviewing this chunk.')->required(),
+            'review_token' => $schema->string()->description('Exact review_token retained from get_feedback. Refuses changed chunk contents.')->required(),
             'chunk_id' => $schema->string()->description('Exact completed chunk UUID retained from get_feedback.')->required(),
         ];
     }

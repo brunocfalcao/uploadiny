@@ -17,9 +17,11 @@ final class AgentTokenStorage
         return $disk->exists(self::PATH) ? $disk->get(self::PATH) : null;
     }
 
-    public function forget(): void
+    public function forget(): bool
     {
-        Storage::disk('local')->delete(self::PATH);
+        $disk = Storage::disk('local');
+
+        return ! $disk->exists(self::PATH) || $disk->delete(self::PATH);
     }
 
     public function replace(string $token): bool
@@ -30,14 +32,15 @@ final class AgentTokenStorage
         $originalUmask = umask(0077);
         try {
             $stored = $disk->put($temporaryPath, $token);
+            if (! $stored || ! chmod($disk->path($temporaryPath), 0600) || ! $disk->move($temporaryPath, $path)) {
+                return false;
+            }
         } finally {
-            umask($originalUmask);
-        }
-
-        if (! $stored || ! chmod($disk->path($temporaryPath), 0600) || ! $disk->move($temporaryPath, $path)) {
-            $disk->delete($temporaryPath);
-
-            return false;
+            try {
+                $disk->delete($temporaryPath);
+            } finally {
+                umask($originalUmask);
+            }
         }
 
         return true;

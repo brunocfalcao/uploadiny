@@ -49,7 +49,7 @@ class ChunkTransfer
                 throw $error;
             }
             if ($action === 'copy' && $result->description_status === 'pending') {
-                DescribeUploadImage::dispatch($result->id)->afterCommit();
+                DescribeUploadImage::schedule($result->id);
             }
 
             return $result;

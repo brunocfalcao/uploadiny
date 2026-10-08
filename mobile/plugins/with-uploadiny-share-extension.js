@@ -7,13 +7,11 @@ const fs = require('fs');
 const path = require('path');
 const plist = require('@expo/plist').default;
 
-const extensionBundleIdentifier = 'test.uploadiny.app.share';
-
 function unquote(value) {
   return typeof value === 'string' ? value.replace(/^"|"$/g, '') : value;
 }
 
-function withUploadinyExtensionBuildSettings(config) {
+function withUploadinyExtensionBuildSettings(config, extensionBundleIdentifier) {
   return withXcodeProject(config, (projectConfig) => {
     const configurations = projectConfig.modResults.pbxXCBuildConfigurationSection();
 
@@ -83,7 +81,10 @@ function withoutUnusedAppGroup(config) {
 }
 
 module.exports = function withUploadinyShareExtension(config) {
+  const sharing = config.plugins?.find(entry => Array.isArray(entry) && entry[0] === 'expo-sharing');
+  const extensionBundleIdentifier = sharing?.[1]?.ios?.extensionBundleIdentifier;
+  if (!extensionBundleIdentifier) throw new Error('Uploadiny requires the expo-sharing extension bundle identifier.');
   return withoutUnusedAppGroup(
-    withUploadinyExtensionSources(withUploadinyExtensionBuildSettings(config)),
+    withUploadinyExtensionSources(withUploadinyExtensionBuildSettings(config, extensionBundleIdentifier)),
   );
 };

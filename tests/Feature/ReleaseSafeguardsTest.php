@@ -165,4 +165,26 @@ class ReleaseSafeguardsTest extends TestCase
         Storage::disk('local')->assertExists('initial-login.txt');
         $this->assertSame(1, User::query()->where('email', 'retry@example.test')->count());
     }
+
+    public function test_large_accepted_screenshots_are_rejected_before_reading_under_the_process_memory_budget(): void
+    {
+        Storage::fake('local');
+        $image = UploadImage::factory()->create(['path' => 'images/overnight-budget.png', 'mime_type' => 'image/png']);
+        $disk = Storage::disk('local');
+        $disk->put($image->path, '');
+        $handle = fopen($disk->path($image->path), 'r+');
+        ftruncate($handle, 95 * 1024 * 1024);
+        fclose($handle);
+        $previous = ini_get('memory_limit');
+        ini_set('memory_limit', '256M');
+        try {
+            $user = User::factory()->create(['email' => 'overnight-budget@example.test']);
+            $this->withToken($user->createToken('agent', UploadinyTokenAbility::agent())->plainTextToken);
+            $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call', 'params' => ['name' => 'get_asset', 'arguments' => ['asset_id' => $image->uuid]]])
+                ->assertOk()->assertJsonPath('result.isError', true)->assertSee('memory budget')->assertJsonPath('result.structuredContent.asset.image_url', route('api.images.download', $image));
+        } finally {
+            ini_set('memory_limit', $previous);
+        }
+        $this->assertSame(95 * 1024 * 1024, $disk->size($image->path));
+    }
 }

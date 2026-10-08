@@ -37,7 +37,7 @@ class McpChunkDeletionTest extends TestCase
 
     private function deleteChunk(Project $project, UploadChunk $chunk): TestResponse
     {
-        return $this->tool('delete_chunk', ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid]);
+        return $this->tool('delete_chunk', ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid, 'review_token' => $chunk->reviewToken($project)]);
     }
 
     public function test_deletes_only_the_pinned_completed_chunk_and_exposes_the_surviving_latest_chunk(): void
@@ -236,7 +236,7 @@ class McpChunkDeletionTest extends TestCase
         $this->assertSame([], $disk->allFiles('deleting'));
     }
 
-    public function test_final_file_cleanup_failure_does_not_claim_success_after_records_were_removed(): void
+    public function test_final_file_cleanup_failure_retains_a_durable_cleanup_intent_after_records_are_removed(): void
     {
         $this->reader('mcp-delete-cleanup@example.test');
         $image = UploadImage::factory()->create();
@@ -247,8 +247,8 @@ class McpChunkDeletionTest extends TestCase
         $proxy->shouldReceive('delete')->once()->andReturn(false);
         Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
 
-        $this->deleteChunk($image->project, $image->chunk)->assertOk()->assertJsonPath('result.isError', true)
-            ->assertJsonMissingPath('result.structuredContent')->assertSee('Refresh feedback');
+        $this->deleteChunk($image->project, $image->chunk)->assertOk()->assertJsonPath('result.isError', false);
+        $this->assertDatabaseHas('staged_file_deletions', ['paths' => json_encode($disk->allFiles('deleting'))]);
 
         $this->assertDatabaseMissing('upload_images', ['id' => $image->id]);
         $this->assertDatabaseMissing('upload_chunks', ['id' => $image->chunk_id]);
@@ -256,5 +256,28 @@ class McpChunkDeletionTest extends TestCase
         $files = $disk->allFiles('deleting');
         $this->assertCount(1, $files);
         $this->assertSame('staged cleanup bytes', $disk->get($files[0]));
+    }
+
+    public function test_cleanup_refuses_appended_assets_and_later_feedback_until_reviewed_again(): void
+    {
+        $this->reader('overnight-stale-review@example.test');
+        $project = Project::factory()->create(['slug' => 'overnight-stale-review']);
+        $image = UploadImage::factory()->create(['project_id' => $project->id, 'comments' => 'reviewed']);
+        $chunk = $image->chunk;
+        $review = $this->tool('get_feedback', ['project_canonical' => $project->canonical])->assertOk()->json('result.structuredContent.chunk.review_token');
+        $this->assertIsString($review);
+        $later = UploadImage::factory()->create(['project_id' => $project->id, 'chunk_id' => $chunk->id, 'comments' => 'unreviewed']);
+        $arguments = ['project_canonical' => $project->canonical, 'chunk_id' => $chunk->uuid, 'review_token' => $review];
+        $this->tool('delete_chunk', $arguments)->assertJsonPath('result.isError', true)->assertSee('changed');
+        $this->assertSame('unreviewed', $later->fresh()->comments);
+        $review = $this->tool('get_feedback', ['project_canonical' => $project->canonical])->json('result.structuredContent.chunk.review_token');
+        $image->update(['comments' => 'later edit', 'feedback_revision' => 1]);
+        $arguments['review_token'] = $review;
+        $this->tool('delete_chunk', $arguments)->assertJsonPath('result.isError', true);
+        $this->assertSame('later edit', $image->fresh()->comments);
+        $arguments['review_token'] = $this->tool('get_feedback', ['project_canonical' => $project->canonical])->json('result.structuredContent.chunk.review_token');
+        $this->tool('delete_chunk', $arguments)->assertJsonPath('result.isError', false);
+        $this->assertNull($image->fresh());
+        $this->assertNull($later->fresh());
     }
 }

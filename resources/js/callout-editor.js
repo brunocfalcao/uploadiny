@@ -81,14 +81,22 @@ export function createCalloutEditor(api) {
         const before = gesture.before; gesture = null; api.replace(before); render();
     });
     function reset() { if (document.activeElement === text) text.blur(); finishText(); selected = null; gesture = null; overlay.hidden = true; }
-    function place(event) {
+    function place(event, forceCreate = false) {
         finishText(); const point = api.point(event); const strokes = api.getStrokes();
-        selected = strokes.findLastIndex(stroke => stroke.tool === 'callout' && calloutContainsPoint(stroke, point));
+        selected = forceCreate ? -1 : strokes.findLastIndex(stroke => stroke.tool === 'callout' && calloutContainsPoint(stroke, point));
         if (selected < 0) {
             const callout = createCallout(point, api.color(), api.width()); selected = strokes.length;
             api.commit(strokes, [...strokes, callout]); render(); text.focus();
         } else { render(); text.focus(); }
         api.onSelect(current());
+    }
+    function selectNext() {
+        if (!api.editable()) return;
+        finishText();
+        const indexes = api.getStrokes().flatMap((stroke, index) => stroke.tool === 'callout' ? [index] : []);
+        if (!indexes.length) return;
+        selected = indexes[(indexes.indexOf(selected) + 1) % indexes.length];
+        render(); text.focus(); api.onSelect(current());
     }
     function changeStyle(color, width) {
         if (!current() || !api.editable()) return;
@@ -97,5 +105,5 @@ export function createCalloutEditor(api) {
         if (JSON.stringify(before) !== JSON.stringify(next)) api.commit(before, next);
         render();
     }
-    return { render, reset, place, finishText, changeStyle, busy: () => Boolean(gesture) };
+    return { render, reset, place, selectNext, finishText, changeStyle, busy: () => Boolean(gesture) };
 }

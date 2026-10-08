@@ -50,10 +50,11 @@ final class AgentAccess
                 return true;
             });
         } catch (Throwable $error) {
-            if ($written && $previous === null) {
-                $this->storage->forget();
-            } elseif ($written) {
-                $this->storage->replace($previous);
+            if ($written) {
+                $restored = $previous === null ? $this->storage->forget() : $this->storage->replace($previous);
+                if (! $restored) {
+                    throw new \RuntimeException('Agent access could not be restored. Rotate the key again from Agent access.', previous: $error);
+                }
             }
             throw $error;
         }
