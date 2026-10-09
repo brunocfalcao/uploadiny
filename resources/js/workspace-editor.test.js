@@ -24,7 +24,8 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     const previousDocument = globalThis.document;
     const nodes = new Map(); const timers = new Map(); const intervals = []; let timerId = 0; let reloads = 0; const popstate = []; const urlCalls = [];
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
-    const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); where.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); where.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''; } };
+    const updateLocation = url => { const parsed = new URL(url, 'https://workspace.test'); where.search = parsed.search; where.hash = parsed.hash; };
+    const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); updateLocation(url); }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); updateLocation(url); } };
     const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
     class Element {
         constructor(id = '', tagName = 'div') {
@@ -635,6 +636,31 @@ test('Back keeps the editor and restores the address when saving fails', async t
     await ui.pop('');
     assert.equal(ui.node('editor').hidden, false);
     assert.equal(ui.where.search, '?image=one');
+});
+
+test('Forward to a remotely deleted file repairs the URL while preserving the gallery or current editor', async t => {
+    const ui = workspace(t, '?x=1'); await ui.open();
+    ui.where.hash = '#feedback';
+    const remaining = new ui.Element();
+    remaining.dataset = { chunkImages: '["two"]', openImage: 'two', chunk: 'chunk-one' };
+    ui.remote.page = { cards: [remaining], dataset: { latest: 'chunk-one', latestCompleted: 't2', latestCount: '1' } };
+    delete ui.assets.one;
+    await ui.pop('?x=1');
+    assert.equal(ui.node('editor').hidden, true);
+    await ui.pop('?x=1&image=one');
+    assert.equal(ui.where.search, '?x=1');
+    assert.deepEqual(ui.urlCalls.at(-1), ['replace', '/projects/1?x=1#feedback']);
+    assert.equal(ui.node('gallery').hidden, false);
+    await ui.pop('?x=1&image=two');
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    ui.type(ui.node('image-comments'), 'unsaved current note');
+    const writes = ui.writes.length;
+    await ui.pop('?x=1&image=one');
+    assert.equal(ui.where.search, '?x=1&image=two');
+    assert.equal(ui.where.hash, '#feedback');
+    assert.equal(ui.node('image-comments').value, 'unsaved current note');
+    assert.equal(ui.writes.length, writes);
+    assert.equal(ui.node('editor').hidden, false);
 });
 
 test('opening a file focuses its title, not the Back button, so Space cannot leave the editor', async t => {

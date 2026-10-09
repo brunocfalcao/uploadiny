@@ -69,8 +69,8 @@ class AppendToLastChunkTest extends TestCase
         $joined = $this->share($project, $token, 2, $older['id']);
 
         $this->assertSame($older['id'], $joined['id']);
-        $this->assertCount(4, $joined['images']);
-        $this->assertSame(['note 0', 'note 1'], array_slice(array_column($joined['images'], 'comments'), 2));
+        $this->assertCount(2, $joined['images']);
+        $this->assertSame(['note 0', 'note 1'], array_column($joined['images'], 'comments'));
         $this->assertSame(2, UploadChunk::query()->where('status', 'complete')->count());
         $this->assertSame(0, UploadChunk::query()->where('status', 'uploading')->count());
         $this->withToken($token)->getJson(route('api.chunks.last', $project))->assertJsonPath('chunk.id', $older['id'])->assertJsonPath('chunk.file_count', 4);
@@ -105,7 +105,7 @@ class AppendToLastChunkTest extends TestCase
         $joined = $this->share($project, $token, 2, $older['id']);
 
         $newIds = UploadImage::query()->whereKeyNot($olderImageId)->pluck('id')->all();
-        $this->assertCount(3, $joined['images']);
+        $this->assertCount(2, $joined['images']);
         Queue::assertPushed(DescribeUploadImage::class, 2);
         Queue::assertPushed(DescribeUploadImage::class, fn (DescribeUploadImage $job): bool => in_array($job->imageId, $newIds, true));
         Queue::assertNotPushed(DescribeUploadImage::class, fn (DescribeUploadImage $job): bool => $job->imageId === $olderImageId);

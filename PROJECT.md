@@ -59,6 +59,22 @@ or append operations in the same batch. REST also accepts
 
 ## Verification
 
+Deletion writes a private original-to-staged recovery journal before moving
+files. The journal lock keeps reconciliation away from active deletions;
+committed database intents own removal, while interrupted transactions restore
+files still referenced by surviving images. The minute cleanup schedule retries
+both paths and leaves unowned staging files untouched. Superseded annotated
+images also get a cleanup intent in the feedback transaction. Read-only
+`php artisan uploadiny:cleanup-status` shows backlog age and retry progress
+without paths or feedback. Deploy the additive recovery-details migration
+before this code.
+
+Phone API completion returns acknowledgements for newly uploaded assets only,
+including saved comments and the final merged chunk UUID. Website completion
+and authenticated agent feedback retain their full image collections. Agent
+key rotation and revocation share one cache lock covering the entire managed
+credential operation; CLI and backoffice must use the same shared cache store.
+
 Available entrypoints: `composer test`, `composer quality`, `npm run build`, `npm run test`. Choose the narrowest relevant check; a listed full-suite, build, install, or packaging command is not an instruction to run it for every edit. Inspect test environment and side effects first.
 
 Orientation examples read: `app/Http/Controllers/AgentController.php`, `tests/Feature/ApiAccessTokenTest.php`. Re-read the closest example for the actual task rather than copying an unrelated one.

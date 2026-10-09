@@ -248,12 +248,12 @@ class McpChunkDeletionTest extends TestCase
         Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
 
         $this->deleteChunk($image->project, $image->chunk)->assertOk()->assertJsonPath('result.isError', false);
-        $this->assertDatabaseHas('staged_file_deletions', ['paths' => json_encode($disk->allFiles('deleting'))]);
+        $files = array_values(array_filter($disk->allFiles('deleting'), fn ($path) => ! in_array(basename($path), ['.lock', 'journal.json'], true)));
+        $this->assertDatabaseHas('staged_file_deletions', ['paths' => json_encode($files)]);
 
         $this->assertDatabaseMissing('upload_images', ['id' => $image->id]);
         $this->assertDatabaseMissing('upload_chunks', ['id' => $image->chunk_id]);
         $disk->assertMissing($image->path);
-        $files = $disk->allFiles('deleting');
         $this->assertCount(1, $files);
         $this->assertSame('staged cleanup bytes', $disk->get($files[0]));
     }

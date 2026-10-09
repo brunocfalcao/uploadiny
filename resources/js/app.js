@@ -363,7 +363,11 @@ if (workspace) {
             if (active) syncImageUrl(active.id);
             return;
         }
-        if (active?.id === id || !chunkGroups.some(files => files.includes(id))) return;
+        if (active?.id === id) return;
+        if (!chunkGroups.some(files => files.includes(id))) {
+            syncImageUrl(active?.id ?? null);
+            return;
+        }
         await openImage(id, false, true);
         if (active && active.id !== id) syncImageUrl(active.id);
     });

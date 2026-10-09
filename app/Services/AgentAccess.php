@@ -7,6 +7,7 @@ namespace App\Services;
 use App\UploadinyTokenAbility;
 use App\User;
 use DateTimeInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\PersonalAccessToken;
 use Throwable;
@@ -31,6 +32,11 @@ final class AgentAccess
     }
 
     public function rotate(User $user, ?DateTimeInterface $expiresAt = null): bool
+    {
+        return Cache::lock('uploadiny:agent-access', 600)->block(30, fn (): bool => $this->rotateLocked($user, $expiresAt));
+    }
+
+    private function rotateLocked(User $user, ?DateTimeInterface $expiresAt): bool
     {
         $previous = $this->storage->read();
         $written = false;
@@ -62,7 +68,9 @@ final class AgentAccess
 
     public function revoke(User $user): void
     {
-        $user->tokens()->where('name', self::TOKEN_NAME)->delete();
-        $this->storage->forget();
+        Cache::lock('uploadiny:agent-access', 600)->block(30, function () use ($user): void {
+            $user->tokens()->where('name', self::TOKEN_NAME)->delete();
+            $this->storage->forget();
+        });
     }
 }

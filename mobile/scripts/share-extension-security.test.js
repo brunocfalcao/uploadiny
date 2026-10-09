@@ -21,8 +21,7 @@ test('the "Add to the last upload" choice lives in its own ThisDeviceOnly Keycha
   assert.ok(start >= 0, 'The append preference must be stored by its dedicated Keychain store');
   const store = swift.slice(start, swift.indexOf('\n}\n', start));
   assert.match(store, /account = "append-to-last-upload"/);
-  assert.match(store, /attributes\[kSecAttrAccessible\] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly/);
-  assert.match(store, /kSecValueData\] = Data\(\(enabled \? "1" : "0"\)\.utf8\)/);
+  assert.match(store, /UploadinyKeychainStore\.write\(Data\(\(enabled \? "1" : "0"\)\.utf8\), account: account\)/);
   assert.doesNotMatch(store, /kSecAttrSynchronizable|AfterFirstUnlock|AccessibleAlways|uploadiny-device-token|\btoken\b/);
   assert.match(swift, /UploadinyAppendPreferenceStore\.write\(appendSwitch\.isOn\)/);
   assert.equal(swift.match(/UploadinyDeviceTokenStore\.write\(/g).length, 1);
@@ -33,9 +32,7 @@ test('the last project slug lives in its own ThisDeviceOnly Keychain item, never
   assert.ok(start >= 0, 'The last project must be stored by its dedicated Keychain store');
   const store = swift.slice(start, swift.indexOf('\n}\n', start));
   assert.match(store, /account = "last-project-slug"/);
-  assert.match(store, /service = UploadinyDeviceTokenStore\.service/);
-  assert.match(store, /attributes\[kSecAttrAccessible\] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly/);
-  assert.match(store, /kSecValueData\] = Data\(slug\.utf8\)/);
+  assert.match(store, /UploadinyKeychainStore\.write\(Data\(slug\.utf8\), account: account\)/);
   assert.doesNotMatch(store, /kSecAttrSynchronizable|AfterFirstUnlock|AccessibleAlways|uploadiny-device-token|\btoken\b/);
   // Exactly one write site, inside completeChunk after the server confirmed every file.
   assert.equal(swift.match(/UploadinyLastProjectStore\.write\(/g).length, 1);

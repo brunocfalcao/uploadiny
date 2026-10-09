@@ -1,6 +1,33 @@
 # Where Are We — Uploadiny
 
-## 2026-10-09 — v0.13.0 candidate, not deployed
+## 2026-10-10 — v0.13.1 candidate, not deployed
+
+- Addressed all seven bugs, the Keychain duplication, and cleanup diagnostics
+  from the 2026-10-09 assessment. iPhone 0.13.1 build 31; not deployed.
+- Interrupted deletion retains a private recovery map before staging. Retry
+  restores surviving originals or finishes committed cleanup; unrelated files
+  and assets moved to other projects remain protected.
+- Old drawings have durable cleanup retries. The read-only
+  `uploadiny:cleanup-status` command reports age, attempts and deferred work
+  without file or feedback details. Additive migration required before delivery.
+- Phone completion acknowledges new assets only. Website and agent feedback
+  remain complete. Failed upload-start enqueue removes its empty draft.
+- Key rotation/revocation serialize the full managed-file operation. History
+  repairs deleted-file URLs, and spoken append hints follow the current lookup.
+- Keychain operations share a private helper; accounts, defaults, device-only
+  protection, write failures and token-only sign-out retain their behavior.
+- Regression proof includes interrupted subprocesses, real overlapping key
+  operations, API privacy, queue failure, DOM history, and compiled Swift
+  fixtures. Physical Keychain/VoiceOver and browser acceptance remain separate.
+- Passed: 172 PHP tests / 1,777 assertions, 101 web checks, 20 native checks,
+  PHPStan, Pint, Vite build, TypeScript and UIKit/Swift typechecking at iOS 16.4.
+  The completed overnight report folder was removed after verification.
+
+## 2026-10-09 — v0.13.0 deployed via FAST
+
+- Shipped `29a23e4ff7` on 2026-10-09 at 21:44:15 UTC in 98 seconds.
+  The matching completed receipt records website/API verification and signed
+  physical iPhone 0.13.0 build 30 installation and launch.
 
 - Candidate iOS metadata: 0.13.0 build 30; mobile behavior and shipped
   dependencies unchanged.

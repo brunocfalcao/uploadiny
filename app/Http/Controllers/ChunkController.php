@@ -15,6 +15,7 @@ use App\Services\WorkspaceDeletion;
 use App\UploadChunk;
 use App\UploadImage;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ChunkController extends Controller
@@ -63,7 +64,12 @@ class ChunkController extends Controller
         $target = $request->filled('append_to') ? $project->chunks()->where('uuid', $request->string('append_to')->toString())->first() : null;
         $chunk = UploadChunk::create(['upload_project_id' => $project->id, 'append_to_chunk_id' => $target?->id, 'expected_images' => $request->integer('image_count'), 'status' => 'uploading']);
 
-        DiscardIncompleteUpload::dispatch($chunk->id)->delay(now()->addDay())->afterCommit();
+        try {
+            DiscardIncompleteUpload::dispatch($chunk->id)->delay(now()->addDay())->afterCommit();
+        } catch (\Throwable $error) {
+            $chunk->delete();
+            throw $error;
+        }
 
         return response()->json(['id' => $chunk->uuid], 201);
     }
@@ -80,7 +86,7 @@ class ChunkController extends Controller
         ], 201);
     }
 
-    public function complete(UploadChunk $chunk): JsonResponse
+    public function complete(Request $request, UploadChunk $chunk): JsonResponse
     {
         $newImageIds = [];
         $completed = DB::transaction(function () use ($chunk, &$newImageIds): UploadChunk {
@@ -107,7 +113,9 @@ class ChunkController extends Controller
             DescribeUploadImage::schedule($image->id);
         }
 
-        return response()->json(['id' => $completed->uuid, 'uploaded_at' => $completed->uploadedAt()->toIso8601String(), 'images' => $completed->images->map(static fn (UploadImage $image): array => $image->agentData())->values()]);
+        $images = $request->routeIs('api.chunks.complete') ? $completed->images->whereIn('id', $newImageIds) : $completed->images;
+
+        return response()->json(['id' => $completed->uuid, 'uploaded_at' => $completed->uploadedAt()->toIso8601String(), 'images' => $images->map(static fn (UploadImage $image): array => $image->agentData())->values()]);
     }
 
     public function cancel(UploadChunk $chunk, WorkspaceDeletion $deletion): JsonResponse

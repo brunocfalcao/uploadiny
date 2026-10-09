@@ -473,11 +473,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     if appendLookup.loading || appendLookup.failed {
       appendRow.isHidden = false
       appendCaption.text = appendLookup.loading ? "Checking the last upload…" : "Lookup failed. Retry before adding to the last upload."
+      appendSwitch.accessibilityHint = appendCaption.text
       updateUploadAvailability()
       return
     }
     guard let lastUpload, lastUpload.projectID == selectedProject?.id else {
       appendRow.isHidden = true
+      appendSwitch.accessibilityHint = nil
       return
     }
     let caption = "Last upload: \(lastUploadDate(lastUpload.completedAt)) · \(lastUpload.fileCount) file\(lastUpload.fileCount == 1 ? "" : "s")"
@@ -1640,119 +1642,81 @@ private struct LastUploadResult: Decodable { let chunk: LastUploadChunk? }
 private struct LastUploadChunk: Decodable { let id: String; let completed_at: String; let file_count: Int }
 private struct LastUploadSummary { let projectID: Int; let id: String; let completedAt: Date; let fileCount: Int }
 
-private enum UploadinyDeviceTokenStore {
-  fileprivate static let service = "test.uploadiny.app.share"
-  private static let account = "uploadiny-device-token"
+private enum UploadinyKeychainStore {
+  private static let service = "test.uploadiny.app.share"
 
-  static func read() -> String? {
-    var item: CFTypeRef?
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-      kSecReturnData: true,
-      kSecMatchLimit: kSecMatchLimitOne,
-    ]
-    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-          let data = item as? Data,
-          let token = String(data: data, encoding: .utf8),
-          !token.isEmpty else {
-      return nil
-    }
-    return token
+  private static func query(account: String) -> [CFString: Any] {
+    [kSecClass: kSecClassGenericPassword, kSecAttrService: service, kSecAttrAccount: account]
   }
 
+  static func read(account: String) -> Data? {
+    var item: CFTypeRef?
+    var attributes = query(account: account)
+    attributes[kSecReturnData] = true
+    attributes[kSecMatchLimit] = kSecMatchLimitOne
+    guard SecItemCopyMatching(attributes as CFDictionary, &item) == errSecSuccess else { return nil }
+    return item as? Data
+  }
+
+  static func readString(account: String) -> String? {
+    guard let data = read(account: account), let value = String(data: data, encoding: .utf8), !value.isEmpty else { return nil }
+    return value
+  }
+
+  static func write(_ data: Data, account: String) -> Bool {
+    delete(account: account)
+    var attributes = query(account: account)
+    attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    attributes[kSecValueData] = data
+    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+  }
+
+  static func delete(account: String) {
+    SecItemDelete(query(account: account) as CFDictionary)
+  }
+}
+
+private enum UploadinyDeviceTokenStore {
+  private static let account = "uploadiny-device-token"
+
+  static func read() -> String? { UploadinyKeychainStore.readString(account: account) }
+
   static func write(_ token: String) throws {
-    delete()
-    let attributes: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-      kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-      kSecValueData: Data(token.utf8),
-    ]
-    guard SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess else {
+    guard UploadinyKeychainStore.write(Data(token.utf8), account: account) else {
       throw UploadinyDeviceTokenStoreError.unavailable
     }
   }
 
-  static func delete() {
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-    ]
-    SecItemDelete(query as CFDictionary)
-  }
+  static func delete() { UploadinyKeychainStore.delete(account: account) }
 }
 
 private enum UploadinyDeviceTokenStoreError: Error { case unavailable }
 
 // Remembers the "Add to the last upload" choice as "1" or "0" in its own item. Absent means on.
 private enum UploadinyAppendPreferenceStore {
-  private static let service = UploadinyDeviceTokenStore.service
   private static let account = "append-to-last-upload"
 
   static func read() -> Bool {
-    var item: CFTypeRef?
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-      kSecReturnData: true,
-      kSecMatchLimit: kSecMatchLimitOne,
-    ]
-    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data else { return true }
+    guard let data = UploadinyKeychainStore.read(account: account) else { return true }
     return String(data: data, encoding: .utf8) != "0"
   }
 
   @discardableResult
   static func write(_ enabled: Bool) -> Bool {
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-    ]
-    SecItemDelete(query as CFDictionary)
-    var attributes = query
-    attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-    attributes[kSecValueData] = Data((enabled ? "1" : "0").utf8)
-    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    UploadinyKeychainStore.write(Data((enabled ? "1" : "0").utf8), account: account)
   }
 }
 
 // Remembers the slug of the project used by the last successful upload, in its own item.
 private enum UploadinyLastProjectStore {
-  private static let service = UploadinyDeviceTokenStore.service
   private static let account = "last-project-slug"
 
   static func read() -> String? {
-    var item: CFTypeRef?
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-      kSecReturnData: true,
-      kSecMatchLimit: kSecMatchLimitOne,
-    ]
-    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-          let data = item as? Data,
-          let slug = String(data: data, encoding: .utf8),
-          !slug.isEmpty else { return nil }
-    return slug
+    UploadinyKeychainStore.readString(account: account)
   }
 
   @discardableResult
   static func write(_ slug: String) -> Bool {
-    let query: [CFString: Any] = [
-      kSecClass: kSecClassGenericPassword,
-      kSecAttrService: service,
-      kSecAttrAccount: account,
-    ]
-    SecItemDelete(query as CFDictionary)
-    var attributes = query
-    attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-    attributes[kSecValueData] = Data(slug.utf8)
-    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    UploadinyKeychainStore.write(Data(slug.utf8), account: account)
   }
 }

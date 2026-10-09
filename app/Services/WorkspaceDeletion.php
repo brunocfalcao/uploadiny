@@ -91,15 +91,31 @@ class WorkspaceDeletion
         $disk = Storage::disk('local');
         $staged = [];
         $intent = null;
+        $journal = null;
+        $lock = null;
         try {
-            DB::transaction(function () use ($operation, $disk, &$staged, &$intent): void {
+            DB::transaction(function () use ($operation, $disk, &$staged, &$intent, &$journal, &$lock): void {
                 [$images, $deleteRecords] = $operation();
+                $directory = 'deleting/'.Str::uuid();
+                $mapping = [];
                 foreach ($images as $image) {
                     foreach (array_filter([$image->path, $image->annotated_path]) as $path) {
-                        if (! $disk->exists($path)) {
-                            continue;
+                        if ($disk->exists($path)) {
+                            $mapping[$path] = $directory.'/'.count($mapping).'-'.basename($path);
                         }
-                        $temporaryPath = 'deleting/'.Str::uuid().'/'.basename($path);
+                    }
+                }
+                if ($mapping !== []) {
+                    $journal = $directory.'/journal.json';
+                    if (! $disk->makeDirectory($directory)) {
+                        throw new RuntimeException('Deletion recovery could not be prepared. Nothing was deleted.');
+                    }
+                    $lock = $this->journalLock($journal);
+                    if ($lock === null || ! $disk->put($journal, json_encode($mapping, JSON_THROW_ON_ERROR))) {
+                        throw new RuntimeException('Deletion recovery could not be saved. Nothing was deleted.');
+                    }
+                    foreach ($mapping as $path => $temporaryPath) {
+                        // The durable map precedes every move, including a process-ending interruption.
                         if (! $disk->move($path, $temporaryPath)) {
                             throw new RuntimeException('The image files could not be removed. Nothing was deleted.');
                         }
@@ -108,46 +124,154 @@ class WorkspaceDeletion
                 }
                 $deleteRecords();
                 if ($staged !== []) {
-                    $intent = StagedFileDeletion::create(['paths' => array_values($staged)]);
+                    $intent = StagedFileDeletion::create(['paths' => array_values($staged), 'journal_path' => $journal]);
                 }
             });
         } catch (Throwable $error) {
-            foreach ($staged as $path => $temporaryPath) {
-                if (! $disk->move($temporaryPath, $path)) {
-                    throw new RuntimeException('Deletion failed and an image file could not be restored.', previous: $error);
+            try {
+                foreach ($staged as $path => $temporaryPath) {
+                    if (! $disk->move($temporaryPath, $path)) {
+                        throw new RuntimeException('Deletion failed and an image file could not be restored.', previous: $error);
+                    }
                 }
+                if ($journal !== null) {
+                    $disk->deleteDirectory(dirname($journal));
+                }
+            } finally {
+                $this->releaseJournal($lock);
             }
             throw $error;
         }
-        if ($intent !== null) {
-            $this->cleanup($intent);
+        try {
+            if ($intent !== null) {
+                $this->cleanup($intent);
+            }
+        } finally {
+            $this->releaseJournal($lock);
         }
+    }
+
+    public function supersededDrawing(string $path): void
+    {
+        $intent = StagedFileDeletion::create(['paths' => [$path]]);
+        DB::afterCommit(fn () => $this->cleanup($intent));
     }
 
     public function cleanupPending(): void
     {
         StagedFileDeletion::query()->chunkById(100, function ($intents): void {
             foreach ($intents as $intent) {
-                $this->cleanup($intent);
+                $lock = $intent->journal_path === null ? null : $this->journalLock($intent->journal_path);
+                if ($intent->journal_path !== null && $lock === null && Storage::disk('local')->directoryExists(dirname($intent->journal_path))) {
+                    continue;
+                }
+                try {
+                    $this->cleanup($intent);
+                } finally {
+                    $this->releaseJournal($lock);
+                }
             }
         });
+        $disk = Storage::disk('local');
+        foreach ($disk->directories('deleting') as $directory) {
+            $journal = $directory.'/journal.json';
+            if (! $disk->exists($journal)) {
+                continue;
+            }
+            $lock = $this->journalLock($journal);
+            if ($lock === null) {
+                continue;
+            }
+            try {
+                // Committed intents own cleanup; a map without one belongs to a rolled-back operation.
+                if (! is_file($disk->path($journal)) || StagedFileDeletion::where('journal_path', $journal)->exists()) {
+                    continue;
+                }
+                $mapping = json_decode($disk->get($journal), true, flags: JSON_THROW_ON_ERROR);
+                foreach ($mapping as $original => $staged) {
+                    if (! $disk->exists($staged)) {
+                        continue;
+                    }
+                    if ($this->referenced($original)) {
+                        if ($disk->exists($original) || ! $disk->move($staged, $original)) {
+                            throw new RuntimeException('Interrupted deletion restoration needs another attempt.');
+                        }
+                    } elseif (! $disk->delete($staged)) {
+                        throw new RuntimeException('Interrupted deletion cleanup needs another attempt.');
+                    }
+                }
+                if (! $disk->deleteDirectory($directory)) {
+                    throw new RuntimeException('Interrupted deletion journal cleanup needs another attempt.');
+                }
+            } catch (Throwable $error) {
+                Log::warning('Interrupted upload deletion recovery deferred.', ['category' => class_basename($error)]);
+            } finally {
+                $this->releaseJournal($lock);
+            }
+        }
     }
 
     private function cleanup(StagedFileDeletion $intent): void
     {
         $disk = Storage::disk('local');
         try {
+            $intent->update(['attempts' => $intent->attempts + 1, 'last_attempt_at' => now(), 'last_error' => null]);
             foreach ($intent->paths as $temporaryPath) {
+                if ($this->referenced($temporaryPath)) {
+                    throw new RuntimeException('An active image still owns this file.');
+                }
                 if ($disk->exists($temporaryPath) && ! $disk->delete($temporaryPath)) {
                     throw new RuntimeException('Staged file cleanup needs another attempt.');
                 }
-                if (! $disk->deleteDirectory(dirname($temporaryPath))) {
+                if ($intent->journal_path === null && str_starts_with($temporaryPath, 'deleting/') && ! $disk->deleteDirectory(dirname($temporaryPath))) {
                     throw new RuntimeException('Staged directory cleanup needs another attempt.');
                 }
             }
+            if ($intent->journal_path !== null && ! $disk->deleteDirectory(dirname($intent->journal_path))) {
+                throw new RuntimeException('Staged journal cleanup needs another attempt.');
+            }
             $intent->delete();
         } catch (Throwable $error) {
+            try {
+                $intent->update(['last_error' => class_basename($error)]);
+            } catch (Throwable) {
+                // Keep the committed intent retryable even when diagnostic persistence is unavailable.
+            }
             Log::warning('Committed upload cleanup deferred.', ['cleanup_id' => $intent->id, 'category' => class_basename($error)]);
+        }
+    }
+
+    private function referenced(string $path): bool
+    {
+        return UploadImage::where('path', $path)->orWhere('annotated_path', $path)->exists();
+    }
+
+    /** @return resource|null */
+    private function journalLock(string $journal)
+    {
+        $path = Storage::disk('local')->path(dirname($journal).'/.lock');
+        if (! is_dir(dirname($path))) {
+            return null;
+        }
+        $lock = fopen($path, 'c');
+        if ($lock === false) {
+            throw new RuntimeException('Deletion recovery lock could not be opened.');
+        }
+        if (! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+
+            return null;
+        }
+
+        return $lock;
+    }
+
+    /** @param resource|null $lock */
+    private function releaseJournal($lock): void
+    {
+        if ($lock !== null) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
         }
     }
 }

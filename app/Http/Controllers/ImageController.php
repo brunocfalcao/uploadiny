@@ -49,7 +49,7 @@ class ImageController extends Controller
         return $response;
     }
 
-    public function update(ImageFeedbackRequest $request, UploadImage $image): JsonResponse
+    public function update(ImageFeedbackRequest $request, UploadImage $image, WorkspaceDeletion $deletion): JsonResponse
     {
         $data = $request->validated();
         if ($image->isVideo() && ($data['annotations'] !== [] || isset($data['annotated_image']))) {
@@ -67,7 +67,7 @@ class ImageController extends Controller
                 throw ValidationException::withMessages(['annotated_image' => 'The annotated image is invalid or too large.']);
             }
         }
-        DB::transaction(function () use ($data, $raster, $image): void {
+        DB::transaction(function () use ($data, $raster, $image, $deletion): void {
             $locked = UploadImage::query()->lockForUpdate()->findOrFail($image->id);
             abort_if((int) $locked->feedback_revision !== (int) $data['revision'], 409, 'Feedback changed in another window. Reload before saving.');
             $retainDrawing = $data['annotations'] !== [] && $raster === null && $data['annotations'] === $locked->annotations && $locked->annotated_path;
@@ -81,17 +81,15 @@ class ImageController extends Controller
             $oldPath = $locked->annotated_path;
             try {
                 $locked->update(['annotations' => $data['annotations'], 'comments' => $data['comments'] ?? '', 'annotated_path' => $newPath, 'feedback_revision' => $locked->feedback_revision + 1, 'feedback_updated_at' => now()]);
+                if ($oldPath && $oldPath !== $newPath) {
+                    $deletion->supersededDrawing($oldPath);
+                }
             } catch (\Throwable $error) {
                 if ($newPath && ! $retainDrawing) {
                     Storage::disk('local')->delete($newPath);
                 }
                 throw $error;
             }
-            DB::afterCommit(function () use ($oldPath, $newPath): void {
-                if ($oldPath && $oldPath !== $newPath) {
-                    Storage::disk('local')->delete($oldPath);
-                }
-            });
         });
 
         return response()->json($image->fresh()->agentData());
