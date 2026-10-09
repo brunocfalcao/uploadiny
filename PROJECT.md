@@ -42,6 +42,19 @@ Manifest requirements: PHP `^8.2`, `laravel/framework` `^12.0`. Exact resolved v
 
 ## Code map
 
+Agent retrieval options: `get_feedback` includes saved annotated screenshots
+with marks by default (`include_annotated_images: false` disables inline media).
+`image_width` on `get_feedback` and `get_asset` returns temporary resized PNGs
+without upscaling or changing private originals; retain decoded-image and
+combined-response memory checks. All three feedback/media read tools accept
+`include_descriptions: false` to omit AI metadata without altering stored
+descriptions or review-token contents. `after_chunk` on MCP and agent REST
+feedback returns only the latest completed batch newer than that project-scoped
+UUID, ordered by completion/legacy creation time then ID. Unavailable cursors
+fail clearly; no newer batch returns `chunk: null`. Cursors do not detect edits
+or append operations in the same batch. REST also accepts
+`include_descriptions=0`; inline media remains MCP-only.
+
 `routes/web.php`, `routes/api.php`, `routes/console.php`, `bootstrap/app.php`, `bootstrap/providers.php`, `app/Services/`, `app/Http/Controllers/`, `mobile/`, `tests/`. Inspect these entrypoints and their actual callers for the area being changed.
 
 ## Verification

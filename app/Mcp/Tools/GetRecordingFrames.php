@@ -24,13 +24,14 @@ class GetRecordingFrames extends Tool
 {
     protected string $name = 'get_recording_frames';
 
-    protected string $description = 'Inspect a recording as JPEG frames at one to five timestamps in seconds. Defaults to the first frame (0 seconds). Returns timestamped images alongside exact asset feedback. Requires FFmpeg on the server.';
+    protected string $description = 'Inspect a recording as JPEG frames at one to five timestamps in seconds. Defaults to the first frame (0 seconds). Returns timestamped images alongside exact asset feedback. Set include_descriptions false to omit AI context. Requires FFmpeg on the server.';
 
     public function handle(Request $request, RecordingFrames $extractor, FeedbackReader $feedback): Response|ResponseFactory
     {
         $data = $request->validate([
             'asset_id' => ['required', 'uuid'], 'timestamps' => ['sometimes', 'array', 'min:1', 'max:5'],
             'timestamps.*' => ['required', 'numeric', 'min:0'],
+            'include_descriptions' => ['sometimes', 'boolean'],
         ]);
         $image = UploadImage::query()->where('uuid', $data['asset_id'])->first();
         if ($image === null || ! $image->isVideo()) {
@@ -48,7 +49,7 @@ class GetRecordingFrames extends Tool
                 : 'Could not extract recording frames. Verify FFmpeg is installed and choose timestamps within the recording.');
         }
 
-        $metadata = ['asset' => $feedback->image($image), 'frames' => array_map(static fn (array $frame): array => ['timestamp_seconds' => $frame['timestamp_seconds'], 'mime_type' => 'image/jpeg'], $frames)];
+        $metadata = ['asset' => $feedback->image($image, (bool) ($data['include_descriptions'] ?? true)), 'frames' => array_map(static fn (array $frame): array => ['timestamp_seconds' => $frame['timestamp_seconds'], 'mime_type' => 'image/jpeg'], $frames)];
         $content = [Response::json($metadata)];
         foreach ($frames as $frame) {
             $content[] = Response::text('Recording frame at '.$frame['timestamp_seconds'].' seconds.');
@@ -64,6 +65,7 @@ class GetRecordingFrames extends Tool
         return [
             'asset_id' => $schema->string()->description('Recording UUID from get_feedback.')->required(),
             'timestamps' => $schema->array()->items($schema->number()->min(0))->min(1)->max(5)->description('Frame timestamps in seconds. Defaults to [0].'),
+            'include_descriptions' => $schema->boolean()->description('Include AI description and its status, error, and model. Defaults to true.'),
         ];
     }
 }

@@ -51,6 +51,15 @@ class UploadChunk extends Model
         $query->orderByRaw('COALESCE(completed_at, created_at) DESC')->orderByDesc('id');
     }
 
+    /** @param Builder<UploadChunk> $query */
+    public function scopeFinishedAfter(Builder $query, UploadChunk $cursor): void
+    {
+        $time = $cursor->uploadedAt();
+        $query->where(fn (Builder $later) => $later
+            ->whereRaw('COALESCE(completed_at, created_at) > ?', [$time])
+            ->orWhere(fn (Builder $tie) => $tie->whereRaw('COALESCE(completed_at, created_at) = ?', [$time])->where('id', '>', $cursor->id)));
+    }
+
     /** @param \Illuminate\Support\Collection<int, UploadImage>|null $images */
     public function reviewToken(Project $project, ?\Illuminate\Support\Collection $images = null): string
     {

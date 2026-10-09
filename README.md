@@ -78,7 +78,11 @@ The server exposes five tools:
 - `list_projects`: discover project names and their six-letter codes.
 - `get_feedback(project_canonical)`: retrieve the latest completed batch,
   including exact comments, annotations, asset IDs, feedback revisions, and
-  the `review_token` identifying those reviewed contents.
+  the `review_token` identifying those reviewed contents. Marked screenshots
+  include their saved annotated image in this same call by default, labeled
+  with the asset UUID. Set `include_annotated_images: false` for metadata only.
+  Missing or unsafe inline images return an explanation alongside the feedback;
+  private media URLs remain available.
 - `get_asset(asset_id, variant)`: inspect the original or annotated screenshot
   as image content. Original recordings return metadata and a private download
   URL instead; that URL requires the same bearer key. Images that cannot
@@ -97,6 +101,29 @@ The server exposes five tools:
   and `review_token` rather than selecting a newer upload. If files, notes,
   annotations, or descriptions changed after review, review the updated
   chunk and obtain fresh explicit cleanup consent.
+
+For cheaper screenshot inspection, pass `image_width: 900` to `get_feedback`
+or `get_asset`. Resized PNGs preserve aspect ratio and transparency, never
+upscale, and do not change stored files. Omitting width preserves exact stored
+bytes. Width accepts integers from 1 to 4096; decoding and combined batch
+responses retain the safe inline memory budget.
+
+Pass `include_descriptions: false` to `get_feedback`, `get_asset`, or
+`get_recording_frames` to omit the AI description, status, error, and model.
+Owner comments and marks remain intact. Descriptions are still generated and
+stored; this option only controls retrieval. Review tokens still identify the
+full stored feedback, including descriptions.
+
+Remember the returned `chunk.id` and pass it as `after_chunk` on a later
+`get_feedback` call. The tool returns the latest completed batch strictly newer
+than that cursor, using completion time (creation time for legacy rows), then
+database ID to break ties. `chunk: null` means no newer batch. This is a
+client-held batch cursor, not a shared seen marker or a history feed. It does
+not detect edits or appended assets in the same batch. Deleted, draft, and
+other-project cursors return an error; omit the cursor to establish a new one.
+Both agent REST feedback routes also accept `after_chunk` and
+`include_descriptions=0`, with the same metadata and cursor behavior. Inline
+images and resizing are MCP options.
 
 `do uploadiny <request>` uses the shared command at
 `~/Herd/.dynamic-commands/uploadiny.md` to select a project, inspect its latest
@@ -169,16 +196,17 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.12.0`, candidate, not deployed. Its iOS
-marketing version is `0.12.0`; this release build is `29`. It hardens upload
-recovery, prevents cleanup of feedback changed since review, paginates project
-history, adds keyboard annotation controls, and retains failed file cleanup
-for scheduled retry. Two additive migrations create staged cleanup intents
-and failed-job storage. No new environment keys are required.
+The release candidate is `v0.13.0`, candidate, not deployed. Its iOS
+marketing version is `0.13.0`; this release build is `30`. Agent retrieval adds
+requested image widths, annotated screenshots in the first feedback call,
+a client-held newer-batch cursor, and optional omission of AI descriptions.
+No migrations or new environment keys are required. PHPStan advances from
+2.3.0 to 2.3.1 (development only); phpdotenv retains v5.7.0 with its updated
+upstream repository URL. Shipped mobile dependencies are unchanged.
 
-The previous release, `v0.11.2` (`a212081588`), completed FAST shipping on
-7 October 2026 at 22:57:34 UTC in 101 seconds. Its matching completed receipt
-records website/API verification and signed physical iPhone 0.11.2 build 28
+The previous release, `v0.12.0` (`993b8a5907`), completed FAST shipping on
+8 October 2026 at 21:51:58 UTC in 112 seconds. Its matching completed receipt
+records website/API verification and signed physical iPhone 0.12.0 build 29
 installation and launch. Manual browser, Share Sheet, and provider-client
 acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

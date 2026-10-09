@@ -1,6 +1,30 @@
 # Where Are We — Uploadiny
 
-## 2026-10-08 — v0.12.0 candidate, not deployed
+## 2026-10-09 — v0.13.0 candidate, not deployed
+
+- Candidate iOS metadata: 0.13.0 build 30; mobile behavior and shipped
+  dependencies unchanged.
+- Agent retrieval: optional image_width (e.g. 900) preserves aspect ratio and
+  private originals; get_feedback includes saved annotated screenshots when
+  marks exist; include_annotated_images=false opts out.
+- after_chunk returns the latest completed batch newer than the project-scoped
+  cursor, or chunk:null. It does not detect edits or append operations within
+  a batch. Unavailable cursors fail clearly.
+- include_descriptions=false omits AI metadata from all feedback/media reads
+  while retaining owner feedback and the full stored review-token identity.
+- Agent REST supports the same cursor and description toggle. Combined inline
+  image delivery retains file, decoded-image, and response memory safeguards.
+- Development dependency: phpstan/phpstan 2.3.0 → 2.3.1. Runtime phpdotenv
+  remains v5.7.0; only upstream repository URLs change in the lockfile.
+- No new migrations, environment keys, or destructive migration review flag.
+  PHP coverage and local HTTPS smoke cover the retrieval options. Browser,
+  physical Share Sheet, and provider-client acceptance remain separate.
+
+## 2026-10-08 — v0.12.0 deployed via FAST
+
+- Shipped `993b8a5907` on 2026-10-08 at 21:51:58 UTC in 112 seconds.
+  The matching completed receipt records website/API verification and signed
+  physical iPhone 0.12.0 build 29 installation and launch.
 
 - Candidate iOS metadata: 0.12.0 build 29. Share Extension append mode requires
   a successful current-project lookup; retry retains originals and notes.

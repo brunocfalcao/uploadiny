@@ -8,6 +8,7 @@ use App\Project;
 use App\UploadChunk;
 use App\UploadImage;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 final class FeedbackReader
 {
@@ -39,13 +40,21 @@ final class FeedbackReader
     }
 
     /** @return array<string, mixed> */
-    public function latest(Project $project): array
+    public function latest(Project $project, bool $includeDescriptions = true, ?string $afterChunk = null): array
     {
-        $chunk = $project->chunks()->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->newestFinishedFirst()->first();
+        $query = $project->chunks();
+        if ($afterChunk !== null) {
+            $cursor = $project->chunks()->where('uuid', $afterChunk)->first();
+            if ($cursor === null) {
+                throw ValidationException::withMessages(['after_chunk' => 'The cursor batch is unavailable in this project. Fetch without after_chunk to establish a new cursor.']);
+            }
+            $query->finishedAfter($cursor);
+        }
+        $chunk = $query->with(['images' => fn ($query) => $query->where('project_id', $project->id)->orderBy('id')])->newestFinishedFirst()->first();
         if ($chunk === null) {
             return ['project' => $this->projectData($project), 'chunk' => null];
         }
-        $images = $chunk->images->map(fn (UploadImage $image): array => $this->image($image))->values()->all();
+        $images = $chunk->images->map(fn (UploadImage $image): array => $this->image($image, $includeDescriptions))->values()->all();
 
         return [
             'project' => $this->projectData($project),
@@ -58,9 +67,12 @@ final class FeedbackReader
      *
      * @return array<string, mixed>
      */
-    public function image(UploadImage $image): array
+    public function image(UploadImage $image, bool $includeDescriptions = true): array
     {
         $data = $image->agentData();
+        if (! $includeDescriptions) {
+            unset($data['description'], $data['description_status'], $data['description_error'], $data['description_model']);
+        }
         $annotations = $data['annotations'];
         unset($data['annotations']);
         $marks = $this->marks($annotations);

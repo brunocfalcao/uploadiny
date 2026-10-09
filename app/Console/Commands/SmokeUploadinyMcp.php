@@ -41,7 +41,11 @@ final class SmokeUploadinyMcp extends Command
             $user = User::query()->sole();
             $project = Project::create(['name' => 'MCP smoke '.Str::uuid(), 'slug' => 'mcp-smoke-'.Str::uuid()]);
             $chunk = UploadChunk::create(['upload_project_id' => $project->id, 'status' => 'complete', 'expected_images' => 2, 'completed_at' => now()]);
-            $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', true);
+            $canvas = imagecreatetruecolor(1320, 2868);
+            ob_start();
+            imagepng($canvas);
+            $png = (string) ob_get_clean();
+            unset($canvas);
             $disk->put($fixture.'/original.png', $png);
             $disk->put($fixture.'/annotated.png', $png);
             $videoPath = $fixture.'/recording.mp4';
@@ -56,6 +60,8 @@ final class SmokeUploadinyMcp extends Command
                     'name' => 'mcp-smoke-'.$file, 'original_name' => $file, 'path' => $fixture.'/'.$file,
                     'mime_type' => $mime, 'size' => $disk->size($fixture.'/'.$file), 'comments' => $comment,
                     'feedback_revision' => 2, 'description_status' => 'ready',
+                    'description' => 'Smoke AI description.',
+                    'annotations' => $mime === 'image/png' ? [['tool' => 'rectangle', 'points' => [['x' => 0.1, 'y' => 0.2], ['x' => 0.3, 'y' => 0.4]]]] : [],
                     'annotated_path' => $mime === 'image/png' ? $fixture.'/annotated.png' : null,
                 ]);
             }
@@ -91,12 +97,28 @@ final class SmokeUploadinyMcp extends Command
             $reviewToken = $feedback['structuredContent']['chunk']['review_token'] ?? null;
             $this->require(is_string($reviewToken) && preg_match('/^[a-f0-9]{64}\z/', $reviewToken) === 1, 'The reviewed feedback token was not delivered.');
             $this->require(count($assets) === 2 && $assets[0]['id'] === $images[0]->uuid && $assets[0]['comments'] === 'Make the buttons bigger.' && $assets[0]['revision'] === 2, 'Exact feedback was not delivered.');
+            $this->require(($feedback['content'][2]['type'] ?? null) === 'image' && base64_decode($feedback['content'][2]['data'], true) === $png, 'The annotated screenshot was not included in the first feedback call.');
+
+            $this->step = 'retrieval options';
+            $compact = $this->callTool($agent, 'get_feedback', ['project_canonical' => $project->canonical, 'image_width' => 900, 'include_descriptions' => false]);
+            $size = getimagesizefromstring(base64_decode($compact['content'][2]['data'], true));
+            $this->require($size !== false && $size[0] === 900 && $size[1] === 1955, 'The annotated preview did not preserve its aspect ratio at 900 pixels wide.');
+            $this->require(! array_key_exists('description', $compact['structuredContent']['chunk']['images'][0])
+                && ! str_contains($compact['content'][0]['text'], 'Smoke AI description.')
+                && $compact['structuredContent']['chunk']['review_token'] === $reviewToken, 'Description omission changed review identity or leaked AI context.');
+            $metadataOnly = $this->callTool($agent, 'get_feedback', ['project_canonical' => $project->canonical, 'include_annotated_images' => false]);
+            $this->require(count($metadataOnly['content']) === 1, 'Metadata-only feedback included image content.');
+            $noNewBatch = $this->callTool($agent, 'get_feedback', ['project_canonical' => $project->canonical, 'after_chunk' => $chunk->uuid]);
+            $this->require($noNewBatch['structuredContent']['chunk'] === null, 'The already reviewed batch was returned as new.');
 
             $this->step = 'private image delivery';
             foreach (['original', 'annotated'] as $variant) {
                 $asset = $this->callTool($agent, 'get_asset', ['asset_id' => $images[0]->uuid, 'variant' => $variant]);
                 $this->require($asset['content'][1]['type'] === 'image' && base64_decode($asset['content'][1]['data'], true) === $png, 'Image bytes did not match the fixture.');
             }
+            $preview = $this->callTool($agent, 'get_asset', ['asset_id' => $images[0]->uuid, 'image_width' => 900, 'include_descriptions' => false]);
+            $size = getimagesizefromstring(base64_decode($preview['content'][1]['data'], true));
+            $this->require($size !== false && $size[0] === 900 && $size[1] === 1955 && ! array_key_exists('description', $preview['structuredContent']['asset']), 'Original preview options were not honored.');
 
             $this->step = 'recording frame delivery';
             $frames = $this->callTool($agent, 'get_recording_frames', ['asset_id' => $images[1]->uuid, 'timestamps' => [0, 0.5]]);
@@ -123,7 +145,7 @@ final class SmokeUploadinyMcp extends Command
             $this->step = 'credential revocation';
             PersonalAccessToken::findToken($agent)?->delete();
             $this->require($this->rpc($agent, 'tools/list')->status() === 401, 'A revoked key still worked.');
-            $this->info('MCP HTTPS smoke passed: authentication, initialization, five tools, exact feedback, both image variants, recording frames, explicit fixture deletion, and revocation.');
+            $this->info('MCP HTTPS smoke passed: authentication, initialization, five tools, exact feedback, inline annotations, 900px previews, batch cursor, description omission, both image variants, recording frames, explicit fixture deletion, and revocation.');
 
             return self::SUCCESS;
         } catch (Throwable $error) {
