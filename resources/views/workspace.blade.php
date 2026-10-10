@@ -21,7 +21,11 @@
             <div><p class="breadcrumb">Your workspace / {{ $project?->name ?? 'Projects' }}</p><h1>{{ $project?->name ?? 'Your projects' }}</h1>@if($project?->description)<p class="muted project-description">{{ $project->description }}</p>@endif</div>
             <div class="header-actions">
                 <a class="button" href="{{ route('agent-access.show') }}">Agent API access</a>
-                @if($project)<button type="button" class="button" data-edit-project>Project settings</button><button type="button" class="button button-primary" data-upload-trigger>Upload files</button>@else<button type="button" class="button button-primary" data-new-project>Create project</button>@endif
+                @if($project)
+                    <button type="button" class="button" data-edit-project>Project settings</button>
+                    <form id="delete-all-chunks-form" method="POST" action="{{ route('projects.chunks.destroy', $project) }}" data-confirm-action="Permanently delete all chunks in &quot;{{ $project->name }}&quot;, including drafts, files, comments, and annotations? The project will be kept." data-confirm-label="Deleting…">@csrf @method('DELETE')<button type="submit" class="button button-danger">Delete all Chunks</button></form>
+                    <button type="button" class="button button-primary" data-upload-trigger>Upload files</button>
+                @else<button type="button" class="button button-primary" data-new-project>Create project</button>@endif
             </div>
         </header>
         @if(session('status'))<div class="notice" role="status">{{ session('status') }}</div>@endif

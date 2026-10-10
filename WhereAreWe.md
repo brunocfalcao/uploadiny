@@ -1,9 +1,29 @@
 # Where Are We — Uploadiny
 
-## 2026-10-10 — v0.13.1 candidate, not deployed
+## 2026-10-10 — v0.14.0 candidate, not deployed
+
+- Website adds **Delete all Chunks** beside Project settings. Confirmation
+  clears all published and draft feedback in the current project, including
+  private originals, drawings, comments and annotations. Keeps the project
+  and files assigned to other projects, including shared chunks.
+- Uses the existing transactional recovery journal and durable cleanup.
+  Regression cases cover a single chunk, uploads beyond the 24-card page,
+  drafts, moved files, empty/repeated clearing, authentication/CSRF, and
+  restoration after file-staging failure.
+- Candidate iPhone metadata: 0.14.0 build 32; mobile behavior and dependencies
+  unchanged. No migrations, environment keys or migration-review flag.
+- Passed: 178 PHP tests / 1,952 assertions, 102 web tests, 20 native checks,
+  full Pint, Vite build and mobile TypeScript checks. PHPUnit has no TIA.
+- Browser and physical Share Sheet interaction acceptance remain separate.
+
+## 2026-10-09 — v0.13.1 deployed via FAST
+
+- Shipped `c3beef1cd1` on 2026-10-09 at 22:32:16 UTC in 103 seconds.
+  The matching completed FAST receipt records website/API verification and
+  signed physical iPhone 0.13.1 build 31 installation and launch.
 
 - Addressed all seven bugs, the Keychain duplication, and cleanup diagnostics
-  from the 2026-10-09 assessment. iPhone 0.13.1 build 31; not deployed.
+  from the 2026-10-09 assessment. iPhone 0.13.1 build 31.
 - Interrupted deletion retains a private recovery map before staging. Retry
   restores surviving originals or finishes committed cleanup; unrelated files
   and assets moved to other projects remain protected.

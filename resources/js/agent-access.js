@@ -46,6 +46,6 @@ export function enhanceAgentAccess(root = document) {
         }
         const button = form.querySelector('button[type="submit"]');
         button.disabled = true;
-        button.textContent = 'Saving…';
+        button.textContent = form.dataset.confirmLabel ?? 'Saving…';
     }));
 }

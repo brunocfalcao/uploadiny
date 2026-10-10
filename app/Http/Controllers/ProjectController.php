@@ -45,6 +45,13 @@ class ProjectController extends Controller
         return redirect()->route('projects.show', $project)->with('status', 'Project saved.');
     }
 
+    public function destroyChunks(Project $project, WorkspaceDeletion $deletion): RedirectResponse
+    {
+        $deletion->projectChunks($project);
+
+        return redirect()->route('projects.show', $project)->with('status', 'All chunks and their files, comments, and annotations deleted.');
+    }
+
     public function destroy(Project $project, WorkspaceDeletion $deletion): RedirectResponse
     {
         $deletion->project($project);

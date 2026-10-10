@@ -19,16 +19,28 @@ class WorkspaceDeletion
 {
     public function project(Project $project): void
     {
-        $this->remove(function () use ($project): array {
+        $this->projectContents($project, true);
+    }
+
+    public function projectChunks(Project $project): void
+    {
+        $this->projectContents($project, false);
+    }
+
+    private function projectContents(Project $project, bool $deleteProject): void
+    {
+        $this->remove(function () use ($project, $deleteProject): array {
             $locked = Project::query()->lockForUpdate()->findOrFail($project->id);
             $images = $locked->images()->lockForUpdate()->get();
 
-            return [$images, function () use ($locked, $images): void {
+            return [$images, function () use ($locked, $images, $deleteProject): void {
                 $locked->images()->delete();
                 UploadChunk::where(function ($query) use ($locked, $images): void {
                     $query->whereIn('id', $images->pluck('chunk_id'))->orWhere('upload_project_id', $locked->id);
                 })->whereDoesntHave('images')->delete();
-                $locked->delete();
+                if ($deleteProject) {
+                    $locked->delete();
+                }
             }];
         });
     }

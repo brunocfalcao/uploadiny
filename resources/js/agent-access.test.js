@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { enhanceAgentAccess } from './agent-access.js';
 
-function controls() {
+function controls(confirmation = {}) {
     const field = { id: 'agent-api-key', value: 'sample-api-key-not-a-credential', type: 'password', focus() { this.focused = true; }, select() { this.selected = true; } };
     const status = { textContent: '' };
     const reveal = {
@@ -15,7 +15,7 @@ function controls() {
     const copy = { dataset: { copyField: field.id }, addEventListener(type, callback) { this[type] = callback; } };
     const submit = { disabled: false, textContent: 'Rotate API key' };
     const form = {
-        dataset: { confirmAction: 'Rotate the API key?' },
+        dataset: { confirmAction: 'Rotate the API key?', ...confirmation },
         querySelector() { return submit; },
         addEventListener(type, callback) { this[type] = callback; },
     };
@@ -88,4 +88,31 @@ test('cancelled rotation leaves the form usable and confirmed rotation blocks re
     assert.equal(prevented, false);
     assert.equal(submit.disabled, true);
     assert.equal(submit.textContent, 'Saving…');
+});
+
+test('cancelled chunk deletion keeps the form usable and confirmation shows the deletion label', t => {
+    const previous = globalThis.confirm;
+    t.after(() => { if (previous) globalThis.confirm = previous; else delete globalThis.confirm; });
+    const warning = 'Permanently delete all chunks in "Feedback project", including drafts, files, comments, and annotations? The project will be kept.';
+    const { form, submit } = controls({ confirmAction: warning, confirmLabel: 'Deleting…' });
+    submit.textContent = 'Delete all Chunks';
+    let accepted = false;
+    const messages = [];
+    globalThis.confirm = message => { messages.push(message); return accepted; };
+    const cancelled = new Event('submit', { cancelable: true });
+
+    form.submit(cancelled);
+
+    assert.equal(cancelled.defaultPrevented, true);
+    assert.equal(submit.disabled, false);
+    assert.equal(submit.textContent, 'Delete all Chunks');
+    accepted = true;
+    const confirmed = new Event('submit', { cancelable: true });
+
+    form.submit(confirmed);
+
+    assert.deepEqual(messages, [warning, warning]);
+    assert.equal(confirmed.defaultPrevented, false);
+    assert.equal(submit.disabled, true);
+    assert.equal(submit.textContent, 'Deleting…');
 });

@@ -28,6 +28,7 @@ Route::middleware('auth')->group(function (): void {
     Route::patch('/projects/{project}', [ProjectController::class, 'update'])->name('projects.update');
     Route::delete('/projects/{project}', [ProjectController::class, 'destroy'])->name('projects.destroy');
     Route::post('/projects/{project}/chunks', [ChunkController::class, 'store'])->name('chunks.store');
+    Route::delete('/projects/{project}/chunks', [ProjectController::class, 'destroyChunks'])->name('projects.chunks.destroy');
     Route::get('/chunks', [ChunkController::class, 'index'])->name('chunks.index');
     Route::post('/images/{image}/chunk', [ImageController::class, 'transferChunk'])->name('images.transfer-chunk');
     Route::get('/images/{image}', [ImageController::class, 'show'])->name('images.show');
