@@ -7,6 +7,12 @@ import { clipboardFiles } from './clipboard-files';
 import { keepLoadedImages } from './gallery-images';
 import { appendTarget, formatLastUpload, localizeTimes, readAppendPreference, writeAppendPreference } from './append-to-last';
 enhanceAgentAccess();
+document.querySelectorAll('[data-dismiss-notice]').forEach(button => button.addEventListener('click', () => {
+    button.parentElement.querySelector('.notice').hidden = true;
+}));
+document.querySelectorAll('[data-transient-notice]').forEach(notice => {
+    setTimeout(() => { notice.hidden = true; }, 6000);
+});
 import { enhanceProjectSelect } from './select';
 enhanceProjectSelect(document.getElementById('move-project'));
 import {
@@ -112,6 +118,7 @@ if (workspace) {
     let gradientPick = null;
     const thickness = document.getElementById('drawing-width');
     const message = document.getElementById('workspace-message');
+    let noticeTimer = null;
     const comments = document.getElementById('image-comments');
     const saveState = document.getElementById('save-state');
     const calloutEditor = createCalloutEditor({
@@ -125,8 +132,11 @@ if (workspace) {
     });
 
     function notify(text, error = false) {
+        clearTimeout(noticeTimer);
         message.textContent = text;
         message.classList.toggle('error-message', error);
+        message.setAttribute('role', error ? 'alert' : 'status');
+        message.setAttribute('aria-live', error ? 'assertive' : 'polite');
         message.hidden = false;
     }
     function request(url, options = {}) { return requestJson(url, options, token); }
@@ -841,7 +851,6 @@ if (workspace) {
     let pageVersion = 0;
     let polling = false;
     let arrivalAnnounced = null;
-    let noticeTimer = null;
     function notifyTransient(text) {
         notify(text);
         clearTimeout(noticeTimer);

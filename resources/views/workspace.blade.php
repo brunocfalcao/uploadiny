@@ -28,9 +28,6 @@
                 @else<button type="button" class="button button-primary" data-new-project>Create project</button>@endif
             </div>
         </header>
-        @if(session('status'))<div class="notice" role="status">{{ session('status') }}</div>@endif
-        @if($errors->any())<div class="notice error-message" role="alert">{{ $errors->first() }}</div>@endif
-        <div id="workspace-message" role="status" aria-live="polite" class="notice" hidden></div>
         @if($project)
             <div class="project-canonical">
                 <label for="project-canonical">Project code</label>
@@ -199,3 +196,9 @@
 </dialog>
 <script type="application/json" id="workspace-config">{!! json_encode(['open_chunk_id' => ($openChunk ?? null)?->uuid, 'open_chunk_images' => ($openChunk ?? null)?->images->pluck('uuid')->all() ?? [], 'project' => $project ? ['id' => $project->id, 'name' => $project->name, 'slug' => $project->slug, 'description' => $project->description] : null, 'create_url' => route('projects.store'), 'project_url' => $project ? route('projects.show', $project) : null, 'upload_url' => $project ? route('chunks.start', $project) : null, 'last_chunk_url' => $project ? route('projects.last-chunk', $project) : null, 'chunk_files_url' => $project ? route('projects.chunk-files', [$project, '__chunk__']) : null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
+@push('toasts')
+    @if($errors->any())
+        @include('toast', ['text' => $errors->first(), 'error' => true])
+    @endif
+    @include('toast', ['id' => 'workspace-message', 'hidden' => true])
+@endpush

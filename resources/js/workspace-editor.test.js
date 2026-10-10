@@ -68,9 +68,11 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     document.visibilityState = 'visible';
     node('workspace').dataset = { latest: 'chunk-one', latestCompleted: 't1', latestCount: '3' };
     node('workspace-message').hidden = true;
+    node('dismiss-message').parentElement = { querySelector: () => node('workspace-message') };
+    node('flash-message').textContent = 'Project saved.';
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
     const cards = () => node('chunk-list').children.length ? node('chunk-list').children : [card];
-    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : [];
+    document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : selector === '[data-dismiss-notice]' ? [node('dismiss-message')] : selector === '[data-transient-notice]' ? [node('flash-message')] : [];
     node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', chunk_files_url: '/projects/1/chunks/__chunk__/files', upload_url: '/projects/1/chunks/start', ...extraConfig });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
@@ -463,6 +465,49 @@ test('the arrival notice hides itself after a while but not when another message
     ui.arrive('chunk-three', 2); await ui.poll();
     ui.node('workspace-message').textContent = 'Different message';
     ui.timers.forEach(callback => callback());
+    assert.equal(ui.node('workspace-message').hidden, false);
+});
+
+test('dismissing an arrival toast leaves the gallery intact and later arrivals remain visible', async t => {
+    const ui = workspace(t); ui.arrive(); await ui.poll();
+    const card = ui.node('chunk-list').children[0];
+    assert.equal(ui.node('workspace-message').hidden, false);
+
+    ui.node('dismiss-message').click();
+
+    assert.equal(ui.node('workspace-message').hidden, true);
+    assert.equal(ui.node('chunk-list').children[0], card);
+    assert.equal(ui.reloads, 0);
+    ui.arrive('chunk-three', 2); await ui.poll();
+    assert.equal(ui.node('workspace-message').hidden, false);
+    assert.equal(ui.node('workspace-message').textContent, 'New upload arrived.');
+});
+
+test('a warning replacing a transient toast stays visible even when the text is identical', async t => {
+    const ui = workspace(t); ui.arrive(); await ui.poll();
+    await ui.open();
+    ui.respondWith(() => { throw new Error('New upload arrived.'); });
+
+    ui.type(ui.node('image-comments'), 'Unsaved feedback');
+    ui.node('save-feedback').click(); await ui.settle();
+
+    assert.equal(ui.node('workspace-message').textContent, 'New upload arrived.');
+    assert.equal(ui.node('workspace-message').getAttribute('role'), 'alert');
+    assert.equal(ui.node('workspace-message').getAttribute('aria-live'), 'assertive');
+    ui.timers.forEach(callback => callback());
+    assert.equal(ui.node('workspace-message').hidden, false);
+    assert.equal(ui.node('image-comments').value, 'Unsaved feedback');
+});
+
+test('server confirmation expiry leaves persistent workspace messages untouched', async t => {
+    const ui = workspace(t); await ui.open();
+    assert.equal(ui.node('flash-message').hidden, false);
+    ui.arrive(); await ui.poll();
+    assert.equal(ui.node('workspace-message').textContent, arrivalNotice);
+
+    ui.timers.forEach(callback => callback());
+
+    assert.equal(ui.node('flash-message').hidden, true);
     assert.equal(ui.node('workspace-message').hidden, false);
 });
 

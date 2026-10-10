@@ -1,6 +1,30 @@
 # Where Are We — Uploadiny
 
-## 2026-10-10 — v0.14.1 candidate, not deployed
+## 2026-10-11 — v0.14.2 candidate, not deployed
+
+- Website status and workspace notifications use dismissible overlay toasts
+  outside page layout. Projects, chunk galleries, editor, Agent API access,
+  and sign-in share the same region. Desktop uses the bottom-right corner;
+  mobile uses the top, clear of the fixed upload button.
+- Arrivals, deletions, and server confirmations expire after six seconds.
+  Persistent warnings remain dismissible. Replacing a transient notice with
+  an error cancels its old expiry, including identical message text.
+- Release regression coverage checks all rendered page variants, escaped
+  messages, dismissal without gallery reload, later arrivals, flash expiry,
+  and persistent errors. Existing arrival/feedback tests remain intact.
+- Candidate iPhone metadata: 0.14.2 build 34. Mobile behavior and dependencies
+  unchanged. No migrations, environment keys or migration-review flag.
+- Passed: 183 PHP tests / 2,014 assertions, 113 web tests, 20 native checks,
+  full Pint, Vite build, Composer validation, and mobile TypeScript checks.
+  PHPUnit has no TIA.
+- Browser visuals and physical Share Sheet interaction remain unverified.
+
+
+## 2026-10-10 — v0.14.1 deployed via FAST
+
+- Shipped `f83601cef2` on 2026-10-10 at 15:32:23 UTC in 148 seconds.
+  The matching completed FAST receipt records website/API verification and
+  signed physical iPhone 0.14.1 build 33 installation and launch.
 
 - Current-chunk pagination refreshes every eight seconds while visible and
   when returning to the tab, including older chunks outside the gallery page.

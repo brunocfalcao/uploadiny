@@ -8,8 +8,6 @@
     <section class="access-section" aria-labelledby="access-title">
         <h1 id="access-title">Agent API access</h1>
         <p class="muted access-intro">Connect Claude or Codex to your projects, screenshots, recordings, and feedback. This key can read feedback and permanently delete completed feedback chunks through MCP when you request it.</p>
-        @if(session('status'))<div class="notice" role="status">{{ session('status') }}</div>@endif
-        @if($errors->any())<div class="notice error-message" role="alert">{{ $errors->first() }}</div>@endif
         @if($apiKey)
             <label for="agent-api-key">API key</label>
             <div class="credential-controls">
@@ -38,3 +36,8 @@
     </section>
 </main>
 @endsection
+@push('toasts')
+    @if($errors->any())
+        @include('toast', ['text' => $errors->first(), 'error' => true])
+    @endif
+@endpush

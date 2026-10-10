@@ -13,5 +13,11 @@
 </head>
 <body>
     @yield('content')
+    <div class="toast-region" aria-label="Notifications">
+        @if(session('status'))
+            @include('toast', ['text' => session('status'), 'transient' => true])
+        @endif
+        @stack('toasts')
+    </div>
 </body>
 </html>
