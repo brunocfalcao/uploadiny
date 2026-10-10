@@ -1,6 +1,27 @@
 # Where Are We — Uploadiny
 
-## 2026-10-10 — v0.14.0 candidate, not deployed
+## 2026-10-10 — v0.14.1 candidate, not deployed
+
+- Current-chunk pagination refreshes every eight seconds while visible and
+  when returning to the tab, including older chunks outside the gallery page.
+- Appended, deleted and moved files update navigation without replacing the
+  current image or unsaved feedback. A removed clean file advances to a
+  surviving neighbour; an empty chunk returns to the gallery without reloading.
+  Removed files with unsaved feedback retain that feedback until the owner leaves.
+- Regression coverage exercises append/delete, older chunks, stale responses,
+  connectivity failures, unsaved feedback, session authentication, and project
+  isolation. The browser endpoint returns only ordered UUIDs of completed files.
+- Candidate iPhone metadata: 0.14.1 build 33. Mobile behavior and dependencies
+  unchanged. No migrations, environment keys or migration-review flag.
+- Passed: 181 PHP tests / 1,975 assertions, 110 web tests, 20 native checks,
+  full Pint, Vite build and mobile TypeScript checks. PHPUnit has no TIA.
+- Browser and physical Share Sheet interaction acceptance remain separate.
+
+## 2026-10-10 — v0.14.0 deployed via FAST
+
+- Shipped `cfcdf8c58e` on 2026-10-10 at 14:46:18 UTC in 109 seconds.
+  The matching completed FAST receipt records website/API verification and
+  signed physical iPhone 0.14.0 build 32 installation and launch.
 
 - Website adds **Delete all Chunks** beside Project settings. Confirmation
   clears all published and draft feedback in the current project, including
@@ -10,7 +31,7 @@
   Regression cases cover a single chunk, uploads beyond the 24-card page,
   drafts, moved files, empty/repeated clearing, authentication/CSRF, and
   restoration after file-staging failure.
-- Candidate iPhone metadata: 0.14.0 build 32; mobile behavior and dependencies
+- iPhone metadata: 0.14.0 build 32; mobile behavior and dependencies
   unchanged. No migrations, environment keys or migration-review flag.
 - Passed: 178 PHP tests / 1,952 assertions, 102 web tests, 20 native checks,
   full Pint, Vite build and mobile TypeScript checks. PHPUnit has no TIA.

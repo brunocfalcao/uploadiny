@@ -26,7 +26,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
     const updateLocation = url => { const parsed = new URL(url, 'https://workspace.test'); where.search = parsed.search; where.hash = parsed.hash; };
     const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); updateLocation(url); }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); updateLocation(url); } };
-    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
+    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, files: ['one', 'two', 'three'], fileRequests: 0, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
     class Element {
         constructor(id = '', tagName = 'div') {
             Object.assign(this, { id, tagName, value: '', textContent: '', children: [], listeners: {}, dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, parentElement: {}, disabled: false, hidden: false, open: false, clientWidth: 800, clientHeight: 600 });
@@ -71,7 +71,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     document.querySelector = selector => selector === '[data-workspace]' ? node('workspace') : new Element();
     const cards = () => node('chunk-list').children.length ? node('chunk-list').children : [card];
     document.querySelectorAll = selector => selector === '[data-chunk-images]' || selector === '[data-open-image]' ? cards() : selector === '[data-tool]' ? [selectTool, tool] : [];
-    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', upload_url: '/projects/1/chunks/start', ...extraConfig });
+    node('workspace-config').textContent = JSON.stringify({ project: { id: 1 }, project_url: '/projects/1', last_chunk_url: '/projects/1/last-chunk', chunk_files_url: '/projects/1/chunks/__chunk__/files', upload_url: '/projects/1/chunks/start', ...extraConfig });
     node('drawing-color').value = '#ef4444'; node('drawing-color-hex').value = '#ef4444'; node('drawing-width').value = '6';
     const assets = Object.fromEntries(['one', 'two', 'three'].map(id => [id, { id, name: id, comments: '', annotations: [], revision: 0, media_type: 'image', description_status: 'ready', preview_url: id }]));
     const writes = []; const starts = []; const deletions = []; const duplicates = []; let respond = async () => {};
@@ -102,6 +102,11 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
             }
         },
         fetch: async (url, options = {}) => {
+            if (url.startsWith('/projects/1/chunks/') && url.endsWith('/files')) {
+                remote.fileRequests++;
+                if (remote.fileResponse) return remote.fileResponse(url);
+                return { ok: true, json: async () => ({ files: remote.files.filter(id => assets[id]) }) };
+            }
             if (url === '/projects/1/last-chunk') {
                 remote.chunkRequests++;
                 if (remote.chunkResponse) return remote.chunkResponse();
@@ -137,7 +142,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
         where, urlCalls, async pop(search) { where.search = search; for (const listener of popstate) listener({}); await tick(); await tick(); },
         node, assets, writes, starts, storage, deletions, duplicates, document, tool, selectTool, remote, timers, card, Element,
         get reloads() { return reloads; },
-        async poll() { intervals[0](); await tick(); },
+        async poll() { await intervals[0](); await tick(); },
         arrive(id = 'chunk-two', count = 1) {
             const fresh = new Element(); fresh.dataset = { chunkImages: JSON.stringify(['two']), openImage: 'two', chunk: id };
             remote.chunk = { id, completed_at: 't2', file_count: count };
@@ -298,11 +303,16 @@ test('deleting a file stays in the editor on the next file with one less in the 
     assert.equal(ui.where.search, '?image=two');
 });
 
-test('deleting the only file in a chunk returns to the project', async t => {
+test('deleting every file in a chunk returns to the gallery in place', async t => {
     const ui = workspace(t); await ui.open();
+    ui.remote.page = { cards: [], dataset: { latest: '', latestCompleted: '', latestCount: '' } };
     for (let remaining = 3; remaining > 0; remaining--) { ui.node('delete-image').click(); await ui.settle(); await ui.settle(); }
     assert.deepEqual(ui.deletions, ['one', 'two', 'three']);
-    assert.equal(ui.reloads, 1);
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.remote.pageRequests, 1);
+    assert.equal(ui.reloads, 0);
 });
 
 test('Select tool picks a mark, Delete removes it through autosave and Undo restores it', async t => {
@@ -468,6 +478,149 @@ test('a changed file count or completion time in the same chunk also refreshes t
     await ui.poll();
     assert.equal(ui.remote.pageRequests, 2);
     assert.equal(ui.node('workspace').dataset.latestCompleted, 't9');
+});
+
+test('the open editor updates appended-file pagination without replacing unsaved feedback', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.type(ui.node('image-comments'), 'Keep this unsaved note');
+    ui.assets.four = { ...ui.assets.one, id: 'four', name: 'four', preview_url: 'four' };
+    ui.remote.files.push('four');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 3');
+
+    await ui.poll();
+
+    assert.equal(ui.node('chunk-position').textContent, '1 of 4');
+    assert.equal(ui.node('image-comments').value, 'Keep this unsaved note');
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    assert.equal(ui.remote.pageRequests, 0);
+    assert.equal(ui.writes.length, 0);
+    ui.node('last-file').click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'four');
+});
+
+test('remote deletion updates pagination and chooses a surviving neighbour without a reload', async t => {
+    const ui = workspace(t); await ui.open();
+    delete ui.assets.two;
+
+    await ui.poll();
+
+    assert.equal(ui.node('chunk-position').textContent, '1 of 2');
+    ui.node('next-file').click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'three');
+    delete ui.assets.three;
+
+    await ui.poll();
+
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 1');
+    assert.equal(ui.node('next-file').disabled, true);
+    assert.equal(ui.reloads, 0);
+});
+
+test('remote removal of the open file retains dirty feedback until the owner leaves', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.type(ui.node('image-comments'), 'Do not lose my unsaved feedback');
+    delete ui.assets.one;
+
+    await ui.poll(); await ui.autosave();
+
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    assert.equal(ui.node('image-comments').value, 'Do not lose my unsaved feedback');
+    assert.equal(ui.node('chunk-position').textContent, 'File removed · 2 files');
+    assert.match(ui.node('workspace-message').textContent, /unsaved feedback is still here/);
+    assert.equal(ui.writes.length, 0);
+    assert.equal(ui.reloads, 0);
+    ui.arrive();
+    ui.node('close-editor').click(); await ui.settle();
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.writes.length, 0);
+});
+
+test('remote deletion of all clean files returns to the gallery without a reload', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.fileResponse = async () => ({ ok: false, status: 404, json: async () => ({ message: 'Chunk removed' }) });
+    ui.remote.chunk = null;
+    ui.remote.page = { cards: [], dataset: { latest: '', latestCompleted: '', latestCount: '' } };
+
+    await ui.poll();
+
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.reloads, 0);
+});
+
+test('deleting the last file locally returns to the gallery without a reload', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.files = ['one'];
+    await ui.poll();
+    assert.equal(ui.node('chunk-position').textContent, '1 of 1');
+    ui.remote.page = { cards: [], dataset: { latest: '', latestCompleted: '', latestCount: '' } };
+
+    ui.node('delete-image').click(); await ui.settle(); await ui.settle();
+
+    assert.deepEqual(ui.deletions, ['one']);
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.reloads, 0);
+});
+
+test('a stale membership response cannot change pagination after navigation', async t => {
+    const ui = workspace(t); await ui.open();
+    let release;
+    ui.remote.fileResponse = () => new Promise(resolve => { release = () => resolve({ ok: true, json: async () => ({ files: ['one'] }) }); });
+    ui.document.emit('visibilitychange'); await ui.settle();
+    ui.node('next-file').click(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+
+    release(); await ui.settle();
+
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('chunk-position').textContent, '2 of 3');
+    assert.equal(ui.node('next-file').disabled, false);
+});
+
+test('membership failures preserve the editor and retry on the next poll', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.fileResponse = async () => ({ ok: false, status: 500, json: async () => ({ message: 'Unavailable' }) });
+
+    await ui.poll();
+
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 3');
+    assert.equal(ui.node('workspace-message').hidden, true);
+    delete ui.assets.two;
+    ui.remote.fileResponse = null;
+
+    await ui.poll();
+
+    assert.equal(ui.node('chunk-position').textContent, '1 of 2');
+    assert.equal(ui.remote.fileRequests, 2);
+    assert.equal(ui.reloads, 0);
+});
+
+test('an older chunk outside the gallery page refreshes independently of the latest upload', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { open_chunk_id: 'older-chunk', open_chunk_images: ['one', 'two'] });
+    await ui.settle();
+    const other = new ui.Element(); other.dataset = { chunkImages: '["three"]', openImage: 'three', chunk: 'other-chunk' };
+    ui.remote.chunk = { id: 'other-chunk', completed_at: 't2', file_count: 1 };
+    ui.remote.page = { cards: [other], dataset: { latest: 'other-chunk', latestCompleted: 't2', latestCount: '1' } };
+    ui.node('close-editor').click(); await ui.settle();
+    await ui.pop('?image=one');
+    assert.equal(ui.node('chunk-position').textContent, '1 of 2');
+    ui.assets.four = { ...ui.assets.one, id: 'four', name: 'four', preview_url: 'four' };
+    ui.remote.fileResponse = async url => {
+        assert.equal(url, '/projects/1/chunks/older-chunk/files');
+        return { ok: true, json: async () => ({ files: ['one', 'two', 'four'] }) };
+    };
+
+    await ui.poll();
+
+    assert.equal(ui.node('chunk-position').textContent, '1 of 3');
+    assert.equal(ui.node('workspace').dataset.latest, 'other-chunk');
+    assert.equal(ui.reloads, 0);
 });
 
 test('an open editor keeps the gallery untouched, shows one notice and refreshes when it closes', async t => {

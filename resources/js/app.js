@@ -38,6 +38,8 @@ if (workspace) {
     let slugEdited = false;
     const operations = createWorkspaceOperations();
     let active = null;
+    let activeChunkId = null;
+    let unavailableChunkFiles = null;
     let source = null;
     let strokes = [];
     let undo = [];
@@ -263,10 +265,10 @@ if (workspace) {
         calloutEditor.place({ clientX: box.left + box.width / 2, clientY: box.top + box.height / 2 }, true);
     });
     document.getElementById('select-callout')?.addEventListener('click', () => calloutEditor.selectNext());
-    function currentChunk() { return chunkGroups.find(files => files.includes(active?.id)) || (active ? [active.id] : []); }
+    function currentChunk() { return unavailableChunkFiles ?? (chunkGroups.find(files => files.includes(active?.id)) || (active ? [active.id] : [])); }
     function updateChunkNavigation() {
         const files = currentChunk(); const index = files.indexOf(active?.id); const busy = operations.editorBusy;
-        document.getElementById('chunk-position').textContent = files.length ? `${index + 1} of ${files.length}` : '';
+        document.getElementById('chunk-position').textContent = unavailableChunkFiles !== null ? `File removed · ${files.length} ${files.length === 1 ? 'file' : 'files'}` : files.length ? `${index + 1} of ${files.length}` : '';
         document.getElementById('first-file').disabled = busy || index <= 0;
         document.getElementById('previous-file').disabled = busy || index <= 0;
         document.getElementById('next-file').disabled = busy || index < 0 || index >= files.length - 1;
@@ -302,6 +304,7 @@ if (workspace) {
     function finishNavigation() { operations.navigating = false; comments.disabled = false; updateChunkNavigation(); }
     function scheduleAutosave() {
         clearTimeout(autosaveTimer);
+        if (unavailableChunkFiles !== null) return;
         autosaveTimer = setTimeout(() => {
             if (!active || !dirty) return;
             if (draft || eraseStart || calloutEditor.busy() || operations.editorBusy) { scheduleAutosave(); return; }
@@ -338,7 +341,7 @@ if (workspace) {
         if (invalidate) loadGeneration++;
         calloutEditor.reset(); selectedIndex = null;
         video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load();
-        active = null; source = null; dirty = false;
+        active = null; activeChunkId = null; unavailableChunkFiles = null; source = null; dirty = false;
         document.getElementById('editor').hidden = true;
         document.getElementById('gallery').hidden = false;
         if (invalidate) syncImageUrl(null);
@@ -347,7 +350,7 @@ if (workspace) {
     async function closeEditor() {
         if (operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return;
         calloutEditor.finishText();
-        if (dirty && !await saveFeedback()) return;
+        if (dirty && unavailableChunkFiles === null && !await saveFeedback()) return;
         if (!leaveEditor()) return;
         const announced = arrivalAnnounced; arrivalAnnounced = null;
         const outcome = await refreshGallery(true);
@@ -398,13 +401,14 @@ if (workspace) {
         operations.navigating = true; comments.disabled = true; updateChunkNavigation();
         document.getElementById('save-feedback').disabled = true;
         const generation = ++loadGeneration;
+        const openingChunkId = chunkIdentity(id);
         try {
             const data = await request(`/images/${id}`);
             if (generation !== loadGeneration) return;
             const fromGallery = !active;
             if (active && !leaveEditor(false)) { finishNavigation(); return; }
             calloutEditor.reset(); selectedIndex = null;
-            active = data; dirty = false; source = null;
+            active = data; activeChunkId = openingChunkId; dirty = false; source = null;
             rememberChunkFile(viewStore, chunkIdentity(data.id), data.id);
             syncImageUrl(data.id, fromGallery && !fromUrl ? 'push' : 'replace');
             loadChunkDestinations(data.id);
@@ -716,6 +720,10 @@ if (workspace) {
             if (!saved || automatic || !dirty) return saved;
         }
         if (!active || operations.editorBusy || draft || eraseStart || calloutEditor.busy()) return false;
+        if (unavailableChunkFiles !== null) {
+            notify('This file is no longer in this upload chunk. Your unsaved feedback is still here; copy it before going back.', true);
+            return false;
+        }
         calloutEditor.finishText();
         clearTimeout(autosaveTimer);
         const image = active; const version = dirtyVersion;
@@ -811,14 +819,15 @@ if (workspace) {
         catch (error) { notify(error.message, true); event.target.disabled = false; }
         finally { operations.transferring = false; comments.disabled = false; updateChunkNavigation(); }
         if (!removed) return;
-        if (!neighbour) { syncImageUrl(null); location.reload(); return; }
         const card = chunkCard(deleted);
         updateMembership(card, (card ? membership(card) : files).filter(id => id !== deleted));
         if (deletedChunk === workspace.dataset.latest) workspace.dataset.latestCount = String(Math.max(0, Number(workspace.dataset.latestCount) - 1));
         chunkDestinations = null; pageVersion++;
         if (!leaveEditor(false)) return;
-        await openImage(neighbour, false, true);
-        if (!active) { syncImageUrl(null); location.reload(); return; }
+        if (neighbour) {
+            await openImage(neighbour, false, true);
+            if (!active) { syncImageUrl(null); location.reload(); return; }
+        } else { syncImageUrl(null); await refreshGallery(true); }
         event.target.disabled = false;
         notifyTransient('File deleted.');
     });
@@ -873,11 +882,39 @@ if (workspace) {
             return applyPage(page) ? 'applied' : 'failed';
         } catch { return 'failed'; }
     }
+    function navigationBusy() { return operations.busy || savePromise || drawingPointer || draft || eraseStart || calloutEditor.busy(); }
+    async function refreshOpenChunk() {
+        if (!active || !config.chunk_files_url || navigationBusy()) return;
+        const id = active.id; const chunkId = chunkIdentity(id) ?? activeChunkId;
+        if (!chunkId) return;
+        const version = pageVersion; const generation = loadGeneration;
+        let files;
+        try { ({ files } = await request(config.chunk_files_url.replace('__chunk__', encodeURIComponent(chunkId)))); }
+        catch (error) { if (error.status !== 404) throw error; files = []; }
+        if (version !== pageVersion || generation !== loadGeneration || active?.id !== id || navigationBusy()) return;
+        const previous = currentChunk();
+        if (JSON.stringify(files) === JSON.stringify(previous) && unavailableChunkFiles === null) return;
+        updateMembership(chunkCard(id), files);
+        unavailableChunkFiles = files.includes(id) ? null : files;
+        chunkDestinations = null; pageVersion++; updateChunkNavigation();
+        if (unavailableChunkFiles === null) return;
+        clearTimeout(autosaveTimer); clearTimeout(pollTimer);
+        if (dirty) {
+            notify('This file is no longer in this upload chunk. Your unsaved feedback is still here; copy it before going back.', true);
+            return;
+        }
+        const neighbour = files[Math.min(Math.max(previous.indexOf(id), 0), files.length - 1)];
+        if (!leaveEditor(false)) return;
+        if (neighbour) await openImage(neighbour, false, true);
+        else { syncImageUrl(null); await refreshGallery(true); }
+        notifyTransient('This file is no longer in this upload chunk.');
+    }
     async function pollLastChunk() {
         if (!config.last_chunk_url || polling || document.visibilityState !== 'visible') return;
         polling = true;
-        const version = pageVersion;
         try {
+            await refreshOpenChunk();
+            const version = pageVersion;
             const result = await request(config.last_chunk_url);
             if (version !== pageVersion) return;
             const seen = pageState(result.chunk);

@@ -49,6 +49,15 @@ class ChunkController extends Controller
         return response()->json(['chunk' => $chunk ? ['id' => $chunk->uuid, 'completed_at' => $chunk->completed_at?->toIso8601String() ?? $chunk->created_at->toIso8601String(), 'file_count' => $chunk->images_count] : null]);
     }
 
+    public function files(Project $project, UploadChunk $chunk): JsonResponse
+    {
+        $files = $chunk->status === 'complete'
+            ? $chunk->images()->where('project_id', $project->id)->orderBy('id')->pluck('uuid')
+            : [];
+
+        return response()->json(['files' => $files]);
+    }
+
     public function store(ChunkUploadRequest $request, Project $project, ChunkStorage $storage): JsonResponse
     {
         $chunk = $storage->store($project, $request->file('files'));

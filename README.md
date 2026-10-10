@@ -196,20 +196,19 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.14.0`, candidate, not deployed. Its iOS
-marketing version is `0.14.0`; this release build is `32`. The website adds
-**Delete all Chunks** beside Project settings. After confirmation, it clears
-all published and draft feedback in the current project, including private
-files, comments and annotations. The project and files assigned to other
-projects remain. Deletion uses the existing transactional recovery journal
-and durable cleanup retries.
+The release candidate is `v0.14.1`, candidate, not deployed. Its iOS
+marketing version is `0.14.1`; this release build is `33`. The editor refreshes
+the current chunk's pagination every eight seconds while visible and when
+returning to the tab. Appended, deleted and moved files update the arrows and
+count without reloading. Unsaved feedback stays visible if its file disappears;
+a clean editor advances to a surviving file or returns to the gallery.
 
 No migrations, new environment keys or dependency versions are required.
 Runtime and shipped mobile dependencies are unchanged.
 
-The previous release, `v0.13.1` (`c3beef1cd1`), completed FAST shipping on
-9 October 2026 at 22:32:16 UTC in 103 seconds. Its matching completed receipt
-records website/API verification and signed physical iPhone 0.13.1 build 31
+The previous release, `v0.14.0` (`cfcdf8c58e`), completed FAST shipping on
+10 October 2026 at 14:46:18 UTC in 109 seconds. Its matching completed receipt
+records website/API verification and signed physical iPhone 0.14.0 build 32
 installation and launch. Manual browser, Share Sheet, Keychain persistence,
 and VoiceOver acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.
