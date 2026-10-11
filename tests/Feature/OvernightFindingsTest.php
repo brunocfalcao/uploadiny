@@ -18,6 +18,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
@@ -119,7 +120,7 @@ class OvernightFindingsTest extends TestCase
         $intent = StagedFileDeletion::create(['paths' => ['annotations/PRIVATE-feedback.png']]);
         $this->travel(75)->seconds();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0,
+            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $this->assertSame(0, $intent->fresh()->attempts);
         $disk = Storage::disk('local');
@@ -132,13 +133,13 @@ class OvernightFindingsTest extends TestCase
         Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
         app(WorkspaceDeletion::class)->cleanupPending();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 1, 'deferred' => 1, 'last_attempt_at' => '2026-10-10T01:01:15+00:00', 'recovery_journals' => 0,
+            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 1, 'deferred' => 1, 'last_attempt_at' => '2026-10-10T01:01:15+00:00', 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $this->assertSame('old private bytes', $disk->get('annotations/PRIVATE-feedback.png'));
         $fails = false;
         app(WorkspaceDeletion::class)->cleanupPending();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0,
+            'pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $disk->assertMissing('annotations/PRIVATE-feedback.png');
     }
@@ -198,6 +199,43 @@ class OvernightFindingsTest extends TestCase
         $this->flushHeaders()->withToken($user->createToken('agent', UploadinyTokenAbility::agent())->plainTextToken)
             ->getJson(route('api.projects.latest', $project))->assertOk()->assertJsonCount(2, 'chunk.images')->assertSee('private old note');
         $this->assertSame('private other project', $other->fresh()->comments);
+    }
+
+    public function test_phone_completion_hydrates_only_new_images_while_browser_completion_keeps_the_full_batch(): void
+    {
+        Storage::fake('local');
+        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        $project = Project::factory()->create(['slug' => 'completion-hydration']);
+        $target = UploadChunk::factory()->create(['status' => 'complete', 'completed_at' => now()]);
+        for ($index = 0; $index < 100; $index++) {
+            UploadImage::factory()->create([
+                'name' => 'hydration-old-'.$index,
+                'project_id' => $project->id,
+                'chunk_id' => $target->id,
+            ]);
+        }
+        $draft = UploadChunk::factory()->create(['status' => 'uploading', 'upload_project_id' => $project->id, 'append_to_chunk_id' => $target->id, 'expected_images' => 1]);
+        $new = UploadImage::factory()->create(['name' => 'hydration-phone-new', 'project_id' => $project->id, 'chunk_id' => $draft->id]);
+        $user = User::factory()->create(['email' => 'completion-hydration@example.test']);
+        $phone = $user->createToken('phone', UploadinyTokenAbility::phone())->plainTextToken;
+        $retrieved = [];
+        $event = 'eloquent.retrieved: '.UploadImage::class;
+        Event::listen($event, function (UploadImage $image) use (&$retrieved): void {
+            $retrieved[] = $image->id;
+        });
+
+        try {
+            $this->withToken($phone)->postJson(route('api.chunks.complete', $draft))->assertOk()->assertJsonCount(1, 'images')->assertJsonPath('images.0.id', $new->uuid);
+        } finally {
+            Event::forget($event);
+        }
+
+        $this->assertSame([$new->id], array_values(array_unique($retrieved)));
+
+        $browserDraft = UploadChunk::factory()->create(['status' => 'uploading', 'upload_project_id' => $project->id, 'append_to_chunk_id' => $target->id, 'expected_images' => 1]);
+        $browserNew = UploadImage::factory()->create(['name' => 'hydration-browser-new', 'project_id' => $project->id, 'chunk_id' => $browserDraft->id]);
+        $this->app['auth']->forgetGuards();
+        $this->flushHeaders()->actingAs($user)->postJson(route('chunks.complete', $browserDraft))->assertOk()->assertJsonCount(102, 'images')->assertJsonPath('images.101.id', $browserNew->uuid);
     }
 
     public function test_start_enqueue_failure_removes_only_its_unpublished_empty_draft(): void

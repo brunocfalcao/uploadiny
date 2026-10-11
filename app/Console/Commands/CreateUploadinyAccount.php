@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\User;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
@@ -24,20 +25,40 @@ class CreateUploadinyAccount extends Command
 
             return self::FAILURE;
         }
-        if (User::where('email', $email)->exists()) {
-            $this->error('This account already exists. Its password was not changed.');
 
-            return self::FAILURE;
-        }
-        if (User::query()->exists()) {
-            $this->error('Uploadiny already has its personal account.');
-
+        if (! $this->accountAvailable($email)) {
             return self::FAILURE;
         }
         $password = $this->option('generate') ? Str::password(24) : $this->secret('Password (at least 12 characters)');
         if (! is_string($password) || strlen($password) < 12) {
             $this->error('Use at least 12 characters.');
 
+            return self::FAILURE;
+        }
+
+        return Cache::lock('uploadiny:account', 600)->block(30, fn (): int => $this->createAccount($email, $password));
+    }
+
+    private function accountAvailable(string $email): bool
+    {
+        if (User::where('email', $email)->exists()) {
+            $this->error('This account already exists. Its password was not changed.');
+
+            return false;
+        }
+        if (User::query()->exists()) {
+            $this->error('Uploadiny already has its personal account.');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function createAccount(string $email, string $password): int
+    {
+        // Interactive input happens before the lease; recheck ownership under the lock.
+        if (! $this->accountAvailable($email)) {
             return self::FAILURE;
         }
         $createdFile = false;

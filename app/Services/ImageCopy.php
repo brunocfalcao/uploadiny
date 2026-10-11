@@ -12,8 +12,7 @@ use RuntimeException;
 
 class ImageCopy
 {
-    /** @param array<int, string> $paths */
-    public function intoChunk(UploadImage $source, UploadChunk $target, int $projectId, array &$paths, bool $clean = false): UploadImage
+    public function intoChunk(UploadImage $source, UploadChunk $target, int $projectId, PrivateFileWrites $writes, bool $clean = false): UploadImage
     {
         $disk = Storage::disk('local');
         $sequence = max((int) $disk->get('.uploadiny-sequence'), (int) UploadImage::query()->max('id')) + 1;
@@ -26,7 +25,7 @@ class ImageCopy
             $copies[$source->annotated_path] = $annotated;
         }
         foreach ($copies as $original => $destination) {
-            $paths[] = $destination;
+            $writes->track($destination);
             throw_unless($disk->copy($original, $destination), RuntimeException::class, 'The file could not be copied. The original remains unchanged.');
         }
         $fresh = $clean ? ['annotations' => [], 'comments' => '', 'feedback_updated_at' => null] : [];

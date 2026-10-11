@@ -38,6 +38,7 @@ Manifest requirements: PHP `^8.2`, `laravel/framework` `^12.0`. Exact resolved v
 
 - Website status and workspace notices use a shared fixed toast region outside page layout. Arrival and deletion notices expire after six seconds; persistent warnings remain dismissible. Notifications must never resize the gallery or editor.
 - The browser editor refreshes its current chunk's ordered file UUIDs every eight seconds while visible and when the tab becomes visible. Membership updates retain the current image and unsaved feedback; an unavailable current file advances to a surviving neighbour only when clean. Dirty feedback remains visible until the owner chooses to leave. This browser-only metadata endpoint excludes drafts and other projects' files.
+- Browser history invalidates pending image requests even before the editor opens. Unavailable direct links reconcile chunk membership and restore a surviving active URL or the gallery. Thickness pointer gestures preview live and create one undo step; cancellation restores the prior width. Recording preview observers disconnect before gallery replacement is rebound. Desktop interactive controls retain a 40px minimum and touch controls a 44px minimum.
 - The website's “Delete all Chunks” action clears all published and draft feedback in the current project, including private files and annotations, while retaining the project and assets assigned elsewhere. It uses the same transactional, recoverable file deletion as project deletion.
 - Preserve private storage, Sanctum-only API authentication, phone/agent ability separation, complete/draft chunk transitions, feedback revisions, and moved-image deletion behavior. API token and Share Extension changes require immediate security coverage. Keep the mobile Keychain and native Share Extension contracts aligned with the server.
 - Agent API access is managed at `/agent-access`. Backoffice keys read feedback, authorize explicit completed-chunk deletion through MCP, and remain nonexpiring until rotated or revoked; the CLI preserves its explicit lifetime option. Both use `AgentAccess` and the same protected credential file. Project canonicals are generated six-letter codes, stay stable across name/slug changes, and select feedback at `/api/feedback/{project:canonical}`. Keep slug-based browser/mobile routes compatible.
@@ -72,11 +73,41 @@ images also get a cleanup intent in the feedback transaction. Read-only
 without paths or feedback. Deploy the additive recovery-details migration
 before this code.
 
+New uploads, copies, duplicates, and drawing replacements register their fresh
+private destinations in `writing/` journals before writing bytes. Operation
+locks protect uncommitted writes; reconciliation removes only journal-owned
+paths without surviving image references. Cleanup removes recovery metadata
+before its manifest, releases the lock before retiring its pathname, and uses
+atomic empty-directory removal. Referenced and unlisted siblings survive.
+Agent-key rotation and revocation retain a protected 0600 recovery record until
+the outer database transaction commits; interrupted operations restore the key
+matching a surviving token or finish revoked-file cleanup. Scheduler recovery
+does not wait on an active agent-key cache lease; an interrupted lease expires
+after at most ten minutes. The scheduler overlap mutex expires after five minutes.
+The existing cleanup-status fields remain; `orphan_recovery` separately reports
+pending count, oldest age, attempts, deferred count, and last attempt without
+private paths, credentials, or feedback.
+
 Phone API completion returns acknowledgements for newly uploaded assets only,
 including saved comments and the final merged chunk UUID. Website completion
 and authenticated agent feedback retain their full image collections. Agent
 key rotation and revocation share one cache lock covering the entire managed
 credential operation; CLI and backoffice must use the same shared cache store.
+Initial personal-account provisioning also uses a shared-cache lock across its
+existing account guard, optional credential-file write, and account creation.
+The Share Extension resolves draft-start success, authentication failure, and
+request failure through a Foundation lifecycle helper; closing never presents
+sign-in after a 401. Optional preference/project Keychain write failures emit
+sanitized diagnostics and do not prevent a successful upload. Native compiler
+fixtures use disposable module caches. UIKit dismissal and physical Share Sheet
+acceptance remain separate from the Foundation fixture and source typechecks.
+
+On 11 October 2026, a local synthetic five-second 4K recording returned all five
+exact timestamps in a roughly 264 KB serialized MCP response: 1.8 seconds normally
+and 21.9 seconds with a controlled four-second delay per extraction; peak PHP
+memory grew by 4.5 MiB through serialization. This is local measurement, not a
+production latency guarantee. No aggregate deadline or partial-result policy was
+introduced.
 
 Available entrypoints: `composer test`, `composer quality`, `npm run build`, `npm run test`. Choose the narrowest relevant check; a listed full-suite, build, install, or packaging command is not an instruction to run it for every edit. Inspect test environment and side effects first.
 

@@ -2,6 +2,7 @@ const previews = new Map();
 const previewByteBudget = 8 * 1024 * 1024;
 const previewSizes = new Map();
 let previewBytes = 0;
+let recordingPreviewObserver = null;
 
 export function recordingFirstFrame(source) {
     if (previews.has(source)) { const cached = previews.get(source); previews.delete(source); previews.set(source, cached); return cached; }
@@ -60,6 +61,8 @@ export async function setRecordingPoster(video, source, isCurrent) {
 }
 
 export function enhanceRecordingPreviews(root = document) {
+    recordingPreviewObserver?.disconnect();
+    recordingPreviewObserver = null;
     const showPreview = async element => {
         const image = await recordingFirstFrame(element.dataset.recordingPreview);
         if (!image || !element.isConnected) return;
@@ -81,5 +84,6 @@ export function enhanceRecordingPreviews(root = document) {
             showPreview(entry.target);
         }
     }, { rootMargin: '160px' });
+    recordingPreviewObserver = observer;
     elements.forEach(element => observer.observe(element));
 }

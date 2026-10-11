@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
@@ -250,6 +251,53 @@ class AgentRetrievalOptionsTest extends TestCase
         $this->assertSame(95 * 1024 * 1024, $disk->size($images[1]->annotated_path));
         $disk->assertMissing($images[0]->annotated_path);
         $this->assertSame('Keep large feedback.', $images[1]->fresh()->comments);
+    }
+
+    public function test_an_image_that_disappears_after_the_size_check_returns_a_tool_error(): void
+    {
+        $this->reader('disappearing-inline-image');
+        $image = UploadImage::factory()->create(['name' => 'disappearing-inline-image']);
+        $disk = Storage::disk('local');
+        $proxy = Mockery::mock($disk);
+        $proxy->shouldReceive('exists')->once()->with($image->path)->andReturnTrue();
+        $proxy->shouldReceive('size')->once()->with($image->path)->andReturn(12);
+        $proxy->shouldReceive('get')->once()->with($image->path)->andReturn(null);
+        Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
+
+        $this->tool('get_asset', ['asset_id' => $image->uuid])
+            ->assertOk()
+            ->assertJsonPath('result.isError', true)
+            ->assertSee('unavailable');
+    }
+
+    public function test_feedback_keeps_other_images_available_when_an_annotated_read_disappears(): void
+    {
+        $this->reader('disappearing-feedback-image');
+        $project = Project::factory()->create(['name' => 'disappearing-feedback-image', 'slug' => 'disappearing-feedback-image']);
+        $chunk = UploadChunk::factory()->create(['status' => 'complete']);
+        $marks = [['tool' => 'pen', 'points' => [['x' => 0.1, 'y' => 0.2]]]];
+        $missing = UploadImage::factory()->create([
+            'name' => 'disappearing-feedback-missing', 'project_id' => $project->id, 'chunk_id' => $chunk->id,
+            'annotations' => $marks, 'annotated_path' => 'disappearing/missing.png',
+        ]);
+        $available = UploadImage::factory()->create([
+            'name' => 'disappearing-feedback-available', 'project_id' => $project->id, 'chunk_id' => $chunk->id,
+            'annotations' => $marks, 'annotated_path' => 'disappearing/available.png',
+        ]);
+        $disk = Storage::disk('local');
+        $proxy = Mockery::mock($disk);
+        $proxy->shouldReceive('exists')->twice()->andReturnTrue();
+        $proxy->shouldReceive('size')->twice()->andReturn(12);
+        $proxy->shouldReceive('get')->twice()->andReturn(null, 'available-image-bytes');
+        Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
+
+        $this->tool('get_feedback', ['project_canonical' => $project->canonical])
+            ->assertOk()
+            ->assertJsonPath('result.isError', false)
+            ->assertSee('No annotated image')
+            ->assertJsonPath('result.content.3.data', base64_encode('available-image-bytes'))
+            ->assertSee($missing->uuid)
+            ->assertSee($available->uuid);
     }
 
     public function test_resize_rejects_unsafe_decoded_dimensions_and_corrupt_images_without_touching_originals(): void

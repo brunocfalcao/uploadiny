@@ -187,8 +187,9 @@ class OvernightRecoveryTest extends TestCase
         $previous = $disk->get('credentials/uploadiny-agent-token.txt');
         $proxy = Mockery::mock($disk);
         $moves = 0;
-        $proxy->shouldReceive('move')->andReturnUsing(function ($from, $to) use ($disk, &$moves) {
-            return ++$moves === 1 ? $disk->move($from, $to) : false;
+        $restore = false;
+        $proxy->shouldReceive('move')->andReturnUsing(function ($from, $to) use ($disk, &$moves, &$restore) {
+            return $to !== 'credentials/uploadiny-agent-token.txt' || $restore || ++$moves === 1 ? $disk->move($from, $to) : false;
         });
         Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
         DB::statement("CREATE TRIGGER overnight_block_token BEFORE DELETE ON personal_access_tokens BEGIN SELECT RAISE(ABORT, 'controlled'); END");
@@ -200,7 +201,11 @@ class OvernightRecoveryTest extends TestCase
             $this->assertNotNull($error->getPrevious());
         }
         $this->assertNotNull(PersonalAccessToken::findToken($previous));
-        $this->assertNull($access->current($user));
+        $disk->assertExists('credentials/.uploadiny-agent-token.recovery.json');
+        $restore = true;
+        $this->assertSame($previous, $access->current($user));
+        // RefreshDatabase owns the outer transaction; its rollback still needs the backup.
+        $disk->assertExists('credentials/.uploadiny-agent-token.recovery.json');
     }
 
     public function test_project_discovery_uses_a_constant_query_count_and_preserves_shared_chunk_counts(): void

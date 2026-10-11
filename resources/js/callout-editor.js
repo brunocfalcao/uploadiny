@@ -2,7 +2,7 @@ import { calloutBox, calloutContainsPoint, changeCalloutBox, createCallout } fro
 
 export function createCalloutEditor(api) {
     const { canvas, overlay } = api;
-    let selected = null; let gesture = null; let textBefore = null;
+    let selected = null; let gesture = null; let textBefore = null; let styleBefore = null;
     const target = document.createElement('div'); target.className = 'callout-target'; target.title = 'Drag to move the target rectangle';
     const note = document.createElement('div'); note.className = 'callout-note';
     const grip = document.createElement('button'); grip.type = 'button'; grip.className = 'callout-grip'; grip.textContent = 'Move note'; grip.title = 'Drag to move the text box';
@@ -80,7 +80,12 @@ export function createCalloutEditor(api) {
         if (!gesture || event.pointerId !== gesture.pointer) return;
         const before = gesture.before; gesture = null; api.replace(before); render();
     });
-    function reset() { if (document.activeElement === text) text.blur(); finishText(); selected = null; gesture = null; overlay.hidden = true; }
+    function reset() {
+        if (document.activeElement === text) text.blur();
+        finishText();
+        cancelStyle();
+        selected = null; gesture = null; overlay.hidden = true;
+    }
     function place(event, forceCreate = false) {
         finishText(); const point = api.point(event); const strokes = api.getStrokes();
         selected = forceCreate ? -1 : strokes.findLastIndex(stroke => stroke.tool === 'callout' && calloutContainsPoint(stroke, point));
@@ -105,5 +110,33 @@ export function createCalloutEditor(api) {
         if (JSON.stringify(before) !== JSON.stringify(next)) api.commit(before, next);
         render();
     }
-    return { render, reset, place, selectNext, finishText, changeStyle, busy: () => Boolean(gesture) };
+    function beginStyle() {
+        if (!current() || !api.editable()) return false;
+        if (styleBefore) return true;
+        finishText(); styleBefore = structuredClone(api.getStrokes());
+        return true;
+    }
+    function previewStyle(color, width) {
+        if (!styleBefore || !current() || !api.editable()) return;
+        const next = structuredClone(api.getStrokes());
+        next[selected].color = color; next[selected].width = width;
+        if (JSON.stringify(api.getStrokes()) !== JSON.stringify(next)) api.replace(next);
+        render();
+    }
+    function commitStyle(color, width) {
+        if (!styleBefore) { changeStyle(color, width); return; }
+        const before = styleBefore; styleBefore = null;
+        if (!current() || !api.editable()) { api.replace(before); render(); return; }
+        const next = structuredClone(api.getStrokes());
+        next[selected].color = color; next[selected].width = width;
+        if (JSON.stringify(before) !== JSON.stringify(next)) api.commit(before, next);
+        else render();
+    }
+    function cancelStyle() {
+        if (!styleBefore) return null;
+        const before = styleBefore; styleBefore = null;
+        api.replace(before); render();
+        return before[selected] ?? null;
+    }
+    return { render, reset, place, selectNext, finishText, changeStyle, beginStyle, previewStyle, commitStyle, cancelStyle, busy: () => Boolean(gesture || styleBefore) };
 }

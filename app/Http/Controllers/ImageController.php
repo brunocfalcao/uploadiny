@@ -11,6 +11,7 @@ use App\Jobs\DescribeUploadImage;
 use App\Project;
 use App\Services\ChunkTransfer;
 use App\Services\ImageDuplicator;
+use App\Services\PrivateFileWrites;
 use App\Services\WorkspaceDeletion;
 use App\UploadImage;
 use Illuminate\Http\JsonResponse;
@@ -67,7 +68,7 @@ class ImageController extends Controller
                 throw ValidationException::withMessages(['annotated_image' => 'The annotated image is invalid or too large.']);
             }
         }
-        DB::transaction(function () use ($data, $raster, $image, $deletion): void {
+        app(PrivateFileWrites::class)->transaction(function (PrivateFileWrites $writes) use ($data, $raster, $image, $deletion): void {
             $locked = UploadImage::query()->lockForUpdate()->findOrFail($image->id);
             abort_if((int) $locked->feedback_revision !== (int) $data['revision'], 409, 'Feedback changed in another window. Reload before saving.');
             $retainDrawing = $data['annotations'] !== [] && $raster === null && $data['annotations'] === $locked->annotations && $locked->annotated_path;
@@ -75,20 +76,16 @@ class ImageController extends Controller
                 throw ValidationException::withMessages(['annotated_image' => 'Include the marked image when changing drawings.']);
             }
             $newPath = $retainDrawing ? $locked->annotated_path : ($data['annotations'] !== [] ? 'annotations/'.$image->uuid.'-'.Str::uuid().'.png' : null);
-            if ($newPath && ! $retainDrawing && ! Storage::disk('local')->put($newPath, $raster)) {
-                throw new \RuntimeException('The annotated image could not be saved.');
+            if ($newPath && ! $retainDrawing) {
+                $writes->track($newPath);
+                if (! Storage::disk('local')->put($newPath, $raster)) {
+                    throw new \RuntimeException('The annotated image could not be saved.');
+                }
             }
             $oldPath = $locked->annotated_path;
-            try {
-                $locked->update(['annotations' => $data['annotations'], 'comments' => $data['comments'] ?? '', 'annotated_path' => $newPath, 'feedback_revision' => $locked->feedback_revision + 1, 'feedback_updated_at' => now()]);
-                if ($oldPath && $oldPath !== $newPath) {
-                    $deletion->supersededDrawing($oldPath);
-                }
-            } catch (\Throwable $error) {
-                if ($newPath && ! $retainDrawing) {
-                    Storage::disk('local')->delete($newPath);
-                }
-                throw $error;
+            $locked->update(['annotations' => $data['annotations'], 'comments' => $data['comments'] ?? '', 'annotated_path' => $newPath, 'feedback_revision' => $locked->feedback_revision + 1, 'feedback_updated_at' => now()]);
+            if ($oldPath && $oldPath !== $newPath) {
+                $deletion->supersededDrawing($oldPath);
             }
         });
 

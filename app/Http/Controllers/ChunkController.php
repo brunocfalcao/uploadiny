@@ -97,8 +97,9 @@ class ChunkController extends Controller
 
     public function complete(Request $request, UploadChunk $chunk): JsonResponse
     {
+        $phoneCompletion = $request->routeIs('api.chunks.complete');
         $newImageIds = [];
-        $completed = DB::transaction(function () use ($chunk, &$newImageIds): UploadChunk {
+        $completed = DB::transaction(function () use ($chunk, &$newImageIds, $phoneCompletion): UploadChunk {
             if ($chunk->upload_project_id) {
                 Project::query()->lockForUpdate()->find($chunk->upload_project_id);
             }
@@ -112,17 +113,21 @@ class ChunkController extends Controller
                 $target->update(['completed_at' => now()]);
                 $locked->delete();
 
-                return $target->load('images');
+                return $phoneCompletion
+                    ? $target->load(['images' => fn ($query) => $query->whereKey($newImageIds)])
+                    : $target->load('images');
             }
             $locked->update(['status' => 'complete', 'completed_at' => now()]);
 
-            return $locked->load('images');
+            return $phoneCompletion
+                ? $locked->load(['images' => fn ($query) => $query->whereKey($newImageIds)])
+                : $locked->load('images');
         });
         foreach ($completed->images->whereIn('id', $newImageIds)->where('description_status', 'pending') as $image) {
             DescribeUploadImage::schedule($image->id);
         }
 
-        $images = $request->routeIs('api.chunks.complete') ? $completed->images->whereIn('id', $newImageIds) : $completed->images;
+        $images = $phoneCompletion ? $completed->images->whereIn('id', $newImageIds) : $completed->images;
 
         return response()->json(['id' => $completed->uuid, 'uploaded_at' => $completed->uploadedAt()->toIso8601String(), 'images' => $images->map(static fn (UploadImage $image): array => $image->agentData())->values()]);
     }

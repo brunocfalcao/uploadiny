@@ -26,7 +26,8 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
     const updateLocation = url => { const parsed = new URL(url, 'https://workspace.test'); where.search = parsed.search; where.hash = parsed.hash; };
     const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); updateLocation(url); }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); updateLocation(url); } };
-    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, files: ['one', 'two', 'three'], fileRequests: 0, page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
+    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, files: ['one', 'two', 'three'], fileRequests: 0, imageResponse: null, missingImages: extraConfig.missing_images ?? [], imageErrors: extraConfig.image_errors ?? [], holdImage: Boolean(extraConfig.hold_image), page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
+    let releaseHeldImage = null;
     class Element {
         constructor(id = '', tagName = 'div') {
             Object.assign(this, { id, tagName, value: '', textContent: '', children: [], listeners: {}, dataset: {}, style: { setProperty() {} }, classList: { toggle() {}, add() {}, remove() {} }, parentElement: {}, disabled: false, hidden: false, open: false, clientWidth: 800, clientHeight: 600 });
@@ -124,6 +125,20 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
             if (url === '/projects/1/chunks/start') { starts.push(JSON.parse(options.body)); return { ok: true, status: 201, json: async () => ({ id: 'draft-1' }) }; }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
             const id = url.split('/')[2];
+            if (url.startsWith('/images/') && !options.method) {
+                remote.imageRequests = (remote.imageRequests ?? 0) + 1;
+                if (remote.imageErrors.includes(id)) {
+                    const error = new Error('Connection lost');
+                    if (!remote.holdImage) throw error;
+                    return new Promise((_resolve, reject) => { releaseHeldImage = () => { remote.holdImage = false; reject(error); }; });
+                }
+                const response = remote.imageResponse ? await remote.imageResponse(id) : assets[id]
+                    && !remote.missingImages.includes(id)
+                    ? { ok: true, json: async () => structuredClone(assets[id]) }
+                    : { ok: false, status: 404, json: async () => ({ message: 'File not found' }) };
+                if (!remote.holdImage) return response;
+                return new Promise(resolve => { releaseHeldImage = () => { remote.holdImage = false; resolve(response); }; });
+            }
             if (options.method === 'POST' && url.endsWith('/duplicate')) {
                 duplicates.push({ id, saved: writes.length });
                 assets.copy = { ...structuredClone(assets[id]), id: 'copy', name: 'copy', annotations: [], comments: '', revision: 0, preview_url: 'copy' };
@@ -144,6 +159,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
         where, urlCalls, async pop(search) { where.search = search; for (const listener of popstate) listener({}); await tick(); await tick(); },
         node, assets, writes, starts, storage, deletions, duplicates, document, tool, selectTool, remote, timers, card, Element,
         get reloads() { return reloads; },
+        releaseImage() { releaseHeldImage?.(); releaseHeldImage = null; },
         async poll() { await intervals[0](); await tick(); },
         arrive(id = 'chunk-two', count = 1) {
             const fresh = new Element(); fresh.dataset = { chunkImages: JSON.stringify(['two']), openImage: 'two', chunk: id };
@@ -428,6 +444,35 @@ test('dragging across the gradient recolours a selected note in one undo step', 
     assert.equal(ui.assets.one.annotations[0].color, '#ff0000');
     ui.node('undo-drawing').click(); await ui.autosave();
     assert.equal(ui.assets.one.annotations[0].color, original);
+});
+
+test('dragging thickness across several values uses one undo step', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Resize me'); await ui.autosave();
+    const width = ui.node('drawing-width');
+    width.emit('pointerdown', { button: 0, pointerId: 11 });
+    width.value = '10'; width.emit('input');
+    width.value = '14'; width.emit('input');
+    width.emit('pointerup', { pointerId: 11 });
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].width, 14 / 640);
+    ui.node('undo-drawing').click(); await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].width, 6 / 640);
+});
+
+test('cancelling or losing thickness capture restores the width without adding history', async t => {
+    const ui = workspace(t); await ui.open(); ui.annotate('Keep width'); await ui.autosave();
+    const width = ui.node('drawing-width');
+    for (const [pointerId, event] of [[12, 'pointercancel'], [13, 'lostpointercapture']]) {
+        width.emit('pointerdown', { button: 0, pointerId });
+        width.value = '14'; width.emit('input');
+        width.emit(event, { pointerId });
+        assert.equal(width.value, '6');
+    }
+    await ui.autosave();
+    assert.equal(ui.assets.one.annotations[0].width, 6 / 640);
+    ui.node('undo-drawing').click(); await ui.autosave();
+    ui.node('undo-drawing').click(); await ui.autosave();
+    assert.deepEqual(ui.assets.one.annotations, []);
 });
 
 const arrivalNotice = 'New upload arrived — it will appear when you go back to the project.';
@@ -815,6 +860,63 @@ test('loading with an unknown image shows the gallery and drops the parameter', 
     assert.equal(ui.node('editor-name').textContent, '');
     assert.equal(ui.where.search, '?x=1');
     assert.deepEqual(ui.urlCalls, [['replace', '/projects/1?x=1']]);
+});
+
+test('a deleted off-page direct link repairs history after the editor closes', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { open_chunk_id: 'older-chunk', open_chunk_images: ['one', 'two'] });
+    await ui.settle();
+    const other = new ui.Element(); other.dataset = { chunkImages: '["three"]', openImage: 'three', chunk: 'other-chunk' };
+    ui.remote.page = { cards: [other], dataset: { latest: 'other-chunk', latestCompleted: 't2', latestCount: '1' } };
+    ui.node('close-editor').click(); await ui.settle(); await ui.settle();
+    delete ui.assets.one;
+    await ui.pop('?image=one');
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.remote.fileRequests, 1);
+});
+
+test('Back invalidates an initial image request before its response arrives', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { hold_image: true });
+    await ui.pop('');
+    ui.releaseImage(); await ui.settle(); await ui.settle();
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+});
+
+test('a stale initial response cannot close a newer image opened after Back', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { hold_image: true });
+    await ui.pop('');
+    ui.remote.holdImage = false;
+    await ui.pop('?image=two');
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    ui.releaseImage(); await ui.settle(); await ui.settle();
+    assert.equal(ui.where.search, '?image=two');
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('editor').hidden, false);
+});
+
+test('a stale initial 404 cannot close a newer image opened after Back', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { hold_image: true, missing_images: ['one'] });
+    await ui.pop('');
+    ui.remote.holdImage = false;
+    await ui.pop('?image=two');
+    ui.releaseImage(); await ui.settle(); await ui.settle();
+    assert.equal(ui.where.search, '?image=two');
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('editor').hidden, false);
+});
+
+test('a stale initial network error cannot close a newer image opened after Back', async t => {
+    const ui = workspace(t, '?image=one', memoryStorage(), { hold_image: true, image_errors: ['one'] });
+    await ui.pop('');
+    ui.remote.holdImage = false;
+    await ui.pop('?image=two');
+    ui.releaseImage(); await ui.settle(); await ui.settle();
+    assert.equal(ui.where.search, '?image=two');
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.equal(ui.node('editor').hidden, false);
 });
 
 test('Back (popstate without an image) saves pending feedback, then closes the editor', async t => {

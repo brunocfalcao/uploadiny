@@ -9,4 +9,4 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-Schedule::call(fn () => app(WorkspaceDeletion::class)->cleanupPending())->name('uploadiny-staged-file-cleanup')->everyMinute()->withoutOverlapping();
+Schedule::call(fn () => app(WorkspaceDeletion::class)->cleanupPending())->name('uploadiny-staged-file-cleanup')->everyMinute()->withoutOverlapping(5);

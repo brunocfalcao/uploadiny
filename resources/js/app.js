@@ -368,10 +368,26 @@ if (workspace) {
         else { document.getElementById('gallery').focus(); if (announced) notifyTransient('New upload arrived.'); }
     }
     document.getElementById('close-editor').addEventListener('click', closeEditor);
+    async function reconcileImageMembership(id, generation) {
+        const chunkId = chunkIdentity(id);
+        if (!chunkId || !config.chunk_files_url) return;
+        let files;
+        try { ({ files } = await request(config.chunk_files_url.replace('__chunk__', encodeURIComponent(chunkId)))); }
+        catch (error) { if (error.status !== 404) return; files = []; }
+        if (generation !== loadGeneration || !Array.isArray(files)) return;
+        updateMembership(chunkCard(id), files);
+    }
     window.addEventListener('popstate', async () => {
         const id = new URLSearchParams(location.search).get('image');
         if (!id) {
-            if (!active) return;
+            if (!active) {
+                loadGeneration++;
+                clearTimeout(autosaveTimer);
+                clearTimeout(pollTimer);
+                leaveEditor(false);
+                finishNavigation();
+                return;
+            }
             await closeEditor();
             if (active) syncImageUrl(active.id);
             return;
@@ -400,7 +416,13 @@ if (workspace) {
     bindGallery();
     const initialImage = new URLSearchParams(location.search).get('image');
     if (initialImage) {
-        if (chunkGroups.some(files => files.includes(initialImage))) openImage(initialImage, false, true).then(() => { if (active?.id !== initialImage) leaveEditor(); });
+        if (chunkGroups.some(files => files.includes(initialImage))) {
+            const initialGeneration = loadGeneration + 1;
+            openImage(initialImage, false, true).then(() => {
+                if (initialGeneration !== loadGeneration || active?.id === initialImage) return;
+                leaveEditor();
+            });
+        }
         else leaveEditor();
     }
     async function openImage(id, playRecording = false, fromUrl = false) {
@@ -473,7 +495,16 @@ if (workspace) {
             };
             image.src = data.preview_url;
             document.getElementById('editor-name').focus({ preventScroll: true });
-        } catch (error) { finishNavigation(); document.getElementById('save-feedback').disabled = !active; notify(error.message, true); }
+        } catch (error) {
+            if (generation !== loadGeneration) return;
+            if (fromUrl && error.status === 404) {
+                await reconcileImageMembership(id, generation);
+                if (generation !== loadGeneration) return;
+                if (active) syncImageUrl(active.id);
+                else leaveEditor();
+            }
+            finishNavigation(); document.getElementById('save-feedback').disabled = !active; notify(error.message, true);
+        }
     }
     function showDescription(data) {
         clearTimeout(pollTimer);
@@ -569,7 +600,37 @@ if (workspace) {
         pickGradient(((start.x + dx) % 1 + 1) % 1, start.y + dy);
     });
     hexField.addEventListener('blur', () => { hexField.value = ink.value; });
-    thickness.addEventListener('input', () => { updateInkControls(); calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width)); });
+    let thicknessPointer = null;
+    thickness.addEventListener('pointerdown', event => {
+        if (event.button !== 0) return;
+        thickness.setPointerCapture(event.pointerId);
+        if (calloutEditor.beginStyle()) thicknessPointer = event.pointerId;
+    });
+    thickness.addEventListener('input', () => {
+        updateInkControls();
+        const width = normalizedStrokeWidth(thickness.value, canvas.width);
+        if (thicknessPointer !== null) calloutEditor.previewStyle(ink.value, width);
+        else calloutEditor.changeStyle(ink.value, width);
+    });
+    thickness.addEventListener('change', () => {
+        if (thicknessPointer === null) { calloutEditor.changeStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width)); return; }
+        calloutEditor.commitStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width));
+        thicknessPointer = null;
+    });
+    const cancelThickness = event => {
+        if (thicknessPointer === null || event.pointerId !== thicknessPointer) return;
+        const stroke = calloutEditor.cancelStyle();
+        if (stroke) thickness.value = String(Math.round(stroke.width * canvas.width));
+        updateInkControls();
+        thicknessPointer = null;
+    };
+    thickness.addEventListener('pointercancel', cancelThickness);
+    thickness.addEventListener('lostpointercapture', cancelThickness);
+    thickness.addEventListener('pointerup', event => {
+        if (thicknessPointer === null || event.pointerId !== thicknessPointer) return;
+        calloutEditor.commitStyle(ink.value, normalizedStrokeWidth(thickness.value, canvas.width));
+        thicknessPointer = null;
+    });
     document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => applyInk(button.dataset.color)));
     updateInkControls();
 

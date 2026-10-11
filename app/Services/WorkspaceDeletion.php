@@ -8,6 +8,7 @@ use App\Project;
 use App\StagedFileDeletion;
 use App\UploadChunk;
 use App\UploadImage;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -146,8 +147,8 @@ class WorkspaceDeletion
                         throw new RuntimeException('Deletion failed and an image file could not be restored.', previous: $error);
                     }
                 }
-                if ($journal !== null) {
-                    $disk->deleteDirectory(dirname($journal));
+                if ($journal !== null && $lock !== null) {
+                    $this->removeRecoveryRecord($journal);
                 }
             } finally {
                 $this->releaseJournal($lock);
@@ -171,6 +172,12 @@ class WorkspaceDeletion
 
     public function cleanupPending(): void
     {
+        app(PrivateFileWrites::class)->cleanupPending();
+        try {
+            app(AgentAccess::class)->recover(wait: false);
+        } catch (Throwable $error) {
+            Log::warning('Agent access recovery deferred.', ['category' => class_basename($error)]);
+        }
         StagedFileDeletion::query()->chunkById(100, function ($intents): void {
             foreach ($intents as $intent) {
                 $lock = $intent->journal_path === null ? null : $this->journalLock($intent->journal_path);
@@ -187,7 +194,7 @@ class WorkspaceDeletion
         $disk = Storage::disk('local');
         foreach ($disk->directories('deleting') as $directory) {
             $journal = $directory.'/journal.json';
-            if (! $disk->exists($journal)) {
+            if (! $disk->exists($journal) && ! $disk->exists($directory.'/.lock')) {
                 continue;
             }
             $lock = $this->journalLock($journal);
@@ -199,7 +206,23 @@ class WorkspaceDeletion
                 if (! is_file($disk->path($journal)) || StagedFileDeletion::where('journal_path', $journal)->exists()) {
                     continue;
                 }
+                $progress = $this->recoveryProgress($journal);
+                $progress['attempts']++;
+                $progress['last_attempt_at'] = now()->toIso8601String();
+                $progress['last_error'] = null;
+                $this->saveRecoveryProgress($journal, $progress);
                 $mapping = json_decode($disk->get($journal), true, flags: JSON_THROW_ON_ERROR);
+                if (! is_array($mapping)) {
+                    throw new RuntimeException('Interrupted deletion recovery record is invalid.');
+                }
+                foreach ($mapping as $original => $staged) {
+                    if (! is_string($original) || ! is_string($staged) || dirname($staged) !== $directory || str_contains($staged, '..')) {
+                        throw new RuntimeException('Interrupted deletion recovery record is invalid.');
+                    }
+                    if ($this->referenced($staged)) {
+                        throw new RuntimeException('An active image still owns this staged file.');
+                    }
+                }
                 foreach ($mapping as $original => $staged) {
                     if (! $disk->exists($staged)) {
                         continue;
@@ -212,12 +235,19 @@ class WorkspaceDeletion
                         throw new RuntimeException('Interrupted deletion cleanup needs another attempt.');
                     }
                 }
-                if (! $disk->deleteDirectory($directory)) {
-                    throw new RuntimeException('Interrupted deletion journal cleanup needs another attempt.');
-                }
+                $this->removeRecoveryRecord($journal);
             } catch (Throwable $error) {
+                if (isset($progress) && $disk->exists($journal)) {
+                    try {
+                        $progress['last_error'] = class_basename($error);
+                        $this->saveRecoveryProgress($journal, $progress);
+                    } catch (Throwable) {
+                        // A later attempt retains the journal even if progress cannot be saved.
+                    }
+                }
                 Log::warning('Interrupted upload deletion recovery deferred.', ['category' => class_basename($error)]);
             } finally {
+                unset($progress);
                 $this->releaseJournal($lock);
             }
         }
@@ -228,19 +258,22 @@ class WorkspaceDeletion
         $disk = Storage::disk('local');
         try {
             $intent->update(['attempts' => $intent->attempts + 1, 'last_attempt_at' => now(), 'last_error' => null]);
+            // Validate the complete ownership set before removing any sibling.
             foreach ($intent->paths as $temporaryPath) {
                 if ($this->referenced($temporaryPath)) {
                     throw new RuntimeException('An active image still owns this file.');
                 }
+            }
+            foreach ($intent->paths as $temporaryPath) {
                 if ($disk->exists($temporaryPath) && ! $disk->delete($temporaryPath)) {
                     throw new RuntimeException('Staged file cleanup needs another attempt.');
                 }
-                if ($intent->journal_path === null && str_starts_with($temporaryPath, 'deleting/') && ! $disk->deleteDirectory(dirname($temporaryPath))) {
-                    throw new RuntimeException('Staged directory cleanup needs another attempt.');
+                if ($intent->journal_path === null && str_starts_with($temporaryPath, 'deleting/')) {
+                    $this->removeEmptyDirectory(dirname($temporaryPath));
                 }
             }
-            if ($intent->journal_path !== null && ! $disk->deleteDirectory(dirname($intent->journal_path))) {
-                throw new RuntimeException('Staged journal cleanup needs another attempt.');
+            if ($intent->journal_path !== null) {
+                $this->removeRecoveryRecord($intent->journal_path);
             }
             $intent->delete();
         } catch (Throwable $error) {
@@ -256,6 +289,75 @@ class WorkspaceDeletion
     private function referenced(string $path): bool
     {
         return UploadImage::where('path', $path)->orWhere('annotated_path', $path)->exists();
+    }
+
+    private function removeRecoveryRecord(string $journal): void
+    {
+        $directory = dirname($journal);
+        $disk = Storage::disk('local');
+        if (! $disk->delete([$directory.'/recovery.json', $directory.'/recovery.next']) || ! $disk->delete($journal)) {
+            throw new RuntimeException('Deletion recovery record cleanup needs another attempt.');
+        }
+    }
+
+    private function removeEmptyDirectory(string $directory): void
+    {
+        $disk = Storage::disk('local');
+        // rmdir is atomic: a sibling arriving during cleanup cannot be removed.
+        if (! @rmdir($disk->path($directory)) && $disk->directoryExists($directory) && $disk->allFiles($directory) === [] && $disk->directories($directory) === []) {
+            throw new RuntimeException('Empty recovery directory cleanup needs another attempt.');
+        }
+    }
+
+    /** @return array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} */
+    private function recoveryProgress(string $journal): array
+    {
+        $disk = Storage::disk('local');
+        $path = dirname($journal).'/recovery.json';
+        if ($disk->exists($path)) {
+            $saved = json_decode($disk->get($path) ?? '', true);
+        }
+
+        return [
+            'created_at' => $saved['created_at'] ?? Carbon::createFromTimestamp($disk->lastModified($journal))->toIso8601String(),
+            'attempts' => (int) ($saved['attempts'] ?? 0),
+            'last_attempt_at' => $saved['last_attempt_at'] ?? null,
+            'last_error' => $saved['last_error'] ?? null,
+        ];
+    }
+
+    /** @param array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} $progress */
+    private function saveRecoveryProgress(string $journal, array $progress): void
+    {
+        $disk = Storage::disk('local');
+        $temporary = dirname($journal).'/recovery.next';
+        if (! $disk->put($temporary, json_encode($progress, JSON_THROW_ON_ERROR)) || ! $disk->move($temporary, dirname($journal).'/recovery.json')) {
+            throw new RuntimeException('Deletion recovery progress could not be saved.');
+        }
+    }
+
+    /** @return array{pending: int, oldest_pending_seconds: ?int, attempts: int, deferred: int, last_attempt_at: ?string} */
+    public function orphanRecoveryStatus(): array
+    {
+        $disk = Storage::disk('local');
+        $status = ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null];
+        foreach ($disk->directories('deleting') as $directory) {
+            $journal = $directory.'/journal.json';
+            if (! $disk->exists($journal) || StagedFileDeletion::where('journal_path', $journal)->exists()) {
+                continue;
+            }
+            $progress = $this->recoveryProgress($journal);
+            $status['pending']++;
+            $age = max(0, (int) Carbon::parse($progress['created_at'])->diffInSeconds(now()));
+            $status['oldest_pending_seconds'] = max($status['oldest_pending_seconds'] ?? 0, $age);
+            $status['attempts'] += $progress['attempts'];
+            $status['deferred'] += (int) ($progress['last_error'] !== null);
+            if ($progress['last_attempt_at'] !== null && ($status['last_attempt_at'] === null || $progress['last_attempt_at'] > $status['last_attempt_at'])) {
+                $status['last_attempt_at'] = $progress['last_attempt_at'];
+            }
+        }
+
+        return $status;
     }
 
     /** @return resource|null */
@@ -274,6 +376,14 @@ class WorkspaceDeletion
 
             return null;
         }
+        clearstatcache(true, $path);
+        $current = @stat($path);
+        if ($current === false || fstat($lock)['ino'] !== $current['ino']) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+
+            return null;
+        }
 
         return $lock;
     }
@@ -282,8 +392,16 @@ class WorkspaceDeletion
     private function releaseJournal($lock): void
     {
         if ($lock !== null) {
+            $path = stream_get_meta_data($lock)['uri'];
+            $inode = fstat($lock)['ino'];
             flock($lock, LOCK_UN);
             fclose($lock);
+            clearstatcache(true, $path);
+            $current = @stat($path);
+            if ($current !== false && $current['ino'] === $inode && ! is_file(dirname($path).'/journal.json') && ! is_file(dirname($path).'/recovery.json') && ! is_file(dirname($path).'/recovery.next')) {
+                @unlink($path);
+                @rmdir(dirname($path));
+            }
         }
     }
 }

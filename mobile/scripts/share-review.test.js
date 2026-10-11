@@ -37,6 +37,42 @@ func appendDecision() {
   precondition(lookup.canUpload && !lookup.failed)
 }
 
+func draftStartLifecycle() {
+  let url = URL(fileURLWithPath: "/unused")
+  var review = ShareReview()
+  review.files = [SharedFile(url: url, name: "screen.png", mime: "image/png", comments: "keep this note")]
+
+  var success = ShareDraftStartLifecycle()
+  success.begin()
+  precondition(success.close() == .waitForStart)
+  precondition(success.resolve(.success) == .cancelDraftAndClose)
+  precondition(review.files.count == 1 && review.files[0].comments == "keep this note")
+
+  var unauthorized = ShareDraftStartLifecycle()
+  unauthorized.begin()
+  precondition(unauthorized.close() == .waitForStart)
+  precondition(unauthorized.resolve(.unauthorized) == .finishClosing)
+
+  var failed = ShareDraftStartLifecycle()
+  failed.begin()
+  precondition(failed.close() == .waitForStart)
+  precondition(failed.resolve(.failure) == .finishClosing)
+  precondition(review.files.count == 1 && review.files[0].comments == "keep this note")
+
+  var active = ShareDraftStartLifecycle()
+  active.begin()
+  precondition(active.resolve(.success) == .continueUpload)
+  precondition(active.close() == .cancelDraftAndClose)
+
+  var activeUnauthorized = ShareDraftStartLifecycle()
+  activeUnauthorized.begin()
+  precondition(activeUnauthorized.resolve(.unauthorized) == .requireSignIn)
+
+  var activeFailure = ShareDraftStartLifecycle()
+  activeFailure.begin()
+  precondition(activeFailure.resolve(.failure) == .showError)
+}
+
 func backgroundStaging() throws {
   let input = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   defer { try? FileManager.default.removeItem(at: input) }
@@ -70,9 +106,16 @@ final class FixtureProtocol: URLProtocol {
       client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
       return
     }
-    let response = HTTPURLResponse(url: request.url!, statusCode: FixtureProtocol.mode == "401" ? 401 : 201, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+    if FixtureProtocol.mode == "start-error" {
+      client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost))
+      return
+    }
+    let startRequest = request.url?.path.hasSuffix("/chunks/start") == true
+    let unauthorized = FixtureProtocol.mode == "401" || FixtureProtocol.mode == "start-401"
+    let response = HTTPURLResponse(url: request.url!, statusCode: unauthorized ? 401 : 201, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: Data(#"{"received_images":1,"image":{"id":"one","name":"one.png","comments":"exact note"}}"#.utf8))
+    let payload = startRequest ? Data(#"{"id":"draft"}"#.utf8) : Data(#"{"received_images":1,"image":{"id":"one","name":"one.png","comments":"exact note"}}"#.utf8)
+    client?.urlProtocol(self, didLoad: payload)
     client?.urlProtocolDidFinishLoading(self)
   }
   override func stopLoading() {}
@@ -89,6 +132,53 @@ func waitFor(_ predicate: () -> Bool) {
   let deadline = Date().addingTimeInterval(3)
   while !predicate() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
   precondition(predicate(), "Native asynchronous boundary did not settle")
+}
+
+struct FixtureDraft: Decodable { let id: String }
+
+func draftStartRequests() throws {
+  let coordinator = ShareUploadCoordinator(configuration: {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [FixtureProtocol.self]
+    return configuration
+  })
+  let input = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  defer { try? FileManager.default.removeItem(at: input) }
+  try Data("review survives draft start".utf8).write(to: input)
+  var review = ShareReview()
+  review.files = [SharedFile(url: input, name: "screen.png", mime: "image/png", comments: "review note")]
+
+  for mode in ["start-ok", "start-401", "start-error"] {
+    FixtureProtocol.mode = mode
+    FixtureProtocol.requests = 0
+    var lifecycle = ShareDraftStartLifecycle()
+    lifecycle.begin()
+    precondition(lifecycle.close() == .waitForStart)
+    let delegate = FixtureDelegate()
+    let session = coordinator.session(delegate: delegate, requestTimeout: 30, resourceTimeout: 30)
+    var finished = false
+    var request = URLRequest(url: URL(string: "https://fixture.invalid/projects/demo/chunks/start")!)
+    request.httpMethod = "POST"
+    coordinator.dataTask(session: session, with: request) { data, response, error in
+      DispatchQueue.main.async {
+        if mode == "start-ok" {
+          let draft = try! JSONDecoder().decode(FixtureDraft.self, from: data!)
+          precondition(draft.id == "draft")
+          precondition(lifecycle.resolve(.success) == .cancelDraftAndClose)
+        } else if mode == "start-401" {
+          precondition((response as? HTTPURLResponse)?.statusCode == 401)
+          precondition(lifecycle.resolve(.unauthorized) == .finishClosing)
+        } else {
+          precondition((error as? URLError)?.code == .cannotConnectToHost)
+          precondition(lifecycle.resolve(.failure) == .finishClosing)
+        }
+        precondition(review.files.count == 1 && review.files[0].comments == "review note")
+        finished = true
+      }
+    }.resume()
+    waitFor { finished && delegate.invalidations == 1 }
+    precondition(FixtureProtocol.requests == 1)
+  }
 }
 
 func sessionRecovery() throws {
@@ -229,6 +319,8 @@ func acknowledgement() throws {
 
 switch CommandLine.arguments[1] {
 case "appendDecision": appendDecision()
+case "draftStartLifecycle": draftStartLifecycle()
+case "draftStartRequests": try draftStartRequests()
 case "staging": try backgroundStaging()
 case "sessions": try sessionRecovery()
 case "navigation": navigation()
@@ -237,7 +329,9 @@ case "acknowledgement": try acknowledgement()
 default: fatalError("Unknown fixture")
 }
 `);
-  const build = spawnSync('xcrun', ['swiftc', fixture, '-o', executable], { encoding: 'utf8', timeout: 60000 });
+  const moduleCachePath = path.join(directory, 'module-cache');
+  fs.mkdirSync(moduleCachePath);
+  const build = spawnSync('xcrun', ['swiftc', '-module-cache-path', moduleCachePath, fixture, '-o', executable], { encoding: 'utf8', timeout: 60000 });
   assert.equal(build.status, 0, build.stderr || build.error?.message);
 });
 
@@ -247,6 +341,8 @@ after(() => {
 
 for (const [scenario, description] of [
   ['appendDecision', 'append waits for lookup, rejects failure and ignores stale project replies'],
+  ['draftStartLifecycle', 'draft start closes after success, 401 and failure without losing the review'],
+  ['draftStartRequests', 'draft start requests preserve the review while close handles success, 401 and errors'],
   ['sessions', 'native requests invalidate sessions after success, 401, lost completion and cancellation while retaining retry assets'],
   ['staging', 'multipart staging returns exact media and feedback on the main queue'],
   ['navigation', 'asset navigation keeps independent notes, blanks and edits through retry'],

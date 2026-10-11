@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\WorkspaceDeletion;
 use App\StagedFileDeletion;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -33,6 +34,7 @@ final class UploadinyCleanupStatus extends Command
             'deferred' => StagedFileDeletion::whereNotNull('last_error')->count(),
             'last_attempt_at' => $lastAttempt === null ? null : Carbon::parse($lastAttempt)->toIso8601String(),
             'recovery_journals' => $journals,
+            'orphan_recovery' => app(WorkspaceDeletion::class)->orphanRecoveryStatus(),
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;

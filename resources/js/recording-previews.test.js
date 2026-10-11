@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { recordingFirstFrame, setRecordingPoster } from './recording-previews.js';
+import { enhanceRecordingPreviews, recordingFirstFrame, setRecordingPoster } from './recording-previews.js';
 
 async function withFakeMedia(options, callback) {
     const originalDocument = globalThis.document;
@@ -95,4 +95,34 @@ test('a long session evicts old frames by retained bytes while keeping recent fr
         await recordingFirstFrame('/budget/0.mov');
         assert.equal(harness.videos.length, before + 1);
     });
+});
+
+test('disconnects the previous gallery observer before rebinding previews', () => {
+    const originalWindow = globalThis.window;
+    const originalIntersectionObserver = globalThis.IntersectionObserver;
+    const observers = [];
+    class FakeObserver {
+        constructor(callback) { this.callback = callback; this.targets = new Set(); this.disconnected = false; observers.push(this); }
+        observe(element) { this.targets.add(element); }
+        unobserve(element) { this.targets.delete(element); }
+        disconnect() { this.disconnected = true; this.targets.clear(); }
+    }
+    globalThis.window = { IntersectionObserver: FakeObserver };
+    globalThis.IntersectionObserver = FakeObserver;
+    const first = { dataset: { recordingPreview: '/first.mov' } };
+    const second = { dataset: { recordingPreview: '/second.mov' } };
+    const firstRoot = { querySelectorAll: () => [first] };
+    const secondRoot = { querySelectorAll: () => [second] };
+
+    try {
+        enhanceRecordingPreviews(firstRoot);
+        enhanceRecordingPreviews(secondRoot);
+        assert.equal(observers.length, 2);
+        assert.equal(observers[0].disconnected, true);
+        assert.equal(observers[0].targets.size, 0);
+        assert.deepEqual([...observers[1].targets], [second]);
+    } finally {
+        globalThis.window = originalWindow;
+        globalThis.IntersectionObserver = originalIntersectionObserver;
+    }
 });

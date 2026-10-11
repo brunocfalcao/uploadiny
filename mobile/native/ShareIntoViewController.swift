@@ -1,8 +1,11 @@
 import AVKit
 import ImageIO
+import OSLog
 import Security
 import UIKit
 import UniformTypeIdentifiers
+
+private let uploadinyPersistenceLogger = Logger(subsystem: "test.uploadiny.app.share", category: "persistence")
 
 final class ShareIntoViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UICollectionViewDataSource, UICollectionViewDelegate, UITextViewDelegate, URLSessionTaskDelegate {
   private let titleLabel = UILabel()
@@ -65,7 +68,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var didStart = false
   private var canDismiss = false
   private var didClose = false
-  private var startingDraft = false
+  private var draftStartLifecycle = ShareDraftStartLifecycle()
   private var draftID: String?
   private var serverURL: URL?
   private var token = ""
@@ -456,7 +459,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   @objc private func appendPreferenceChanged() {
     appendToLastUpload = appendSwitch.isOn
-    UploadinyAppendPreferenceStore.write(appendSwitch.isOn)
+    if !UploadinyAppendPreferenceStore.write(appendSwitch.isOn) {
+      uploadinyPersistenceLogger.debug("Could not persist append preference.")
+    }
     updateUploadAvailability()
   }
 
@@ -1149,27 +1154,39 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     appendingTo = target
     uploadedImageIDs = []
     request.timeoutInterval = 30
-    startingDraft = true
+    draftStartLifecycle.begin()
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
     uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       DispatchQueue.main.async {
         guard let self else { return }
-        self.startingDraft = false
         if let response = response as? HTTPURLResponse, response.statusCode == 401 {
-          self.requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
+          self.handleDraftStart(.unauthorized)
           return
         }
         guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 201,
               let data, let draft = try? JSONDecoder().decode(DraftResult.self, from: data) else {
-          if self.didClose { self.finishClosing(); return }
-          self.showError("The feedback group could not be started. Check your connection and try again.")
+          self.handleDraftStart(.failure)
           return
         }
-        self.draftID = draft.id
-        if self.didClose { self.cancelDraft { self.finishClosing() }; return }
-        self.uploadFile(at: 0)
+        self.handleDraftStart(.success, draftID: draft.id)
       }
     }.resume()
+  }
+
+  private func handleDraftStart(_ result: ShareDraftStartLifecycle.Result, draftID: String? = nil) {
+    if let draftID { self.draftID = draftID }
+    switch draftStartLifecycle.resolve(result) {
+    case .continueUpload:
+      uploadFile(at: 0)
+    case .cancelDraftAndClose:
+      cancelDraft { self.finishClosing() }
+    case .requireSignIn:
+      requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
+    case .showError:
+      showError("The feedback group could not be started. Check your connection and try again.")
+    case .finishClosing:
+      finishClosing()
+    }
   }
 
   private func authorizedRequest(_ url: URL) -> URLRequest {
@@ -1249,7 +1266,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         }
         let shared = self.uploadedImageIDs.compactMap { id in result.images.first { $0.id == id } }
         let merged = self.appendingTo != nil && result.id == self.appendingTo
-        if let slug = self.selectedProject?.slug { UploadinyLastProjectStore.write(slug) }
+        if let slug = self.selectedProject?.slug, !UploadinyLastProjectStore.write(slug) {
+          uploadinyPersistenceLogger.debug("Could not persist remembered project.")
+        }
         self.draftID = nil
         let thumbnail = self.review.files.first.flatMap { self.imagePreview($0.url) }
         self.cleanupFiles()
@@ -1375,9 +1394,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     closeButton.isEnabled = false
     detailLabel.isHidden = false
     detailLabel.text = "Closing…"
-    if startingDraft { return }
-    uploads.cancel()
-    cancelDraft { self.finishClosing() }
+    switch draftStartLifecycle.close() {
+    case .waitForStart:
+      return
+    case .cancelDraftAndClose:
+      uploads.cancel()
+      cancelDraft { self.finishClosing() }
+    }
   }
 
   private func finishClosing() {
@@ -1493,6 +1516,49 @@ private struct ShareAppendDecision {
     guard self.projectID == projectID, self.generation == generation else { return }
     loading = false
     failed = !success
+  }
+}
+
+private struct ShareDraftStartLifecycle {
+  enum Result { case success, unauthorized, failure }
+  enum StartAction: Equatable {
+    case continueUpload
+    case cancelDraftAndClose
+    case requireSignIn
+    case showError
+    case finishClosing
+  }
+  enum CloseAction: Equatable {
+    case waitForStart
+    case cancelDraftAndClose
+  }
+
+  private var starting = false
+  private var closed = false
+
+  mutating func begin() {
+    starting = true
+    closed = false
+  }
+
+  mutating func close() -> CloseAction {
+    closed = true
+    return starting ? .waitForStart : .cancelDraftAndClose
+  }
+
+  mutating func resolve(_ result: Result) -> StartAction {
+    starting = false
+    if closed {
+      switch result {
+      case .success: return .cancelDraftAndClose
+      case .unauthorized, .failure: return .finishClosing
+      }
+    }
+    switch result {
+    case .success: return .continueUpload
+    case .unauthorized: return .requireSignIn
+    case .failure: return .showError
+    }
   }
 }
 

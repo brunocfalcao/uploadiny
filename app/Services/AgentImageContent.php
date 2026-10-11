@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\UploadImage;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
+use League\Flysystem\UnableToReadFile;
 use RuntimeException;
 
 final class AgentImageContent
@@ -35,7 +37,7 @@ final class AgentImageContent
 
         $mime = $variant === 'annotated' ? 'image/png' : $image->mime_type;
         if ($width === null) {
-            return ['data' => $disk->get($path), 'mime_type' => $mime];
+            return ['data' => $this->readBytes($disk, $path, $variant), 'mime_type' => $mime];
         }
         $absolutePath = $disk->path($path);
         $dimensions = @getimagesize($absolutePath);
@@ -43,7 +45,7 @@ final class AgentImageContent
             throw new RuntimeException('This image cannot be resized. Request it without image_width or use its authenticated download URL: '.$download);
         }
         if ($dimensions[0] <= $width) {
-            return ['data' => $disk->get($path), 'mime_type' => $mime];
+            return ['data' => $this->readBytes($disk, $path, $variant), 'mime_type' => $mime];
         }
         if (! extension_loaded('gd')) {
             throw new RuntimeException('Image resizing is unavailable. Request it without image_width.');
@@ -83,5 +85,21 @@ final class AgentImageContent
         }
 
         return ['data' => $bytes, 'mime_type' => 'image/png'];
+    }
+
+    private function readBytes(FilesystemAdapter $disk, string $path, string $variant): string
+    {
+        $bytes = null;
+        try {
+            $bytes = $disk->get($path);
+        } catch (UnableToReadFile) {
+            // The file can disappear after the existence and size checks.
+        }
+
+        if (! is_string($bytes)) {
+            throw new RuntimeException($variant === 'annotated' ? 'No annotated image is available for this asset. Try original.' : 'The original asset file is unavailable.');
+        }
+
+        return $bytes;
     }
 }

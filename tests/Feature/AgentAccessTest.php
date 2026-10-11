@@ -8,7 +8,6 @@ use App\Services\AgentAccess;
 use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Database\QueryException;
-use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -109,11 +108,11 @@ class AgentAccessTest extends TestCase
         $files = Storage::disk('local');
         $old = $files->get('credentials/uploadiny-agent-token.txt');
         $this->freshBearer($old)->getJson(route('api.projects.index'))->assertOk();
-        $disk = Mockery::mock(FilesystemAdapter::class);
-        $disk->shouldReceive('exists')->with('credentials/uploadiny-agent-token.txt')->andReturn(true);
-        $disk->shouldReceive('get')->with('credentials/uploadiny-agent-token.txt')->andReturn($old);
-        $disk->shouldReceive('put')->once()->with('credentials/.uploadiny-agent-token.next', Mockery::type('string'))->andReturn(false);
-        $disk->shouldReceive('delete')->once()->with('credentials/.uploadiny-agent-token.next')->andReturn(true);
+        $disk = Mockery::mock($files);
+        $disk->shouldReceive('exists')->andReturnUsing(fn ($path) => $files->exists($path));
+        $disk->shouldReceive('get')->andReturnUsing(fn ($path) => $files->get($path));
+        $disk->shouldReceive('put')->andReturnUsing(fn ($path, $value) => $path === 'credentials/.uploadiny-agent-token.next' ? false : $files->put($path, $value));
+        $disk->shouldReceive('delete')->andReturnUsing(fn ($path) => $files->delete($path));
         Storage::shouldReceive('disk')->with('local')->andReturn($disk);
 
         $this->flushHeaders()->actingAs($user)->post(route('agent-access.store'))->assertRedirect(route('agent-access.show'))->assertSessionHasErrors('api_key');

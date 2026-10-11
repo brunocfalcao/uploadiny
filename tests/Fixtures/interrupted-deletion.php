@@ -30,7 +30,7 @@ if (str_starts_with($point, 'move-') || str_starts_with($point, 'cleanup-')) {
     });
     $proxy->shouldReceive('delete')->andReturnUsing(function ($path) use ($disk, $point) {
         $result = $disk->delete($path);
-        if ($point === 'cleanup-file') {
+        if ($point === 'cleanup-file' || ($point === 'cleanup-directory' && is_string($path) && str_ends_with($path, '/journal.json'))) {
             exit(73);
         }
 

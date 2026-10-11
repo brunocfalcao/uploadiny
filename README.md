@@ -196,19 +196,18 @@ production website is `https://uploadiny.com`; its database, private storage,
 queue state, environment, and application identity are persistent production
 state and are never copied from a local checkout.
 
-The release candidate is `v0.14.2`, candidate, not deployed. Its iOS
-marketing version is `0.14.2`; this release build is `34`. Website notices
-now use dismissible overlay toasts on projects, chunk galleries, the editor,
-Agent API access, and sign-in. Notifications no longer resize page content.
-Transient arrivals and confirmations expire after six seconds; warnings stay
-visible until dismissed or replaced.
+`v0.14.2` (`4565de4687`) completed FAST shipping on 10 October 2026 at
+22:46:44 UTC in 105 seconds. Its completed receipt records website/API proof
+and signed physical iPhone 0.14.2 build 34 installation, launch, and running
+process proof.
 
-No migrations, new environment keys or dependency versions are required.
-Runtime and shipped mobile dependencies are unchanged.
+The release candidate is `v0.14.3`, candidate, not deployed. Its iOS
+marketing version is `0.14.3`; this release build is `35`. It makes new
+private-file writes and agent-key changes recoverable after interruption,
+keeps cleanup safe around unrelated files, and repairs browser/editor and
+Share Extension lifecycle edges. Expo SDK 57 dependencies align to
+`expo` 57.0.27, `expo-sharing` 57.0.22, and React Native 0.86.3.
 
-The previous release, `v0.14.1` (`f83601cef2`), completed FAST shipping on
-10 October 2026 at 15:32:23 UTC in 148 seconds. Its matching completed receipt
-records website/API verification and signed physical iPhone 0.14.1 build 33
-installation and launch. Manual browser, Share Sheet, Keychain persistence,
-and VoiceOver acceptance remain separate.
+No migrations or new environment keys are required. Manual browser, Share
+Sheet, Keychain persistence, and VoiceOver acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

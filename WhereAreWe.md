@@ -1,6 +1,33 @@
 # Where Are We — Uploadiny
 
-## 2026-10-11 — v0.14.2 candidate, not deployed
+## 2026-10-11 — v0.14.3 candidate, not deployed
+
+- New private originals, copies, duplicates, and annotations receive durable
+  write journals before bytes are written. Recovery deletes only journal-owned,
+  unreferenced files; referenced and unlisted siblings survive.
+- Agent-key rotation and revocation recover an interrupted credential change;
+  account provisioning is serialized; cleanup reports orphan recovery progress.
+- The phone completion response hydrates only new assets, while browser and
+  agent views retain complete batches. Missing private agent media becomes a
+  tool error instead of a failed MCP response.
+- Direct browser links recover from deleted files and stale image requests.
+  Thickness gestures undo once or restore on cancellation; recording observers
+  disconnect before gallery rebinding. Share Extension close handles start
+  success, authentication failure, and request failure without reopening sign-in.
+- Candidate iPhone metadata: 0.14.3 build 35. Expo SDK 57 dependencies align
+  `expo` 57.0.9 → 57.0.27, `expo-sharing` 57.0.8 → 57.0.22, and React Native
+  0.86.2 → 0.86.3. No migrations, environment keys, or migration-review flag.
+- Passed: 199 PHP tests / 2,355 assertions, 121 web tests, 22 native checks,
+  Pint, Vite, Composer validation, TypeScript, and Expo Doctor 21/21.
+  PHPUnit has no TIA.
+- Browser visuals, physical Share Sheet interaction, Keychain persistence, and
+  VoiceOver acceptance remain unobserved.
+
+## 2026-10-10 — v0.14.2 deployed via FAST
+
+- Shipped `4565de4687` at 22:46:44 UTC in 105 seconds. The completed FAST
+  receipt records website/API verification and signed physical iPhone 0.14.2
+  build 34 installation, launch, and a running process.
 
 - Website status and workspace notifications use dismissible overlay toasts
   outside page layout. Projects, chunk galleries, editor, Agent API access,
@@ -12,8 +39,8 @@
 - Release regression coverage checks all rendered page variants, escaped
   messages, dismissal without gallery reload, later arrivals, flash expiry,
   and persistent errors. Existing arrival/feedback tests remain intact.
-- Candidate iPhone metadata: 0.14.2 build 34. Mobile behavior and dependencies
-  unchanged. No migrations, environment keys or migration-review flag.
+- iPhone metadata: 0.14.2 build 34. No migrations, environment keys, or
+  migration-review flag.
 - Passed: 183 PHP tests / 2,014 assertions, 113 web tests, 20 native checks,
   full Pint, Vite build, Composer validation, and mobile TypeScript checks.
   PHPUnit has no TIA.
