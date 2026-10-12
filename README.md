@@ -201,8 +201,10 @@ state and are never copied from a local checkout.
 and signed physical iPhone 0.14.2 build 34 installation, launch, and running
 process proof.
 
-The release candidate is `v0.14.3`, candidate, not deployed. Its iOS
-marketing version is `0.14.3`; this release build is `35`. It makes new
+`v0.14.3` (`3ac2c014ef`) completed FAST shipping on 11 October 2026 at
+12:30:40 UTC in 105 seconds. Its matching completed receipt records website/API
+proof and signed physical iPhone 0.14.3 build 35 installation, launch, and
+running-process proof. It makes new
 private-file writes and agent-key changes recoverable after interruption,
 keeps cleanup safe around unrelated files, and repairs browser/editor and
 Share Extension lifecycle edges. Expo SDK 57 dependencies align to
@@ -210,4 +212,8 @@ Share Extension lifecycle edges. Expo SDK 57 dependencies align to
 
 No migrations or new environment keys are required. Manual browser, Share
 Sheet, Keychain persistence, and VoiceOver acceptance remain separate.
+The release candidate is `v0.14.4`, candidate, not deployed, with iPhone version
+`0.14.4` build `36`. It refreshes deployment documentation and keeps existing
+runtime behavior and dependencies. Recording retrieval retains its per-frame
+timeout and returns all requested frames or its existing safe error.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

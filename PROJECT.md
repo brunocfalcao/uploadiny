@@ -106,8 +106,9 @@ On 11 October 2026, a local synthetic five-second 4K recording returned all five
 exact timestamps in a roughly 264 KB serialized MCP response: 1.8 seconds normally
 and 21.9 seconds with a controlled four-second delay per extraction; peak PHP
 memory grew by 4.5 MiB through serialization. This is local measurement, not a
-production latency guarantee. No aggregate deadline or partial-result policy was
-introduced.
+production latency guarantee. Recording retrieval keeps the existing per-frame
+timeout and returns all requested frames or its existing safe error. No aggregate
+deadline or partial-result policy applies; Bruno confirmed this on 12 October 2026.
 
 Available entrypoints: `composer test`, `composer quality`, `npm run build`, `npm run test`. Choose the narrowest relevant check; a listed full-suite, build, install, or packaging command is not an instruction to run it for every edit. Inspect test environment and side effects first.
 

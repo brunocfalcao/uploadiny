@@ -1,6 +1,23 @@
 # Where Are We — Uploadiny
 
-## 2026-10-11 — v0.14.3 candidate, not deployed
+## 2026-10-12 — v0.14.4 candidate, not deployed
+
+- Refreshes release documentation after the completed v0.14.3 FAST shipment.
+  Runtime behavior and dependencies are unchanged. Bruno confirmed that
+  recording retrieval keeps its existing per-frame timeout and complete-result
+  behavior, without a total deadline or partial-frame response.
+- Candidate iPhone metadata: 0.14.4 build 36. No migrations, environment keys,
+  or migration-review flag.
+- Passed: the full 199 PHP tests / 2,355 assertions, 121 web tests, 22 native
+  checks, and full Pint. PHPUnit has no TIA. No PHP quality gate or CI/CD ran.
+- Browser visuals, physical Share Sheet interaction, Keychain persistence, and
+  VoiceOver acceptance remain unobserved.
+
+## 2026-10-11 — v0.14.3 deployed via FAST
+
+- Shipped `3ac2c014ef` at 12:30:40 UTC in 105 seconds. The matching completed
+  FAST receipt records website/API verification and signed physical iPhone
+  0.14.3 build 35 installation, launch, and a running process.
 
 - New private originals, copies, duplicates, and annotations receive durable
   write journals before bytes are written. Recovery deletes only journal-owned,
@@ -14,7 +31,7 @@
   Thickness gestures undo once or restore on cancellation; recording observers
   disconnect before gallery rebinding. Share Extension close handles start
   success, authentication failure, and request failure without reopening sign-in.
-- Candidate iPhone metadata: 0.14.3 build 35. Expo SDK 57 dependencies align
+- iPhone metadata: 0.14.3 build 35. Expo SDK 57 dependencies align
   `expo` 57.0.9 → 57.0.27, `expo-sharing` 57.0.8 → 57.0.22, and React Native
   0.86.2 → 0.86.3. No migrations, environment keys, or migration-review flag.
 - Passed: 199 PHP tests / 2,355 assertions, 121 web tests, 22 native checks,
