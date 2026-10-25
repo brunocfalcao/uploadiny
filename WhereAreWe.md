@@ -1,6 +1,11 @@
 # Where Are We — Uploadiny
 
-## 2026-10-25 — v0.15.0 candidate, not deployed
+## 2026-10-25 — v0.15.1 candidate, not deployed
+
+- Supersedes the published `v0.15.0` tag, which was never shipped: the shipping
+  check refused it because it tracked the local agent pointer files
+  `AGENTS.md` and `CLAUDE.md`. They are untracked again; product content is
+  otherwise identical.
 
 - The iPhone Share Extension accepts the App Privacy Report `.ndjson` export
   alongside screenshots and recordings, with a document preview, entry count,
@@ -16,7 +21,7 @@
   `model_not_found`. The default vision model is now `gpt-5.4-nano`, verified
   from the production host with a sample screenshot request. Production does
   not override `UPLOADINY_VISION_MODEL`.
-- Candidate iPhone metadata: 0.15.0 build 37. `laravel/mcp` 1.0.1 → 1.1.1
+- Candidate iPhone metadata: 0.15.1 build 38. `laravel/mcp` 1.0.1 → 1.1.1
   (runtime). Expo SDK 57 patch alignment: `expo` 57.0.27 → 57.0.31 and
   `expo-sharing` 57.0.22 → 57.0.24 (shipped iPhone client). No migrations,
   environment keys, or migration-review flag.
@@ -31,6 +36,11 @@
 - Shipped `e18bc0f788` at 21:45:48 UTC in 117 seconds. The matching completed
   FAST receipt records website/API verification and signed physical iPhone
   0.14.4 build 36 installation, launch, and a running process.
+- On 25 October 2026 an unintended FAST re-ship of the same `v0.14.4` stopped
+  at the live vision check because `gpt-4.1-nano` was retired. With the
+  vision model switched to `gpt-5.4-nano` in the cached production
+  configuration (the `.env` file unchanged), the resumed run completed with
+  website/API proof and iPhone 0.14.4 build 36 reinstalled.
 
 - Refreshes release documentation after the completed v0.14.3 FAST shipment.
   Runtime behavior and dependencies are unchanged. Bruno confirmed that

@@ -219,8 +219,9 @@ running-process proof. It refreshed deployment documentation and kept existing
 runtime behavior and dependencies. Recording retrieval retains its per-frame
 timeout and returns all requested frames or its existing safe error.
 
-The release candidate is `v0.15.0`, candidate, not deployed, with iPhone version
-`0.15.0` build `37`. The Share Extension accepts the iPhone App Privacy Report
+The release candidate is `v0.15.1`, candidate, not deployed, with iPhone version
+`0.15.1` build `38`. It supersedes the unshipped `v0.15.0` tag, which tracked the
+local agent pointer files that shipping excludes. The Share Extension accepts the iPhone App Privacy Report
 export (`.ndjson`). The website shows it as a paged, readable report view with
 written feedback and a download of the original; MCP agents receive its text
 inline up to 48 KiB per report (64 KiB per feedback response) with an explicit truncation note. The website's
