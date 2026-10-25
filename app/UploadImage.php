@@ -46,9 +46,33 @@ class UploadImage extends Model
         return ['annotations' => 'array', 'size' => 'integer', 'feedback_revision' => 'integer', 'feedback_updated_at' => 'datetime'];
     }
 
+    /** Stored MIME type of every accepted iPhone App Privacy Report, whatever the upload sniffed. */
+    public const PRIVACY_REPORT_MIME_TYPE = 'application/x-ndjson';
+
     public function isVideo(): bool
     {
         return str_starts_with($this->mime_type, 'video/');
+    }
+
+    public function isPrivacyReport(): bool
+    {
+        return $this->mime_type === self::PRIVACY_REPORT_MIME_TYPE;
+    }
+
+    /** Still images are the only assets that can be drawn on, resized, or described by vision. */
+    public function isStillImage(): bool
+    {
+        return ! $this->isVideo() && ! $this->isPrivacyReport();
+    }
+
+    /** @return 'image'|'video'|'privacy_report' */
+    public function mediaType(): string
+    {
+        return match (true) {
+            $this->isVideo() => 'video',
+            $this->isPrivacyReport() => 'privacy_report',
+            default => 'image',
+        };
     }
 
     public function getRouteKeyName(): string
@@ -95,7 +119,7 @@ class UploadImage extends Model
             'name' => $this->name,
             'original_name' => $this->original_name,
             'mime_type' => $this->mime_type,
-            'media_type' => $this->isVideo() ? 'video' : 'image',
+            'media_type' => $this->mediaType(),
             'size' => $this->size,
             'image_url' => route('api.images.download', $this),
             'annotated_image_url' => $this->annotated_path ? route('api.images.annotated', $this) : null,

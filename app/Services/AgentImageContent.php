@@ -15,6 +15,9 @@ final class AgentImageContent
     /** @return array{data: string, mime_type: string} */
     public function read(UploadImage $image, string $variant, ?int $width = null, int $reservedBytes = 0): array
     {
+        if ($image->isPrivacyReport()) {
+            throw new RuntimeException('This asset is an App Privacy Report, not an image. Its text is returned inline by get_feedback and get_asset.');
+        }
         $path = $variant === 'annotated' ? $image->annotated_path : $image->path;
         $disk = Storage::disk('local');
         if ($path === null || ! $disk->exists($path)) {

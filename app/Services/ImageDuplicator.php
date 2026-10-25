@@ -15,10 +15,10 @@ class ImageDuplicator
 {
     public function __construct(private ImageCopy $copies) {}
 
-    /** Copies the untouched original into the same chunk as the last file, with no feedback. */
+    /** Copies the untouched original screenshot or privacy report into the same chunk as the last file, with no feedback. */
     public function duplicate(UploadImage $image): UploadImage
     {
-        abort_if($image->isVideo(), 422, 'Only still images can be duplicated.');
+        abort_if($image->isVideo(), 422, 'Only still images and privacy reports can be duplicated.');
 
         return Cache::lock('uploadiny:upload-sequence', 600)->block(30, function () use ($image): UploadImage {
             $copy = app(PrivateFileWrites::class)->transaction(function (PrivateFileWrites $writes) use ($image): UploadImage {

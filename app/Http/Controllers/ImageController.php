@@ -6,11 +6,13 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ImageFeedbackRequest;
 use App\Http\Requests\MoveImageRequest;
+use App\Http\Requests\PrivacyReportPageRequest;
 use App\Http\Requests\TransferChunkImageRequest;
 use App\Jobs\DescribeUploadImage;
 use App\Project;
 use App\Services\ChunkTransfer;
 use App\Services\ImageDuplicator;
+use App\Services\PrivacyReport;
 use App\Services\PrivateFileWrites;
 use App\Services\WorkspaceDeletion;
 use App\UploadImage;
@@ -26,7 +28,12 @@ class ImageController extends Controller
 {
     public function show(UploadImage $image): JsonResponse
     {
-        return response()->json($image->agentData() + ['preview_url' => route('images.preview', $image)]);
+        $routes = ['preview_url' => route('images.preview', $image)];
+        if ($image->isPrivacyReport()) {
+            $routes['report_url'] = route('images.report', $image);
+        }
+
+        return response()->json($image->agentData() + $routes);
     }
 
     public function original(Request $request, UploadImage $image): BinaryFileResponse
@@ -34,10 +41,28 @@ class ImageController extends Controller
         $path = Storage::disk('local')->path($image->path);
         abort_unless(is_file($path), 404);
         $headers = ['Content-Type' => $image->mime_type, 'X-Content-Type-Options' => 'nosniff'];
-        $response = $request->routeIs('images.preview') ? response()->file($path, $headers) : response()->download($path, $image->name, $headers);
+        // Uploaded report text is never displayed inline by the browser.
+        $report = $image->isPrivacyReport();
+        if ($report) {
+            $headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
+        }
+        $response = $request->routeIs('images.preview') && ! $report ? response()->file($path, $headers) : response()->download($path, $image->name, $headers);
         $response->headers->set('Cache-Control', 'private, no-store');
 
         return $response;
+    }
+
+    public function report(PrivacyReportPageRequest $request, UploadImage $image, PrivacyReport $reports): JsonResponse
+    {
+        abort_unless($image->isPrivacyReport(), 404);
+        try {
+            $page = $reports->page($image, $request->integer('page', 1));
+        } catch (\RuntimeException) {
+            abort(404, 'The original report file is unavailable.');
+        }
+
+        // Report text is untrusted; keep markup characters escaped even inside JSON.
+        return response()->json($page, 200, ['X-Content-Type-Options' => 'nosniff'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
     }
 
     public function annotated(UploadImage $image): BinaryFileResponse
@@ -53,8 +78,8 @@ class ImageController extends Controller
     public function update(ImageFeedbackRequest $request, UploadImage $image, WorkspaceDeletion $deletion): JsonResponse
     {
         $data = $request->validated();
-        if ($image->isVideo() && ($data['annotations'] !== [] || isset($data['annotated_image']))) {
-            throw ValidationException::withMessages(['annotations' => 'Use written feedback for recordings.']);
+        if (! $image->isStillImage() && ($data['annotations'] !== [] || isset($data['annotated_image']))) {
+            throw ValidationException::withMessages(['annotations' => $image->isPrivacyReport() ? 'Use written feedback for privacy reports.' : 'Use written feedback for recordings.']);
         }
         $raster = null;
         if (is_string($data['annotated_image'] ?? null)) {
@@ -126,7 +151,7 @@ class ImageController extends Controller
 
     public function describe(UploadImage $image): JsonResponse
     {
-        abort_if($image->isVideo(), 422, 'Image descriptions are available for still images.');
+        abort_unless($image->isStillImage(), 422, 'Image descriptions are available for still images.');
         $changed = UploadImage::whereKey($image->id)->whereIn('description_status', ['failed', 'ready'])->update(['description_status' => 'pending', 'description_error' => null]);
         if ($changed) {
             DescribeUploadImage::schedule($image->id);

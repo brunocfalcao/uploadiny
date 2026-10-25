@@ -36,6 +36,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/images/{image}/preview', [ImageController::class, 'original'])->name('images.preview');
     Route::get('/images/{image}/download', [ImageController::class, 'original'])->name('images.download');
     Route::get('/images/{image}/annotated', [ImageController::class, 'annotated'])->name('images.annotated');
+    Route::get('/images/{image}/report', [ImageController::class, 'report'])->name('images.report');
     Route::patch('/images/{image}', [ImageController::class, 'update'])->name('images.update');
     Route::patch('/images/{image}/project', [ImageController::class, 'move'])->name('images.move');
     Route::delete('/images/{image}', [ImageController::class, 'destroy'])->name('images.destroy');

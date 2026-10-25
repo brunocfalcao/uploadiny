@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Services\AgentImageContent;
+use App\Services\AgentReportText;
 use App\Services\FeedbackReader;
+use App\Services\PrivacyReport;
 use App\UploadImage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -24,9 +26,9 @@ class GetAsset extends Tool
 {
     protected string $name = 'get_asset';
 
-    protected string $description = 'Inspect an asset by UUID. Screenshots return image content plus compact feedback. Choose original (default) or annotated. Set image_width to resize without upscaling, and include_descriptions false to omit AI context. Original recordings return metadata and an authenticated download URL; use get_recording_frames for visual inspection.';
+    protected string $description = 'Inspect an asset by UUID. Screenshots return image content plus compact feedback. Choose original (default) or annotated. Set image_width to resize without upscaling, and include_descriptions false to omit AI context. Original recordings return metadata and an authenticated download URL; use get_recording_frames for visual inspection. App Privacy Reports return their text inline, up to 48 KiB, with an explicit note and download URL when the text was cut.';
 
-    public function handle(Request $request, FeedbackReader $feedback, AgentImageContent $content): Response|ResponseFactory
+    public function handle(Request $request, FeedbackReader $feedback, AgentImageContent $content, AgentReportText $reports): Response|ResponseFactory
     {
         $data = $request->validate([
             'asset_id' => ['required', 'uuid'], 'variant' => ['sometimes', 'string', 'in:original,annotated'],
@@ -39,6 +41,21 @@ class GetAsset extends Tool
 
         $variant = $data['variant'] ?? 'original';
         $metadata = ['asset' => $feedback->image($image, (bool) ($data['include_descriptions'] ?? true)), 'variant' => $variant];
+        if ($image->isPrivacyReport()) {
+            if ($variant === 'annotated') {
+                return Response::make(Response::error('App Privacy Reports have no annotated variant. Request variant original to read the report text.'))->withStructuredContent($metadata);
+            }
+            $report = $reports->read($image, PrivacyReport::AGENT_TEXT_LIMIT_BYTES);
+            if ($report['text'] === null) {
+                return Response::make(Response::error($report['note']))->withStructuredContent($metadata);
+            }
+            $content = [Response::json($metadata), Response::text($report['note']), Response::text($report['text'])];
+            if (isset($data['image_width'])) {
+                $content[] = Response::text('image_width does not apply to App Privacy Reports; the text is unchanged.');
+            }
+
+            return Response::make($content)->withStructuredContent($metadata);
+        }
         if ($image->isVideo() && $variant === 'original') {
             if (! Storage::disk('local')->exists($image->path)) {
                 return Response::error('The original asset file is unavailable.');

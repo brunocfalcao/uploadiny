@@ -566,7 +566,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     let file = review.files[indexPath.item]
     cell.representedIndex = indexPath.item
     cell.configure(number: indexPath.item + 1, file: file, selected: review.selectedIndex == indexPath.item)
-    if !file.mime.hasPrefix("video/") {
+    if file.isStillImage {
       DispatchQueue.global(qos: .userInitiated).async { [weak self, weak cell] in
         guard let self else { return }
         let thumbnail = self.imagePreview(file.url, maxPixelSize: 160)
@@ -633,7 +633,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     guard review.files.indices.contains(review.selectedIndex) else { return }
     let file = review.files[review.selectedIndex]
     assetLabel.text = "\(review.selectedIndex + 1) / \(review.files.count)"
-    mediaLabel.text = file.mime.hasPrefix("video/") ? "Recording" : "Screenshot"
+    mediaLabel.text = file.isRecording ? "Recording" : file.isPrivacyReport ? "Privacy report" : "Screenshot"
     previousButton.isHidden = review.files.count == 1
     nextButton.isHidden = review.files.count == 1
     assetStrip.isHidden = review.files.count == 1
@@ -646,7 +646,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     feedbackField.text = file.comments
     feedbackField.accessibilityLabel = "Feedback for asset \(review.selectedIndex + 1), \(file.name)"
     feedbackPlaceholder.isHidden = !file.comments.isEmpty
-    playButton.isHidden = !file.mime.hasPrefix("video/")
+    playButton.isHidden = !file.isRecording
     assetStrip.reloadData()
     assetStrip.layoutIfNeeded()
     if assetStrip.numberOfItems(inSection: 0) > review.selectedIndex {
@@ -663,7 +663,16 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     previewGenerator = nil
     assetPreview.image = nil
     assetPreview.accessibilityLabel = "Loading preview for \(file.name)"
-    if file.mime.hasPrefix("video/") {
+    if file.isPrivacyReport {
+      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let entries = SharePrivacyReport.entryCount(at: file.url)
+        let bytes = (try? file.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
+        DispatchQueue.main.async {
+          guard let self, !self.didClose, self.previewGeneration == generation else { return }
+          self.displayReportPreview(file, summary: SharePrivacyReport.summary(bytes: Int64(bytes), entries: entries))
+        }
+      }
+    } else if file.isRecording {
       let generator = AVAssetImageGenerator(asset: AVURLAsset(url: file.url))
       generator.appliesPreferredTrackTransform = true
       generator.maximumSize = CGSize(width: 1280, height: 1280)
@@ -686,8 +695,17 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     }
   }
 
+  private func displayReportPreview(_ file: SharedFile, summary: String) {
+    assetPreview.image = UIImage(systemName: "doc.text", withConfiguration: UIImage.SymbolConfiguration(pointSize: 56, weight: .regular))
+    assetPreview.contentMode = .center
+    assetPreview.tintColor = SharePalette.accentText
+    assetPreview.accessibilityLabel = "App Privacy Report \(file.name), \(summary)"
+    assetNameLabel.text = "\(file.name) · \(summary)"
+  }
+
   private func displayAssetPreview(_ image: UIImage?, file: SharedFile) {
-    assetPreview.image = image ?? UIImage(systemName: file.mime.hasPrefix("video/") ? "video" : "photo")
+    assetPreview.contentMode = .scaleAspectFit
+    assetPreview.image = image ?? UIImage(systemName: file.isRecording ? "video" : "photo")
     assetPreview.tintColor = SharePalette.secondary
     assetPreview.accessibilityLabel = image == nil ? "Preview unavailable for \(file.name)" : "Preview of \(file.name)"
     assetNameLabel.text = file.name + (image == nil ? " · Preview unavailable" : "")
@@ -1035,7 +1053,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     }
     isPreparing = true
     titleLabel.text = "Preparing your files…"
-    detailLabel.text = "Then add feedback to each screenshot or recording."
+    detailLabel.text = "Then add feedback to each screenshot, recording or privacy report."
     spinner.isHidden = false
     spinner.startAnimating()
     prepareProvider(at: 0)
@@ -1049,7 +1067,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     }
     let sizeLimit = 95 * 1024 * 1024
     if let oversized = review.files.first(where: { ((try? $0.url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0) > sizeLimit }) {
-      showError("\(oversized.name) is larger than 95 MB. Trim the video before sharing it.", allowRetry: false)
+      showError("\(oversized.name) is larger than 95 MB. \(oversized.isRecording ? "Trim the video before sharing it." : "Share a smaller file.")", allowRetry: false)
       return
     }
     saveCurrentFeedback()
@@ -1084,8 +1102,15 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       return
     }
     let provider = providers[index]
-    let movies = provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: .movie) == true }
-    let identifiers = movies.isEmpty ? provider.registeredTypeIdentifiers.filter { UTType($0)?.conforms(to: .image) == true } : movies
+    let registered = provider.registeredTypeIdentifiers
+    let movies = registered.filter { UTType($0)?.conforms(to: .movie) == true }
+    let images = registered.filter { UTType($0)?.conforms(to: .image) == true }
+    let reports = registered.filter(Self.isPrivacyReportType)
+    let identifiers = !movies.isEmpty ? movies : !images.isEmpty ? images : reports
+    guard !identifiers.isEmpty else {
+      showError("Uploadiny accepts screenshots, recordings and App Privacy Reports. One of the shared files is another type, so nothing was uploaded.", allowRetry: false)
+      return
+    }
     loadRepresentation(provider: provider, identifiers: identifiers, typeIndex: 0, providerIndex: index)
   }
 
@@ -1104,11 +1129,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       var fileName = provider.suggestedName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
       if fileName.isEmpty { fileName = fileURL.lastPathComponent }
       if URL(fileURLWithPath: fileName).pathExtension.isEmpty, let ext = UTType(identifier)?.preferredFilenameExtension { fileName += ".\(ext)" }
+      // The server recognises a report by its .ndjson name and its text content.
+      let report = Self.isPrivacyReportType(identifier)
+      if report, URL(fileURLWithPath: fileName).pathExtension.lowercased() != SharePrivacyReport.fileExtension { fileName += ".\(SharePrivacyReport.fileExtension)" }
       let copyURL = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).\(URL(fileURLWithPath: fileName).pathExtension)")
       do {
         // The provider's temporary URL is valid only during this callback.
         try FileManager.default.copyItem(at: fileURL, to: copyURL)
-        let mime = UTType(identifier)?.preferredMIMEType ?? "application/octet-stream"
+        let mime = report ? SharePrivacyReport.mime : UTType(identifier)?.preferredMIMEType ?? "application/octet-stream"
         let prepared: SharedFile
         let ownedURLs: [URL]
         if ["image/heic", "image/heif", "image/tiff"].contains(mime) {
@@ -1270,7 +1298,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
           uploadinyPersistenceLogger.debug("Could not persist remembered project.")
         }
         self.draftID = nil
-        let thumbnail = self.review.files.first.flatMap { self.imagePreview($0.url) }
+        let thumbnail = self.review.files.first.flatMap { $0.isPrivacyReport ? nil : self.imagePreview($0.url) }
         self.cleanupFiles()
         self.spinner.stopAnimating()
       self.uploadProgress.isHidden = true
@@ -1309,6 +1337,13 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     uploads.dataTask(session: secureSession(requestTimeout: 10, resourceTimeout: 10), with: request) { _, _, _ in
       DispatchQueue.main.async { completion() }
     }.resume()
+  }
+
+  /// App Privacy Reports are newline-delimited JSON, system-declared as public.ndjson.
+  nonisolated private static func isPrivacyReportType(_ identifier: String) -> Bool {
+    guard let type = UTType(identifier) else { return false }
+    if let ndjson = UTType(SharePrivacyReport.typeIdentifier), type.conforms(to: ndjson) { return true }
+    return type.tags[.filenameExtension]?.contains { $0.lowercased() == SharePrivacyReport.fileExtension } == true
   }
 
   private func jpegRepresentation(_ sourceURL: URL) throws -> URL {
@@ -1482,8 +1517,8 @@ private final class ShareAssetCell: UICollectionViewCell {
 
   func configure(number: Int, file: SharedFile, selected: Bool) {
     numberLabel.text = "\(number)"
-    imageView.image = UIImage(systemName: file.mime.hasPrefix("video/") ? "video.fill" : "photo")
-    imageView.contentMode = file.mime.hasPrefix("video/") ? .center : .scaleAspectFill
+    imageView.image = UIImage(systemName: file.isRecording ? "video.fill" : file.isPrivacyReport ? "doc.text.fill" : "photo")
+    imageView.contentMode = file.isStillImage ? .scaleAspectFill : .center
     contentView.layer.borderColor = (selected ? SharePalette.accentText : SharePalette.line).cgColor
     accessibilityTraits = selected ? [.button, .selected] : [.button]
     accessibilityLabel = "Asset \(number), \(file.name)"
@@ -1644,6 +1679,10 @@ private struct SharedFile {
   let mime: String
   var comments = ""
 
+  var isRecording: Bool { mime.hasPrefix("video/") }
+  var isPrivacyReport: Bool { mime == SharePrivacyReport.mime }
+  var isStillImage: Bool { !isRecording && !isPrivacyReport }
+
   func writeMultipart(to bodyURL: URL, boundary: String, cancelled: () -> Bool = { false }) throws {
     if cancelled() { throw URLError(.cancelled) }
     FileManager.default.createFile(atPath: bodyURL.path, contents: nil)
@@ -1664,6 +1703,43 @@ private struct SharedFile {
       try output.write(contentsOf: Data(buffer[0..<count]))
     }
     try output.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
+  }
+}
+
+/// iPhone App Privacy Report exported from Settings > Privacy & Security > App Privacy Report.
+private enum SharePrivacyReport {
+  static let mime = "application/x-ndjson"
+  static let fileExtension = "ndjson"
+  static let typeIdentifier = "public.ndjson"
+
+  /// Counts non-blank lines, one entry each, without loading the whole report.
+  static func entryCount(at url: URL) -> Int? {
+    guard let input = InputStream(url: url) else { return nil }
+    input.open()
+    defer { input.close() }
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    var entries = 0
+    var lineHasContent = false
+    while true {
+      let count = input.read(&buffer, maxLength: buffer.count)
+      if count < 0 { return nil }
+      if count == 0 { break }
+      for byte in buffer[0..<count] {
+        if byte == 10 {
+          if lineHasContent { entries += 1 }
+          lineHasContent = false
+        } else if byte != 13 && byte != 32 && byte != 9 {
+          lineHasContent = true
+        }
+      }
+    }
+    return entries + (lineHasContent ? 1 : 0)
+  }
+
+  static func summary(bytes: Int64, entries: Int?) -> String {
+    let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    guard let entries else { return size }
+    return "\(size) · \(entries) entr\(entries == 1 ? "y" : "ies")"
   }
 }
 

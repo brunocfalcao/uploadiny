@@ -40,7 +40,7 @@ return [
         'ffmpeg_timeout' => (int) env('UPLOADINY_FFMPEG_TIMEOUT', 5),
         'device_token_expiration_days' => (int) env('UPLOADINY_DEVICE_TOKEN_EXPIRATION_DAYS', 90),
         'vision_key' => env('OPENAI_API_KEY'),
-        'vision_model' => env('UPLOADINY_VISION_MODEL', 'gpt-4.1-nano'),
+        'vision_model' => env('UPLOADINY_VISION_MODEL', 'gpt-5.4-nano'),
         'vision_timeout' => (int) env('UPLOADINY_VISION_TIMEOUT', 60),
         'vision_connect_timeout' => (int) env('UPLOADINY_VISION_CONNECT_TIMEOUT', 10),
     ],

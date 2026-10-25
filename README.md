@@ -212,8 +212,22 @@ Share Extension lifecycle edges. Expo SDK 57 dependencies align to
 
 No migrations or new environment keys are required. Manual browser, Share
 Sheet, Keychain persistence, and VoiceOver acceptance remain separate.
-The release candidate is `v0.14.4`, candidate, not deployed, with iPhone version
-`0.14.4` build `36`. It refreshes deployment documentation and keeps existing
+`v0.14.4` (`e18bc0f788`) completed FAST shipping on 12 October 2026 at
+21:45:48 UTC in 117 seconds. Its completed receipt records website/API proof
+and signed physical iPhone 0.14.4 build 36 installation, launch, and
+running-process proof. It refreshed deployment documentation and kept existing
 runtime behavior and dependencies. Recording retrieval retains its per-frame
 timeout and returns all requested frames or its existing safe error.
+
+The release candidate is `v0.15.0`, candidate, not deployed, with iPhone version
+`0.15.0` build `37`. The Share Extension accepts the iPhone App Privacy Report
+export (`.ndjson`). The website shows it as a paged, readable report view with
+written feedback and a download of the original; MCP agents receive its text
+inline up to 48 KiB per report (64 KiB per feedback response) with an explicit truncation note. The website's
+own upload picker still accepts screenshots and recordings only. AI screenshot
+descriptions use `gpt-5.4-nano` by default, because OpenAI retired
+`gpt-4.1-nano` and production descriptions had been failing. Runtime
+dependency `laravel/mcp` moves from 1.0.1 to 1.1.1, and the iPhone client aligns
+`expo` 57.0.31 and `expo-sharing` 57.0.24 within SDK 57. No migrations or new
+environment keys are required.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

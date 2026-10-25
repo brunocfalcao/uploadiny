@@ -31,6 +31,7 @@ class ChunkStorage
                     abort_unless($chunk->status === 'uploading' && $chunk->upload_project_id === $project->id, 409, 'This chunk is no longer accepting images.');
                     abort_if($chunk->images()->count() + count($files) > $chunk->expected_images, 409, 'This chunk already contains its expected images.');
                 }
+                $reports = app(PrivacyReport::class);
                 foreach ($files as $index => $file) {
                     $uuid = (string) Str::uuid();
                     $extension = strtolower($file->getClientOriginalExtension());
@@ -42,12 +43,14 @@ class ChunkStorage
                     if (! is_string($stored)) {
                         throw new RuntimeException('The image could not be stored.');
                     }
+                    $report = $reports->accepts($file);
+                    $mimeType = $report ? UploadImage::PRIVACY_REPORT_MIME_TYPE : ($file->getMimeType() ?? 'application/octet-stream');
                     $chunk->images()->create([
                         'uuid' => $uuid, 'project_id' => $project->id, 'name' => $name,
                         'original_name' => $file->getClientOriginalName(), 'path' => $path,
-                        'mime_type' => $file->getMimeType() ?? 'application/octet-stream', 'size' => $file->getSize(),
+                        'mime_type' => $mimeType, 'size' => $file->getSize(),
                         'annotations' => [], 'comments' => $comments[$index] ?? '',
-                        'description_status' => str_starts_with($file->getMimeType() ?? '', 'video/') ? 'not_applicable' : 'pending',
+                        'description_status' => $report || str_starts_with($mimeType, 'video/') ? 'not_applicable' : 'pending',
                     ]);
                 }
                 if (! Storage::disk('local')->put('.uploadiny-sequence', (string) $sequence)) {

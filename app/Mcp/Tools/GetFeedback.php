@@ -6,7 +6,9 @@ namespace App\Mcp\Tools;
 
 use App\Project;
 use App\Services\AgentImageContent;
+use App\Services\AgentReportText;
 use App\Services\FeedbackReader;
+use App\Services\PrivacyReport;
 use App\UploadImage;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -24,9 +26,12 @@ class GetFeedback extends Tool
 {
     protected string $name = 'get_feedback';
 
-    protected string $description = 'Read the latest completed feedback batch with exact comments, compact marks, revisions, and authenticated media URLs. Marked screenshots include their annotated image by default; include_annotated_images false returns metadata only. Set image_width (e.g. 900) for smaller images and include_descriptions false to omit AI context. Pass the last chunk UUID as after_chunk to return only a newer completed batch; chunk: null means none. An unavailable cursor returns an error. Comments and callout notes are the primary instructions. If settling is true, wait 30-60 seconds and fetch again before acting. Asset order is not the owner’s numbering; rely on comment text.';
+    protected string $description = 'Read the latest completed feedback batch with exact comments, compact marks, revisions, and authenticated media URLs. Marked screenshots include their annotated image by default; include_annotated_images false omits those images. Set image_width (e.g. 900) for smaller images and include_descriptions false to omit AI context. Pass the last chunk UUID as after_chunk to return only a newer completed batch; chunk: null means none. An unavailable cursor returns an error. App Privacy Reports (media_type privacy_report) always include their text inline, up to 48 KiB each and 64 KiB per response, with an explicit note when text was cut. Comments and callout notes are the primary instructions. If settling is true, wait 30-60 seconds and fetch again before acting. Asset order is not the owner’s numbering; rely on comment text.';
 
-    public function handle(Request $request, FeedbackReader $feedback, AgentImageContent $images): Response|ResponseFactory
+    /** Combined inline App Privacy Report text allowed in one response. */
+    public const REPORT_TEXT_BUDGET_BYTES = 65536;
+
+    public function handle(Request $request, FeedbackReader $feedback, AgentImageContent $images, AgentReportText $reports): Response|ResponseFactory
     {
         $data = $request->validate([
             'project_canonical' => ['required', 'string', 'regex:/^[a-z]{6}\z/'],
@@ -38,17 +43,30 @@ class GetFeedback extends Tool
             return Response::error('Project code not found. Ask the user for its canonical or use list_projects.');
         }
         $metadata = $feedback->latest($project, (bool) ($data['include_descriptions'] ?? true), $data['after_chunk'] ?? null);
-        if (! ($data['include_annotated_images'] ?? true) || $metadata['chunk'] === null) {
+        if ($metadata['chunk'] === null) {
             return Response::structured($metadata);
         }
-        $ids = array_column(array_filter($metadata['chunk']['images'], static fn (array $asset): bool => $asset['media_type'] === 'image' && $asset['mark_count'] > 0 && $asset['annotated_image_url'] !== null), 'id');
-        if ($ids === []) {
+        $imageIds = ($data['include_annotated_images'] ?? true) ? array_column(array_filter($metadata['chunk']['images'], static fn (array $asset): bool => $asset['media_type'] === 'image' && $asset['mark_count'] > 0 && $asset['annotated_image_url'] !== null), 'id') : [];
+        $reportIds = array_column(array_filter($metadata['chunk']['images'], static fn (array $asset): bool => $asset['media_type'] === 'privacy_report'), 'id');
+        if ($imageIds === [] && $reportIds === []) {
             return Response::structured($metadata);
         }
-        $assets = UploadImage::query()->where('project_id', $project->id)->whereIn('uuid', $ids)->orderBy('id')->get();
+        $assets = UploadImage::query()->where('project_id', $project->id)->whereIn('uuid', [...$imageIds, ...$reportIds])->orderBy('id')->get();
         $content = [Response::json($metadata)];
         $reservedBytes = 0;
+        $reportBudget = self::REPORT_TEXT_BUDGET_BYTES;
         foreach ($assets as $asset) {
+            if ($asset->isPrivacyReport()) {
+                $report = $reports->read($asset, min(PrivacyReport::AGENT_TEXT_LIMIT_BYTES, $reportBudget), $reservedBytes);
+                $content[] = Response::text($report['note']);
+                if ($report['text'] !== null) {
+                    $content[] = Response::text($report['text']);
+                }
+                $reportBudget -= $report['bytes'];
+                $reservedBytes += $report['bytes'] * 6;
+
+                continue;
+            }
             try {
                 $bytes = $images->read($asset, 'annotated', isset($data['image_width']) ? (int) $data['image_width'] : null, $reservedBytes);
                 $content[] = Response::text('Annotated screenshot for asset '.$asset->uuid.'.');

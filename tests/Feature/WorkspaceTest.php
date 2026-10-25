@@ -629,7 +629,7 @@ class WorkspaceTest extends TestCase
         $image->refresh();
         $this->assertSame('ready', $image->description_status);
         $this->assertSame('A receipt screen with a blue Save button.', $image->description);
-        Http::assertSent(fn ($request) => $request['model'] === 'gpt-4.1-nano' && str_starts_with($request['messages'][0]['content'][1]['image_url']['url'], 'data:image/jpeg;base64,'));
+        Http::assertSent(fn ($request) => $request['model'] === 'gpt-5.4-nano' && str_starts_with($request['messages'][0]['content'][1]['image_url']['url'], 'data:image/jpeg;base64,'));
         $image->update(['description_status' => 'pending']);
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
         $image->refresh();

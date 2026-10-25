@@ -30,6 +30,7 @@ import {
 import { createCalloutEditor } from './callout-editor';
 import { drawingShortcutAction } from './drawing-shortcuts';
 import { enhanceRecordingPreviews, setRecordingPoster } from './recording-previews';
+import { renderReportEntries, reportSummary } from './privacy-report';
 
 const workspace = document.querySelector('[data-workspace]');
 if (workspace) {
@@ -91,6 +92,9 @@ if (workspace) {
     let uploadRequest = null;
     let pollTimer = null;
     let loadGeneration = 0;
+    let reportPage = 1;
+    let reportHasNext = false;
+    let reportRequest = 0;
     const canvas = document.getElementById('annotation-canvas');
     const ctx = canvas.getContext('2d');
     const video = document.getElementById('recording-player');
@@ -351,6 +355,7 @@ if (workspace) {
         if (invalidate) loadGeneration++;
         calloutEditor.reset(); selectedIndex = null;
         video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load();
+        reportRequest++; document.getElementById('report-entries').replaceChildren();
         active = null; activeChunkId = null; unavailableChunkFiles = null; source = null; dirty = false;
         document.getElementById('editor').hidden = true;
         document.getElementById('gallery').hidden = false;
@@ -450,6 +455,7 @@ if (workspace) {
             document.getElementById('editor-name').textContent = data.name;
             document.getElementById('download-original').href = `/images/${id}/download`;
             document.getElementById('duplicate-image').hidden = data.media_type === 'video';
+            document.getElementById('duplicate-image').title = data.media_type === 'privacy_report' ? 'Duplicate the original report without feedback' : 'Duplicate the original image without annotations';
             document.getElementById('move-project').value = config.project.id;
             document.getElementById('move-project').dispatchEvent(new Event('change'));
             document.getElementById('gallery').hidden = true;
@@ -459,11 +465,20 @@ if (workspace) {
             imageError.hidden = true;
             canvas.hidden = true;
             const recording = data.media_type === 'video';
-            document.getElementById('annotation-actions').hidden = recording;
-            document.getElementById('drawing-workspace').hidden = recording;
+            const report = data.media_type === 'privacy_report';
+            document.getElementById('annotation-actions').hidden = recording || report;
+            document.getElementById('drawing-workspace').hidden = recording || report;
             document.getElementById('video-workspace').hidden = !recording;
-            document.getElementById('vision-section').hidden = recording;
+            document.getElementById('report-workspace').hidden = !report;
+            document.getElementById('vision-section').hidden = recording || report;
             document.getElementById('video-load-error').hidden = true;
+            if (report) {
+                reportPage = 0;
+                loadReportPage(data, 1);
+                document.getElementById('save-feedback').disabled = false;
+                finishNavigation(); document.getElementById('editor-name').focus({ preventScroll: true });
+                return;
+            }
             if (recording) {
                 video.removeAttribute('poster');
                 setRecordingPoster(video, data.preview_url, () => generation === loadGeneration && active?.id === id);
@@ -506,6 +521,35 @@ if (workspace) {
             finishNavigation(); document.getElementById('save-feedback').disabled = !active; notify(error.message, true);
         }
     }
+    async function loadReportPage(asset, page) {
+        const requestId = ++reportRequest;
+        const summary = document.getElementById('report-summary');
+        const failure = document.getElementById('report-load-error');
+        const previous = document.getElementById('report-previous');
+        const next = document.getElementById('report-next');
+        const shown = reportPage ? summary.textContent : '';
+        previous.disabled = true; next.disabled = true; failure.hidden = true;
+        summary.textContent = 'Loading report entries…';
+        try {
+            const result = await request(`${asset.report_url}?page=${encodeURIComponent(page)}`);
+            if (requestId !== reportRequest || active?.id !== asset.id) return;
+            reportPage = result.page; reportHasNext = result.has_next;
+            renderReportEntries(document, document.getElementById('report-entries'), result.entries);
+            summary.textContent = reportSummary(result);
+            previous.disabled = !result.has_previous; next.disabled = !result.has_next;
+            document.querySelector('.report-table-wrap')?.scrollTo?.(0, 0);
+        } catch (error) {
+            if (requestId !== reportRequest || active?.id !== asset.id) return;
+            summary.textContent = shown || 'The report entries could not be loaded.';
+            failure.textContent = `${error.message} Download the original to read the complete file.`;
+            failure.hidden = false;
+            // The last loaded page stays on screen with its own navigation, so the button that failed retries
+            // the same page; before any page has loaded, Next retries the first page.
+            previous.disabled = reportPage <= 1; next.disabled = reportPage > 0 && !reportHasNext;
+        }
+    }
+    document.getElementById('report-previous').addEventListener('click', () => { if (active?.media_type === 'privacy_report' && reportPage > 1) loadReportPage(active, reportPage - 1); });
+    document.getElementById('report-next').addEventListener('click', () => { if (active?.media_type === 'privacy_report') loadReportPage(active, reportPage + 1); });
     function showDescription(data) {
         clearTimeout(pollTimer);
         const text = document.getElementById('vision-description');

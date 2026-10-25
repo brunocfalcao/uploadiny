@@ -317,6 +317,34 @@ func acknowledgement() throws {
   precondition(dropped.confirms(blank, receivedCount: 1))
 }
 
+func privacyReport() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let input = directory.appendingPathComponent("App_Privacy_Report_v4_fixture.ndjson")
+  let report = #"{"accessor":{"identifier":"com.example.app","identifierType":"bundleID"},"category":"photos","kind":"intervalBegin","timeStamp":"2026-10-20T09:12:01.123+01:00","type":"access"}"# + "\n\n  \r\n" + #"{"bundleID":"com.example.app","domain":"api.example.com","hits":4,"type":"networkActivity"}"# + "\r\nnot json"
+  try Data(report.utf8).write(to: input)
+  precondition(SharePrivacyReport.entryCount(at: input) == 3, "Blank lines are not entries; an unterminated last line is")
+  precondition(SharePrivacyReport.entryCount(at: directory.appendingPathComponent("missing")) == nil)
+  let empty = directory.appendingPathComponent("empty.ndjson")
+  try Data().write(to: empty)
+  precondition(SharePrivacyReport.entryCount(at: empty) == 0)
+  precondition(SharePrivacyReport.summary(bytes: 2048, entries: 1).hasSuffix(" · 1 entry"))
+  precondition(SharePrivacyReport.summary(bytes: 2048, entries: 3).hasSuffix(" · 3 entries"))
+  precondition(!SharePrivacyReport.summary(bytes: 2048, entries: nil).contains("entr"))
+  let file = SharedFile(url: input, name: "App_Privacy_Report_v4_fixture.ndjson", mime: SharePrivacyReport.mime, comments: "Why does it contact this domain?")
+  precondition(file.isPrivacyReport && !file.isRecording && !file.isStillImage)
+  precondition(SharedFile(url: input, name: "a.mov", mime: "video/quicktime").isRecording)
+  precondition(SharedFile(url: input, name: "a.png", mime: "image/png").isStillImage)
+  let bodyURL = directory.appendingPathComponent("body")
+  try file.writeMultipart(to: bodyURL, boundary: "fixture")
+  var expected = Data("--fixture\r\nContent-Disposition: form-data; name=\"comments\"\r\n\r\nWhy does it contact this domain?\r\n--fixture\r\nContent-Disposition: form-data; name=\"file\"; filename=\"App_Privacy_Report_v4_fixture.ndjson\"\r\nContent-Type: application/x-ndjson\r\n\r\n".utf8)
+  expected.append(Data(report.utf8))
+  expected.append(Data("\r\n--fixture--\r\n".utf8))
+  let actual = try Data(contentsOf: bodyURL)
+  precondition(actual == expected, "The report uploads byte for byte with its note")
+}
+
 switch CommandLine.arguments[1] {
 case "appendDecision": appendDecision()
 case "draftStartLifecycle": draftStartLifecycle()
@@ -326,6 +354,7 @@ case "sessions": try sessionRecovery()
 case "navigation": navigation()
 case "multipart": try multipart()
 case "acknowledgement": try acknowledgement()
+case "privacyReport": try privacyReport()
 default: fatalError("Unknown fixture")
 }
 `);
@@ -348,6 +377,7 @@ for (const [scenario, description] of [
   ['navigation', 'asset navigation keeps independent notes, blanks and edits through retry'],
   ['multipart', 'each streamed upload carries its UTF-8 remark and safely quoted filename'],
   ['acknowledgement', 'publication requires confirmation of the saved note and expected upload position'],
+  ['privacyReport', 'privacy reports count entries, describe their size and upload byte for byte with their note'],
 ]) {
   test(description, { skip: process.platform !== 'darwin' }, () => {
     const result = spawnSync(executable, [scenario], { encoding: 'utf8', timeout: 10000 });

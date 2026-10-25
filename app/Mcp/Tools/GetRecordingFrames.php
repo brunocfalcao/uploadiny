@@ -34,6 +34,9 @@ class GetRecordingFrames extends Tool
             'include_descriptions' => ['sometimes', 'boolean'],
         ]);
         $image = UploadImage::query()->where('uuid', $data['asset_id'])->first();
+        if ($image?->isPrivacyReport()) {
+            return Response::error('This asset is an App Privacy Report, not a recording. Use get_asset with this asset ID to read its text.');
+        }
         if ($image === null || ! $image->isVideo()) {
             return Response::error('Recording not found. Choose a video asset ID from get_feedback.');
         }

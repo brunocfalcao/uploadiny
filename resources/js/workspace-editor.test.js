@@ -9,6 +9,7 @@ import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
 import { keepLoadedImages } from './gallery-images.js';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory.js';
+import { renderReportEntries, reportSummary } from './privacy-report.js';
 import { appendTarget, formatChunkTime, formatLastUpload, localizeTimes as localizeChunkTimes, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
 const requestSource = readFileSync(new URL('./workspace-request.js', import.meta.url), 'utf8').replace('export ', '');
@@ -82,7 +83,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createWorkspaceOperations, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes: localizeChunkTimes, keepLoadedImages, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
+        renderReportEntries, reportSummary, enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes: localizeChunkTimes, keepLoadedImages, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams, AbortController,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
@@ -124,6 +125,10 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
             if (url === '/chunks/draft-1' && options.method === 'DELETE') { remote.cancelled = (remote.cancelled ?? 0) + 1; return { ok: !remote.completions, status: remote.completions ? 409 : 200, json: async () => ({}) }; }
             if (url === '/projects/1/chunks/start') { starts.push(JSON.parse(options.body)); return { ok: true, status: 201, json: async () => ({ id: 'draft-1' }) }; }
             if (url === '/chunks') return { ok: true, json: async () => ({ destinations: [] }) };
+            if (url.includes('/report?page=')) {
+                (remote.reportRequests ??= []).push(url);
+                return remote.reportResponse(url);
+            }
             const id = url.split('/')[2];
             if (url.startsWith('/images/') && !options.method) {
                 remote.imageRequests = (remote.imageRequests ?? 0) + 1;
@@ -1277,4 +1282,43 @@ test('a direct link beyond the gallery page retains navigation, remembered posit
     ui.node('delete-image').click(); await ui.settle(); await ui.settle();
     assert.equal(ui.node('editor-name').textContent, 'two');
     assert.equal(ui.node('chunk-position').textContent, '2 of 2');
+});
+
+test('a privacy report opens as a paged readable list with written feedback and no drawing tools', async t => {
+    const ui = workspace(t);
+    Object.assign(ui.assets.one, { media_type: 'privacy_report', description_status: 'not_applicable', report_url: '/images/one/report', name: 'upload-1.ndjson' });
+    const entry = (line, app) => ({ line, kind: 'network', app, accessed: 'api.example.com', detail: '4 contacts in 7 days', time: '21 Oct 2026, 18:30:00 UTC' });
+    const pages = { 1: { page: 1, per_page: 200, total_entries: 201, first_entry: 1, last_entry: 200, has_previous: false, has_next: true, entries: [entry(1, '<b>com.example.first</b>'), entry(2, 'com.example.second')] }, 2: { page: 2, per_page: 200, total_entries: 201, first_entry: 201, last_entry: 201, has_previous: true, has_next: false, entries: [entry(201, 'com.example.last')] } };
+    let release = null;
+    ui.remote.reportResponse = url => {
+        const page = pages[new URL(url, 'https://workspace.test').searchParams.get('page')];
+        const response = { ok: true, json: async () => structuredClone(page) };
+        if (!ui.remote.holdReport) return response;
+        return new Promise(resolve => { release = () => resolve(response); });
+    };
+
+    ui.card.click(); await ui.settle(); await ui.settle();
+
+    assert.equal(ui.node('editor-name').textContent, 'upload-1.ndjson');
+    assert.deepEqual(['report-workspace', 'drawing-workspace', 'video-workspace', 'vision-section', 'annotation-actions'].map(id => ui.node(id).hidden), [false, true, true, true, true]);
+    assert.deepEqual(ui.remote.reportRequests, ['/images/one/report?page=1']);
+    assert.deepEqual(ui.node('report-entries').children.map(row => row.children[1].textContent), ['<b>com.example.first</b>', 'com.example.second']);
+    assert.equal(ui.node('report-summary').textContent, 'Showing entries 1–200 of 201 · Page 1 of 2');
+    assert.deepEqual([ui.node('report-previous').disabled, ui.node('report-next').disabled, ui.node('save-feedback').disabled], [true, false, false]);
+
+    ui.node('report-next').click(); await ui.settle(); await ui.settle();
+    assert.deepEqual(ui.node('report-entries').children.map(row => row.children[0].textContent), ['201']);
+    assert.deepEqual([ui.node('report-previous').disabled, ui.node('report-next').disabled], [false, true]);
+
+    ui.type(ui.node('image-comments'), 'Why does this app contact api.example.com?');
+    await ui.autosave();
+    assert.deepEqual(ui.writes.map(({ id, comments, annotations, annotated_image }) => ({ id, comments, annotations, annotated_image })), [{ id: 'one', comments: 'Why does this app contact api.example.com?', annotations: [], annotated_image: null }]);
+
+    ui.remote.holdReport = true;
+    ui.node('report-previous').click(); await ui.settle();
+    ui.node('next-file').click(); await ui.settle(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    release(); await ui.settle(); await ui.settle();
+    assert.deepEqual(ui.node('report-entries').children, [], 'A late report page never fills the next file');
+    assert.deepEqual(['report-workspace', 'drawing-workspace'].map(id => ui.node(id).hidden), [true, false]);
 });

@@ -2,15 +2,34 @@
   "expo": {
     "name": "Uploadiny",
     "slug": "uploadiny",
-    "version": "0.14.4",
+    "version": "0.15.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "uploadiny",
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "36",
-      "bundleIdentifier": "test.uploadiny.app"
+      "buildNumber": "37",
+      "bundleIdentifier": "test.uploadiny.app",
+      "infoPlist": {
+        "UTImportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "public.ndjson",
+            "UTTypeDescription": "NDJSON",
+            "UTTypeConformsTo": [
+              "public.text"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "ndjson"
+              ],
+              "public.mime-type": [
+                "application/x-ndjson"
+              ]
+            }
+          }
+        ]
+      }
     },
     "plugins": [
       "./plugins/with-scene-lifecycle",
@@ -21,10 +40,7 @@
           "ios": {
             "enabled": true,
             "extensionBundleIdentifier": "test.uploadiny.app.share",
-            "activationRule": {
-              "supportsImageWithMaxCount": 1000,
-              "supportsMovieWithMaxCount": 1000
-            }
+            "activationRule": "SUBQUERY (extensionItems, $extensionItem, SUBQUERY ($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.image\" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.movie\" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.ndjson\").@count == $extensionItem.attachments.@count AND $extensionItem.attachments.@count <= 1000).@count == extensionItems.@count AND SUBQUERY (extensionItems, $extensionItem, $extensionItem.attachments.@count > 0).@count > 0 AND extensionItems.@count <= 1000"
           }
         }
       ]

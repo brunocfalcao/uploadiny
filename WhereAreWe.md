@@ -1,12 +1,42 @@
 # Where Are We — Uploadiny
 
-## 2026-10-12 — v0.14.4 candidate, not deployed
+## 2026-10-25 — v0.15.0 candidate, not deployed
+
+- The iPhone Share Extension accepts the App Privacy Report `.ndjson` export
+  alongside screenshots and recordings, with a document preview, entry count,
+  and optional per-asset feedback. Only the phone append path accepts reports.
+- The website shows reports as a paged, readable list (app, data category or
+  domain, time) with written feedback and download; drawing, AI descriptions,
+  and resizing do not apply. Unreadable lines are shown raw.
+- MCP `get_feedback` and `get_asset` return report text inline, capped at
+  48 KiB per report and 64 KiB per feedback response, with an explicit
+  truncation note. `get_recording_frames` refuses reports. REST stays URL-based.
+- Restores AI screenshot descriptions: OpenAI retired `gpt-4.1-nano`, so every
+  production description failed from 24 October 2026 20:44 UTC onward with
+  `model_not_found`. The default vision model is now `gpt-5.4-nano`, verified
+  from the production host with a sample screenshot request. Production does
+  not override `UPLOADINY_VISION_MODEL`.
+- Candidate iPhone metadata: 0.15.0 build 37. `laravel/mcp` 1.0.1 → 1.1.1
+  (runtime). Expo SDK 57 patch alignment: `expo` 57.0.27 → 57.0.31 and
+  `expo-sharing` 57.0.22 → 57.0.24 (shipped iPhone client). No migrations,
+  environment keys, or migration-review flag.
+- Passed locally: 215 PHP tests / 2,562 assertions, 127 web tests, 28 native
+  checks, Pint, Vite build, Composer validation, TypeScript, and Expo Doctor
+  21/21. No PHP quality gate or CI/CD ran.
+- Physical Share Sheet activation from iPhone Settings, browser visuals,
+  Keychain persistence, and VoiceOver acceptance remain unobserved.
+
+## 2026-10-12 — v0.14.4 deployed via FAST
+
+- Shipped `e18bc0f788` at 21:45:48 UTC in 117 seconds. The matching completed
+  FAST receipt records website/API verification and signed physical iPhone
+  0.14.4 build 36 installation, launch, and a running process.
 
 - Refreshes release documentation after the completed v0.14.3 FAST shipment.
   Runtime behavior and dependencies are unchanged. Bruno confirmed that
   recording retrieval keeps its existing per-frame timeout and complete-result
   behavior, without a total deadline or partial-frame response.
-- Candidate iPhone metadata: 0.14.4 build 36. No migrations, environment keys,
+- iPhone metadata: 0.14.4 build 36. No migrations, environment keys,
   or migration-review flag.
 - Passed: the full 199 PHP tests / 2,355 assertions, 121 web tests, 22 native
   checks, and full Pint. PHPUnit has no TIA. No PHP quality gate or CI/CD ran.

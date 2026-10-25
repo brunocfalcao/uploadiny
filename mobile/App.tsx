@@ -5,7 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 const steps = [
   ['1', 'Share a file'],
   ['2', 'Sign in once, then choose a project'],
-  ['3', 'Your screenshots and recordings arrive as one feedback chunk'],
+  ['3', 'Your screenshots, recordings and privacy reports arrive as one feedback chunk'],
 ] as const;
 
 export default function App() {
@@ -24,7 +24,7 @@ export default function App() {
             <Text style={styles.eyebrow}>Share Sheet → your workspace</Text>
             <Text style={styles.title}>Share it.{`\n`}Keep the context.</Text>
             <Text style={styles.subtitle}>
-              Share screenshots and recordings into a project. Draw, comment, and give your coding agent the whole feedback group.
+              Share screenshots, recordings and iPhone App Privacy Reports into a project. Draw, comment, and give your coding agent the whole feedback group.
             </Text>
           </View>
 
