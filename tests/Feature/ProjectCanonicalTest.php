@@ -9,8 +9,10 @@ use App\UploadImage;
 use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Database\QueryException;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -85,5 +87,67 @@ class ProjectCanonicalTest extends TestCase
         $this->assertSame($project->uuid, $restored->uuid);
         $this->assertSame('Keep this existing remark.', $image->fresh()?->comments);
         $this->assertSame($project->id, $image->fresh()?->project_id);
+    }
+
+    public function test_an_interrupted_canonical_backfill_can_resume_without_reassigning_existing_codes(): void
+    {
+        $project = Project::factory()->create(['name' => 'Canonical interrupted', 'slug' => 'canonical-interrupted']);
+        $image = UploadImage::factory()->create(['project_id' => $project->id, 'comments' => 'Preserve this feedback.']);
+        $uuid = $project->uuid;
+        $migration = require database_path('migrations/2026_10_06_144233_add_canonical_to_projects_table.php');
+        $migration->down();
+        $assignedId = DB::table('projects')->insertGetId(['name' => 'Canonical assigned', 'slug' => 'canonical-assigned', 'uuid' => (string) Str::uuid()]);
+        $missingId = DB::table('projects')->insertGetId(['name' => 'Canonical missing', 'slug' => 'canonical-missing', 'uuid' => (string) Str::uuid()]);
+        Schema::table('projects', function (Blueprint $table): void {
+            $table->string('canonical', 6)->nullable()->unique();
+        });
+        DB::table('projects')->where('id', $assignedId)->update(['canonical' => 'abcxyz']);
+        DB::table('migrations')->where('migration', '2026_10_06_144233_add_canonical_to_projects_table')->delete();
+        $this->assertNull(DB::table('projects')->where('id', $missingId)->value('canonical'));
+
+        $this->artisan('uploadiny:recover-canonicals')->assertSuccessful();
+        $this->artisan('migrate', ['--force' => true])->assertSuccessful();
+
+        $assigned = Project::query()->findOrFail($assignedId);
+        $missing = Project::query()->findOrFail($missingId);
+        $this->assertSame('abcxyz', $assigned->canonical);
+        $this->assertMatchesRegularExpression('/^[a-z]{6}$/', $missing->canonical);
+        $this->assertNotSame($assigned->canonical, $missing->canonical);
+        $this->assertSame($uuid, $project->fresh()?->uuid);
+        $this->assertSame('Preserve this feedback.', $image->fresh()?->comments);
+    }
+
+    public function test_canonical_recovery_leaves_a_completed_installation_unchanged(): void
+    {
+        $project = Project::factory()->create(['slug' => 'canonical-recovery-complete']);
+        $before = $project->fresh()->getAttributes();
+        $migrations = DB::table('migrations')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all();
+
+        $this->artisan('uploadiny:recover-canonicals')->assertSuccessful();
+
+        $this->assertSame($before, $project->fresh()?->getAttributes());
+        $this->assertSame($migrations, DB::table('migrations')->orderBy('id')->get()->map(fn ($row) => (array) $row)->all());
+    }
+
+    public function test_canonical_recovery_rolls_back_a_failed_backfill_before_retry(): void
+    {
+        $project = Project::factory()->create(['slug' => 'canonical-recovery-failure']);
+        $migration = '2026_10_06_144233_add_canonical_to_projects_table';
+        DB::table('migrations')->where('migration', $migration)->delete();
+        DB::table('projects')->where('id', $project->id)->update(['canonical' => null]);
+        Schema::table('projects', fn (Blueprint $table) => $table->dropUnique(['canonical']));
+        DB::unprepared("CREATE TRIGGER canonical_recovery_failure BEFORE UPDATE OF canonical ON projects BEGIN SELECT RAISE(ABORT, 'controlled recovery failure'); END");
+        $this->assertFalse(Schema::hasIndex('projects', ['canonical'], 'unique'));
+
+        $this->artisan('uploadiny:recover-canonicals')->assertFailed();
+
+        $this->assertNull($project->fresh()?->canonical);
+        $this->assertDatabaseMissing('migrations', ['migration' => $migration]);
+        $this->assertFalse(Schema::hasIndex('projects', ['canonical'], 'unique'));
+        DB::unprepared('DROP TRIGGER canonical_recovery_failure');
+        $this->artisan('uploadiny:recover-canonicals')->assertSuccessful();
+        $this->assertMatchesRegularExpression('/^[a-z]{6}$/', $project->fresh()?->canonical);
+        $this->assertTrue(Schema::hasIndex('projects', ['canonical'], 'unique'));
+        $this->assertDatabaseHas('migrations', ['migration' => $migration]);
     }
 }

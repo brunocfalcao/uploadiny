@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\PrivateFileWrites;
 use App\Services\WorkspaceDeletion;
 use App\StagedFileDeletion;
 use Illuminate\Console\Command;
@@ -35,6 +36,7 @@ final class UploadinyCleanupStatus extends Command
             'last_attempt_at' => $lastAttempt === null ? null : Carbon::parse($lastAttempt)->toIso8601String(),
             'recovery_journals' => $journals,
             'orphan_recovery' => app(WorkspaceDeletion::class)->orphanRecoveryStatus(),
+            'writing_recovery' => app(PrivateFileWrites::class)->recoveryStatus(),
         ], JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;

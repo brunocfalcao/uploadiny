@@ -37,11 +37,13 @@ class ChunkTransfer
                     return $source;
                 }
 
-                return $this->copies->intoChunk($source, $target, $projectId, $writes);
+                $result = $this->copies->intoChunk($source, $target, $projectId, $writes);
+                if ($result->description_status === 'pending') {
+                    DescribeUploadImage::schedule($result->id);
+                }
+
+                return $result;
             });
-            if ($action === 'copy' && $result->description_status === 'pending') {
-                DescribeUploadImage::schedule($result->id);
-            }
 
             return $result;
         });

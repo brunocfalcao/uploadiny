@@ -8,6 +8,7 @@ use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Mcp\Tools\GetFeedback;
 use App\Project;
+use App\Services\AgentReportText;
 use App\Services\PrivacyReport;
 use App\UploadChunk;
 use App\UploadImage;
@@ -317,6 +318,20 @@ class PrivacyReportTest extends TestCase
         }
     }
 
+    public function test_agent_report_text_uses_singular_grammar_for_one_omitted_line(): void
+    {
+        $project = $this->prepare('report-singular-truncation');
+        $limit = PrivacyReport::AGENT_TEXT_LIMIT_BYTES;
+        $content = str_repeat('a', $limit - 1)."\n"."b\n";
+        $report = $this->report($project, $content);
+        $this->withToken($this->agent());
+
+        $note = $this->tool('get_asset', ['asset_id' => $report->uuid])->assertOk()->json('result.content.1.text');
+
+        $this->assertStringContainsString('1 line was omitted.', $note);
+        $this->assertStringNotContainsString('1 line were omitted.', $note);
+    }
+
     public function test_one_feedback_response_caps_the_combined_report_text(): void
     {
         $project = $this->prepare('report-budget');
@@ -336,6 +351,58 @@ class PrivacyReportTest extends TestCase
         $this->assertStringContainsString('upload-3.ndjson (asset '.$reports[2]->uuid.') is TRUNCATED', $content[5]['text']);
         $this->assertStringContainsString('(lines 1-4 of 30). 26,624 bytes and 26 lines were omitted.', $content[5]['text']);
         $this->assertCount(7, $content);
+    }
+
+    public function test_report_fallbacks_keep_metadata_and_authenticated_download_context(): void
+    {
+        $project = $this->prepare('report-fallbacks');
+        $report = $this->report($project, $this->synthetic());
+        $disk = Storage::disk('local');
+        $disk->delete($report->path);
+        $this->withToken($this->agent());
+
+        $asset = $this->tool('get_asset', ['asset_id' => $report->uuid])->assertOk();
+
+        $asset->assertJsonPath('result.isError', true)
+            ->assertJsonPath('result.structuredContent.asset.id', $report->uuid)
+            ->assertSee('text is unavailable');
+        $this->assertStringContainsString(route('api.images.download', $report), $asset->json('result.content.0.text'));
+    }
+
+    public function test_report_memory_fallback_keeps_the_authenticated_download_context(): void
+    {
+        $project = $this->prepare('report-memory-fallback');
+        $report = $this->report($project, $this->synthetic());
+
+        $fallback = app(AgentReportText::class)->read($report, PrivacyReport::AGENT_TEXT_LIMIT_BYTES, PHP_INT_MAX);
+
+        $this->assertNull($fallback['text']);
+        $this->assertStringContainsString('safe inline memory budget', $fallback['note']);
+        $this->assertStringContainsString(route('api.images.download', $report), $fallback['note']);
+    }
+
+    public function test_report_and_image_content_keep_separate_response_ownership(): void
+    {
+        $project = $this->prepare('report-mixed-memory');
+        $chunk = UploadChunk::factory()->create(['upload_project_id' => $project->id, 'completed_at' => now()]);
+        $report = $this->report($project, $this->synthetic(), ['chunk_id' => $chunk->id]);
+        $image = UploadImage::factory()->create([
+            'project_id' => $project->id, 'chunk_id' => $chunk->id, 'annotations' => [['tool' => 'pen']], 'annotated_path' => 'annotations/mixed.png',
+        ]);
+        Storage::disk('local')->put($image->annotated_path, 'mixed-image-bytes');
+        $this->withToken($this->agent());
+
+        $previous = ini_get('memory_limit');
+        ini_set('memory_limit', '256M');
+        try {
+            $response = $this->tool('get_feedback', ['project_canonical' => $project->canonical]);
+        } finally {
+            ini_set('memory_limit', $previous);
+        }
+
+        $response->assertOk()->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.content.4.data', base64_encode('mixed-image-bytes'))
+            ->assertSee('App Privacy Report');
     }
 
     public function test_review_token_is_stable_and_changes_when_report_feedback_changes(): void

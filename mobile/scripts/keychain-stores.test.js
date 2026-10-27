@@ -22,8 +22,10 @@ let kSecClass = "class", kSecClassGenericPassword = "generic", kSecAttrService =
 let kSecReturnData = "return", kSecMatchLimit = "limit", kSecMatchLimitOne = "one"
 let kSecAttrAccessible = "accessible", kSecAttrAccessibleWhenUnlockedThisDeviceOnly = "unlocked-device-only", kSecValueData = "data"
 let errSecSuccess: Int32 = 0
+let errSecItemNotFound: Int32 = -25300
+let errSecDuplicateItem: Int32 = -25299
 var items: [String: Data] = [:]
-var failRead = false, failAdd = false, failDelete = false
+var failRead = false, failAdd = false, failUpdate = false, failDelete = false
 func account(_ query: CFDictionary) -> String {
   precondition(query[kSecClass] as? String == kSecClassGenericPassword)
   precondition(query[kSecAttrService] as? String == "test.uploadiny.app.share")
@@ -37,13 +39,21 @@ func SecItemCopyMatching(_ query: CFDictionary, _ result: inout CFTypeRef?) -> I
 }
 @discardableResult func SecItemDelete(_ query: CFDictionary) -> Int32 {
   if failDelete { return -1 }
-  items.removeValue(forKey: account(query))
+  guard items.removeValue(forKey: account(query)) != nil else { return errSecItemNotFound }
+  return errSecSuccess
+}
+@discardableResult func SecItemUpdate(_ query: CFDictionary, _ attributes: CFDictionary) -> Int32 {
+  if failUpdate { return -1 }
+  let key = account(query)
+  guard items[key] != nil else { return errSecItemNotFound }
+  items[key] = attributes[kSecValueData] as? Data
   return errSecSuccess
 }
 func SecItemAdd(_ attributes: CFDictionary, _ result: UnsafeMutableRawPointer?) -> Int32 {
   precondition(attributes[kSecAttrAccessible] as? String == kSecAttrAccessibleWhenUnlockedThisDeviceOnly)
   let key = account(attributes)
-  guard !failAdd, items[key] == nil else { return -1 }
+  guard !failAdd else { return -1 }
+  guard items[key] == nil else { return errSecDuplicateItem }
   items[key] = attributes[kSecValueData] as? Data
   return errSecSuccess
 }
@@ -63,14 +73,26 @@ for key in items.keys { items[key] = Data([0xff]) }
 precondition(UploadinyDeviceTokenStore.read() == nil && UploadinyLastProjectStore.read() == nil && UploadinyAppendPreferenceStore.read())
 failRead = true
 precondition(UploadinyDeviceTokenStore.read() == nil && UploadinyLastProjectStore.read() == nil && UploadinyAppendPreferenceStore.read())
-failRead = false; failAdd = true
+failRead = false; failUpdate = true
 do { try UploadinyDeviceTokenStore.write("unavailable"); preconditionFailure("Token write must throw") } catch UploadinyDeviceTokenStoreError.unavailable {}
 precondition(!UploadinyAppendPreferenceStore.write(true) && !UploadinyLastProjectStore.write("unavailable"))
-failAdd = false
+precondition(UploadinyAppendPreferenceStore.read() && UploadinyLastProjectStore.read() == nil)
+failUpdate = false; failAdd = false
 try UploadinyDeviceTokenStore.write("fixture-old-key")
-failDelete = true
+precondition(UploadinyAppendPreferenceStore.write(false))
+precondition(UploadinyLastProjectStore.write("fixture-project"))
+failUpdate = true
 do { try UploadinyDeviceTokenStore.write("replacement"); preconditionFailure("Failed replacement must throw") } catch UploadinyDeviceTokenStoreError.unavailable {}
 precondition(UploadinyDeviceTokenStore.read() == "fixture-old-key")
+precondition(!UploadinyAppendPreferenceStore.write(true) && !UploadinyLastProjectStore.write("replacement-project"))
+precondition(!UploadinyAppendPreferenceStore.read() && UploadinyLastProjectStore.read() == "fixture-project")
+failUpdate = false
+failDelete = true
+precondition(!UploadinyDeviceTokenStore.delete())
+failDelete = false
+precondition(UploadinyDeviceTokenStore.delete())
+precondition(UploadinyDeviceTokenStore.delete())
+precondition(UploadinyDeviceTokenStore.read() == nil)
 `);
     const executable = path.join(directory, 'verify');
     const compile = spawnSync('xcrun', ['swiftc', '-module-cache-path', path.join(directory, 'cache'), fixture, '-o', executable], { encoding: 'utf8' });

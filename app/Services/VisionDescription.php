@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Storage;
 
 class VisionDescription
 {
+    public function __construct(private ImageOrientation $orientation) {}
+
     public function describe(UploadImage $image): string
     {
         $key = config('services.uploadiny.vision_key');
@@ -32,6 +34,7 @@ class VisionDescription
         if (! $source) {
             throw new VisionFailure('unsupported_format', 'Vision cannot read this image format.');
         }
+        $source = $this->orientation->apply($source, $path);
         $ratio = min(1, 1536 / max(imagesx($source), imagesy($source)));
         $preview = imagecreatetruecolor(max(1, (int) round(imagesx($source) * $ratio)), max(1, (int) round(imagesy($source) * $ratio)));
         imagefill($preview, 0, 0, imagecolorallocate($preview, 255, 255, 255));

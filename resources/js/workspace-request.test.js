@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { requestJson } from './workspace-request.js';
+import { requestJson, requestText } from './workspace-request.js';
 
 function untilAbort(signal) {
     return new Promise((resolve, reject) => {
@@ -28,6 +28,11 @@ test('a request deadline still fires when a caller signal is supplied', async t 
 test('the deadline covers a stalled response body after headers arrive', async t => {
     t.mock.method(globalThis, 'fetch', async (_url, settings) => ({ ok: true, json: () => untilAbort(settings.signal) }));
     await assert.rejects(requestJson('/complete', { timeoutMs: 5 }), /timed out/);
+});
+
+test('a text request deadline covers a stalled HTML response body', async t => {
+    t.mock.method(globalThis, 'fetch', async (_url, settings) => ({ ok: true, text: () => untilAbort(settings.signal) }));
+    await assert.rejects(requestText('/gallery', { timeoutMs: 5 }), /timed out/);
 });
 
 test('an already cancelled request cannot proceed', async t => {

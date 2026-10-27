@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Jobs\DescribeUploadImage;
 use App\Project;
 use App\UploadChunk;
 use App\UploadImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -25,7 +25,7 @@ class ChunkStorage
             return app(PrivateFileWrites::class)->transaction(function (PrivateFileWrites $writes) use ($project, $files, $draft, $comments): UploadChunk {
                 // Serialize project deletion and group creation around the same project record.
                 $project = Project::query()->lockForUpdate()->findOrFail($project->id);
-                $sequence = max((int) Storage::disk('local')->get('.uploadiny-sequence'), (int) UploadImage::query()->max('id'));
+                $sequence = app(UploadSequence::class)->current();
                 $chunk = $draft ? UploadChunk::query()->lockForUpdate()->findOrFail($draft->id) : UploadChunk::create(['completed_at' => now()]);
                 if ($draft) {
                     abort_unless($chunk->status === 'uploading' && $chunk->upload_project_id === $project->id, 409, 'This chunk is no longer accepting images.');
@@ -53,8 +53,12 @@ class ChunkStorage
                         'description_status' => $report || str_starts_with($mimeType, 'video/') ? 'not_applicable' : 'pending',
                     ]);
                 }
-                if (! Storage::disk('local')->put('.uploadiny-sequence', (string) $sequence)) {
-                    throw new RuntimeException('The upload sequence could not be saved.');
+                app(UploadSequence::class)->publish($sequence);
+
+                if ($draft === null) {
+                    foreach ($chunk->images->where('description_status', 'pending') as $image) {
+                        DescribeUploadImage::schedule($image->id);
+                    }
                 }
 
                 return $chunk->load('images');

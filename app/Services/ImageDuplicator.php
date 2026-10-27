@@ -28,11 +28,13 @@ class ImageDuplicator
                 abort_unless($chunk->status === 'complete', 409, 'This upload chunk is not complete.');
                 abort_unless(Storage::disk('local')->exists($source->path), 404, 'The original file is missing.');
 
-                return $this->copies->intoChunk($source, $chunk, $source->project_id, $writes, clean: true);
+                $copy = $this->copies->intoChunk($source, $chunk, $source->project_id, $writes, clean: true);
+                if ($copy->description_status === 'pending') {
+                    DescribeUploadImage::schedule($copy->id);
+                }
+
+                return $copy;
             });
-            if ($copy->description_status === 'pending') {
-                DescribeUploadImage::schedule($copy->id);
-            }
 
             return $copy;
         });

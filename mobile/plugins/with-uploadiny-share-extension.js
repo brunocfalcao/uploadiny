@@ -32,6 +32,12 @@ function withUploadinyExtensionBuildSettings(config, extensionBundleIdentifier) 
 }
 
 function withUploadinyExtensionSources(config) {
+  const sharing = config.plugins?.find(entry => Array.isArray(entry) && entry[0] === 'expo-sharing');
+  const activationRule = sharing?.[1]?.ios?.activationRule;
+  if (typeof activationRule !== 'string') {
+    throw new Error('Uploadiny requires a string expo-sharing iOS activation rule.');
+  }
+
   return withDangerousMod(config, [
     'ios',
     async (modConfig) => {
@@ -51,6 +57,13 @@ function withUploadinyExtensionSources(config) {
         path.join(sourceRoot, 'ShareExtensionInfo.plist'),
         path.join(targetRoot, 'Info.plist'),
       );
+
+      const infoPlistPath = path.join(targetRoot, 'Info.plist');
+      const extensionInfo = plist.parse(fs.readFileSync(infoPlistPath, 'utf8'));
+      extensionInfo.NSExtension ??= {};
+      extensionInfo.NSExtension.NSExtensionAttributes ??= {};
+      extensionInfo.NSExtension.NSExtensionAttributes.NSExtensionActivationRule = activationRule;
+      fs.writeFileSync(infoPlistPath, plist.build(extensionInfo));
 
       const extensionEntitlementsPath = path.join(
         targetRoot,

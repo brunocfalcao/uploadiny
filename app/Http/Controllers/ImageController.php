@@ -152,10 +152,12 @@ class ImageController extends Controller
     public function describe(UploadImage $image): JsonResponse
     {
         abort_unless($image->isStillImage(), 422, 'Image descriptions are available for still images.');
-        $changed = UploadImage::whereKey($image->id)->whereIn('description_status', ['failed', 'ready'])->update(['description_status' => 'pending', 'description_error' => null]);
-        if ($changed) {
-            DescribeUploadImage::schedule($image->id);
-        }
+        DB::transaction(function () use ($image): void {
+            $changed = UploadImage::whereKey($image->id)->whereIn('description_status', ['failed', 'ready'])->update(['description_status' => 'pending', 'description_error' => null]);
+            if ($changed) {
+                DescribeUploadImage::schedule($image->id);
+            }
+        });
 
         return response()->json($image->fresh()->agentData());
     }

@@ -15,7 +15,7 @@ class ImageCopy
     public function intoChunk(UploadImage $source, UploadChunk $target, int $projectId, PrivateFileWrites $writes, bool $clean = false): UploadImage
     {
         $disk = Storage::disk('local');
-        $sequence = max((int) $disk->get('.uploadiny-sequence'), (int) UploadImage::query()->max('id')) + 1;
+        $sequence = app(UploadSequence::class)->current() + 1;
         $uuid = (string) Str::uuid();
         $name = 'upload-'.$sequence.'.'.pathinfo($source->name, PATHINFO_EXTENSION);
         $path = 'images/'.$uuid.'__'.$name;
@@ -35,7 +35,7 @@ class ImageCopy
             'description_status' => $source->description_status === 'processing' ? 'pending' : $source->description_status,
         ]);
         $copy->save();
-        throw_unless($disk->put('.uploadiny-sequence', (string) $sequence), RuntimeException::class, 'The upload sequence could not be saved.');
+        app(UploadSequence::class)->publish($sequence);
 
         return $copy;
     }

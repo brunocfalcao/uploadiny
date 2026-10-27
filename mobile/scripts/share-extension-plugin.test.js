@@ -24,7 +24,7 @@ function plugin() {
 
 test('extension identity comes from the manifest and unrelated build settings and entitlements survive', async t => {
   const { run, mods } = plugin();
-  run({ plugins: [['expo-sharing', { ios: { extensionBundleIdentifier: 'fixture.app.share' } }]] });
+  run({ plugins: [['expo-sharing', { ios: { extensionBundleIdentifier: 'fixture.app.share', activationRule: 'fixture-rule' } }]] });
   const configurations = {
     extension: { buildSettings: { PRODUCT_BUNDLE_IDENTIFIER: '"fixture.app.share"', OTHER: 'keep' } },
     app: { buildSettings: { PRODUCT_BUNDLE_IDENTIFIER: 'fixture.app', INFOPLIST_KEY_CFBundleDisplayName: 'keep' } },
@@ -44,13 +44,22 @@ test('extension identity comes from the manifest and unrelated build settings an
   const target = path.join(ios, 'expo-sharing-extension');
   fs.mkdirSync(native); fs.mkdirSync(target, { recursive: true });
   fs.writeFileSync(path.join(native, 'ShareIntoViewController.swift'), 'fixture source');
-  fs.writeFileSync(path.join(native, 'ShareExtensionInfo.plist'), 'fixture plist');
+  fs.writeFileSync(path.join(native, 'ShareExtensionInfo.plist'), plist.build({
+    NSExtension: {
+      NSExtensionAttributes: { NSExtensionActivationRule: 'stale-fixture-rule' },
+      NSExtensionPointIdentifier: 'com.apple.share-services',
+    },
+  }));
   const entitlements = path.join(target, 'expo-sharing-extension.entitlements');
   fs.writeFileSync(entitlements, plist.build({ 'com.apple.security.application-groups': ['unused'], unrelated: 'keep' }));
-  const config = { modRequest: { projectRoot: directory, platformProjectRoot: ios } };
+  const config = {
+    plugins: [['expo-sharing', { ios: { activationRule: 'fixture-rule' } }]],
+    modRequest: { projectRoot: directory, platformProjectRoot: ios },
+  };
   await mods.sources(config); await mods.sources(config);
   assert.equal(fs.readFileSync(path.join(target, 'ShareIntoViewController.swift'), 'utf8'), 'fixture source');
-  assert.equal(fs.readFileSync(path.join(target, 'Info.plist'), 'utf8'), 'fixture plist');
+  const generatedInfo = plist.parse(fs.readFileSync(path.join(target, 'Info.plist'), 'utf8'));
+  assert.equal(generatedInfo.NSExtension.NSExtensionAttributes.NSExtensionActivationRule, 'fixture-rule');
   assert.deepEqual({ ...plist.parse(fs.readFileSync(entitlements, 'utf8')) }, { unrelated: 'keep' });
 });
 

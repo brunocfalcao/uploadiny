@@ -20,7 +20,7 @@ before(() => {
   directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-share-review-'));
   executable = path.join(directory, 'review-tests');
   const fixture = path.join(directory, 'main.swift');
-  fs.writeFileSync(fixture, 'import Foundation\n' + source.slice(start, end) + String.raw`
+  fs.writeFileSync(fixture, 'import Foundation\nimport UniformTypeIdentifiers\n' + source.slice(start, end) + String.raw`
 func appendDecision() {
   var lookup = ShareAppendDecision()
   precondition(!lookup.canUpload)
@@ -35,6 +35,17 @@ func appendDecision() {
   precondition(lookup.loading && !lookup.canUpload)
   lookup.resolve(projectID: 1, generation: 2, success: true)
   precondition(lookup.canUpload && !lookup.failed)
+}
+
+func callbackGate() {
+  var gate = ShareCallbackGate()
+  let first = gate.begin()
+  precondition(gate.accepts(first))
+  let second = gate.begin()
+  precondition(!gate.accepts(first), "A newer request must fence an older response")
+  precondition(gate.accepts(second))
+  gate.close()
+  precondition(!gate.accepts(second), "Closing the extension must fence pending callbacks")
 }
 
 func draftStartLifecycle() {
@@ -347,6 +358,7 @@ func privacyReport() throws {
 
 switch CommandLine.arguments[1] {
 case "appendDecision": appendDecision()
+case "callbackGate": callbackGate()
 case "draftStartLifecycle": draftStartLifecycle()
 case "draftStartRequests": try draftStartRequests()
 case "staging": try backgroundStaging()
@@ -370,6 +382,7 @@ after(() => {
 
 for (const [scenario, description] of [
   ['appendDecision', 'append waits for lookup, rejects failure and ignores stale project replies'],
+  ['callbackGate', 'project and sign-in callbacks are fenced after replacement and close'],
   ['draftStartLifecycle', 'draft start closes after success, 401 and failure without losing the review'],
   ['draftStartRequests', 'draft start requests preserve the review while close handles success, 401 and errors'],
   ['sessions', 'native requests invalidate sessions after success, 401, lost completion and cancellation while retaining retry assets'],

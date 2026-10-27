@@ -68,6 +68,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var didStart = false
   private var canDismiss = false
   private var didClose = false
+  private var callbackGate = ShareCallbackGate()
+  private var retryProjectLoading = false
   private var draftStartLifecycle = ShareDraftStartLifecycle()
   private var draftID: String?
   private var serverURL: URL?
@@ -181,7 +183,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     uploadButton.configuration = primaryButtonConfiguration(title: "Upload assets", symbol: "arrow.up")
     uploadButton.isEnabled = false
     uploadButton.isHidden = true
-    uploadButton.addTarget(self, action: #selector(beginUpload), for: .touchUpInside)
+    uploadButton.addTarget(self, action: #selector(primaryButtonTapped), for: .touchUpInside)
     footerSummary.font = .preferredFont(forTextStyle: .caption1)
     footerSummary.adjustsFontForContentSizeCategory = true
     footerSummary.textColor = SharePalette.secondary
@@ -790,12 +792,19 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   private func loadProjects() {
+    guard !didClose else { return }
     guard configureServer(), !providers.isEmpty else { return }
     guard let storedToken = UploadinyDeviceTokenStore.read() else {
       showSignIn()
       return
     }
     token = storedToken
+    retryProjectLoading = false
+    spinner.isHidden = false
+    spinner.startAnimating()
+    detailLabel.isHidden = false
+    detailLabel.text = "Loading your projects…"
+    uploadButton.isHidden = true
     fetchProjects()
   }
 
@@ -824,24 +833,27 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
 
   private func fetchProjects() {
     guard let base = serverURL else { return }
+    let callbackGeneration = callbackGate.begin()
     var request = authorizedRequest(base.appendingPathComponent("projects"))
     request.timeoutInterval = 30
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
     uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       guard let self else { return }
-      if let response = response as? HTTPURLResponse, response.statusCode == 401 {
-        self.requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
-        return
-      }
-      guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
-            let data, let result = try? JSONDecoder().decode(ProjectList.self, from: data) else {
-        self.showError("Your projects could not be loaded. Check your connection and sign in again.")
-        return
-      }
-      DispatchQueue.main.async {
+      DispatchQueue.main.async { [weak self] in
+        guard let self, !self.didClose, self.callbackGate.accepts(callbackGeneration) else { return }
+        if let response = response as? HTTPURLResponse, response.statusCode == 401 {
+          self.requireSignIn("Your iPhone sign-in is no longer valid. Sign in again.")
+          return
+        }
+        guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 200,
+              let data, let result = try? JSONDecoder().decode(ProjectList.self, from: data) else {
+          self.showProjectLoadError("Your projects could not be loaded. Check your connection, then try again.")
+          return
+        }
+        self.retryProjectLoading = false
         self.projects = result.projects
         self.spinner.stopAnimating()
-      self.uploadProgress.isHidden = true
+        self.uploadProgress.isHidden = true
         self.spinner.isHidden = true
         self.emailField.isHidden = true
         self.passwordField.isHidden = true
@@ -872,7 +884,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         self.reviewPanel.isHidden = true
         self.changeProjectButton.isHidden = true
         // Keep this session's choice if it is still listed, else use the project of the last successful upload.
-        if !self.didClose, let slug = self.selectedProject?.slug ?? UploadinyLastProjectStore.read(),
+        if let slug = self.selectedProject?.slug ?? UploadinyLastProjectStore.read(),
            let project = self.projects.first(where: { $0.slug == slug }) {
           self.selectProject(project, remembered: self.selectedProject == nil)
         }
@@ -881,7 +893,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   private func showSignIn(_ message: String = "Sign in once to give this iPhone limited upload access. Your password is never stored.") {
-    DispatchQueue.main.async {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.didClose else { return }
+      self.retryProjectLoading = false
       self.spinner.stopAnimating()
       self.uploadProgress.isHidden = true
       self.spinner.isHidden = true
@@ -918,6 +932,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       showSignIn("This sign-in request could not be prepared.")
       return
     }
+    let callbackGeneration = callbackGate.begin()
     passwordField.text = nil
     signInButton.isEnabled = false
     titleLabel.text = "Signing in…"
@@ -932,18 +947,19 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     let session = secureSession(requestTimeout: 30, resourceTimeout: 30)
     uploads.dataTask(session: session, with: request) { [weak self] data, response, error in
       guard let self else { return }
-      guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 201,
-            let data, let result = try? JSONDecoder().decode(DeviceTokenResult.self, from: data) else {
-        self.showSignIn("Sign-in could not be completed. Check your details and try again.")
-        return
-      }
-      do {
-        try UploadinyDeviceTokenStore.write(result.token)
-      } catch {
-        self.showSignIn("This iPhone could not store its limited access securely. Try again.")
-        return
-      }
-      DispatchQueue.main.async {
+      DispatchQueue.main.async { [weak self] in
+        guard let self, !self.didClose, self.callbackGate.accepts(callbackGeneration) else { return }
+        guard error == nil, let response = response as? HTTPURLResponse, response.statusCode == 201,
+              let data, let result = try? JSONDecoder().decode(DeviceTokenResult.self, from: data) else {
+          self.showSignIn("Sign-in could not be completed. Check your details and try again.")
+          return
+        }
+        do {
+          try UploadinyDeviceTokenStore.write(result.token)
+        } catch {
+          self.showSignIn("This iPhone could not store its limited access securely. Try again.")
+          return
+        }
         self.token = result.token
         self.emailField.text = nil
         self.loadProjects()
@@ -952,7 +968,10 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   @objc private func signOut() {
-    UploadinyDeviceTokenStore.delete()
+    guard UploadinyDeviceTokenStore.delete() else {
+      showSignOutError()
+      return
+    }
     token = ""
     projects.removeAll()
     selectedProject = nil
@@ -960,11 +979,22 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   }
 
   private func requireSignIn(_ message: String) {
-    UploadinyDeviceTokenStore.delete()
+    if !UploadinyDeviceTokenStore.delete() {
+      uploadinyPersistenceLogger.debug("Could not remove the expired device token.")
+    }
     token = ""
     draftID = nil
     // Keep prepared assets and their notes available after signing in again.
     showSignIn(message)
+  }
+
+  private func showSignOutError() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, !self.didClose else { return }
+      self.detailLabel.isHidden = false
+      self.detailLabel.text = "This iPhone sign-in could not be removed. Try again."
+      self.signOutButton.isHidden = false
+    }
   }
 
   private func secureSession(requestTimeout: TimeInterval = 600, resourceTimeout: TimeInterval = 600) -> URLSession {
@@ -1059,6 +1089,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     prepareProvider(at: 0)
   }
 
+  @objc private func primaryButtonTapped() {
+    if retryProjectLoading {
+      loadProjects()
+      return
+    }
+    beginUpload()
+  }
+
   @objc private func beginUpload() {
     guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, !isPreparing else { return }
     if appendToLastUpload && !appendLookup.canUpload {
@@ -1103,12 +1141,9 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     }
     let provider = providers[index]
     let registered = provider.registeredTypeIdentifiers
-    let movies = registered.filter { UTType($0)?.conforms(to: .movie) == true }
-    let images = registered.filter { UTType($0)?.conforms(to: .image) == true }
-    let reports = registered.filter(Self.isPrivacyReportType)
-    let identifiers = !movies.isEmpty ? movies : !images.isEmpty ? images : reports
+    let identifiers = ShareMediaSupport.preferredRepresentations(from: registered)
     guard !identifiers.isEmpty else {
-      showError("Uploadiny accepts screenshots, recordings and App Privacy Reports. One of the shared files is another type, so nothing was uploaded.", allowRetry: false)
+      showError("Uploadiny accepts JPG, PNG, GIF, WEBP, BMP, MP4, MOV, M4V and App Privacy Reports. One of the shared files is another type, so nothing was uploaded.", allowRetry: false)
       return
     }
     loadRepresentation(provider: provider, identifiers: identifiers, typeIndex: 0, providerIndex: index)
@@ -1136,7 +1171,8 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       do {
         // The provider's temporary URL is valid only during this callback.
         try FileManager.default.copyItem(at: fileURL, to: copyURL)
-        let mime = report ? SharePrivacyReport.mime : UTType(identifier)?.preferredMIMEType ?? "application/octet-stream"
+        let preparedType = try self.resolvePreparedType(identifier: identifier, fileURL: copyURL, fileName: &fileName)
+        let mime = report ? SharePrivacyReport.mime : preparedType?.preferredMIMEType ?? "application/octet-stream"
         let prepared: SharedFile
         let ownedURLs: [URL]
         if ["image/heic", "image/heif", "image/tiff"].contains(mime) {
@@ -1160,9 +1196,19 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
         }
       } catch {
         try? FileManager.default.removeItem(at: copyURL)
+        let unsupported: Bool
+        if case UploadError.unsupportedRepresentation = error {
+          unsupported = true
+        } else {
+          unsupported = false
+        }
         DispatchQueue.main.async {
           guard !self.didClose else { return }
-          self.showError("One of the files could not be prepared. No chunk was uploaded.")
+          if unsupported {
+            self.showError("Uploadiny accepts JPG, PNG, GIF, WEBP, BMP, MP4, MOV, M4V and App Privacy Reports. One shared file could not be verified as a supported format, so nothing was uploaded.", allowRetry: false)
+          } else {
+            self.showError("One of the files could not be prepared. No chunk was uploaded.")
+          }
         }
       }
     }
@@ -1358,11 +1404,71 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     return targetURL
   }
 
+  private func resolvePreparedType(identifier: String, fileURL: URL, fileName: inout String) throws -> UTType? {
+    guard ShareMediaSupport.needsPreparedAssetValidation(identifier) else { return UTType(identifier) }
+
+    let registered = UTType(identifier)
+    let extensionType = URL(fileURLWithPath: fileName).pathExtension.isEmpty
+      ? nil
+      : UTType(filenameExtension: URL(fileURLWithPath: fileName).pathExtension)
+    var resolved: UTType?
+    if registered?.conforms(to: .image) == true {
+      guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
+            let sourceIdentifier = CGImageSourceGetType(source) as String?,
+            let sourceType = UTType(sourceIdentifier),
+            ShareMediaSupport.acceptsPreparedType(sourceType) else {
+        throw UploadError.unsupportedRepresentation
+      }
+      resolved = sourceType
+    } else {
+      resolved = extensionType.flatMap { ShareMediaSupport.acceptsPreparedType($0) ? $0 : nil }
+    }
+
+    guard let resolved, let fileExtension = resolved.preferredFilenameExtension else {
+      throw UploadError.unsupportedRepresentation
+    }
+    let currentExtension = URL(fileURLWithPath: fileName).pathExtension.lowercased()
+    if currentExtension != fileExtension.lowercased() {
+      let baseName = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
+      fileName = (baseName.isEmpty ? "upload" : baseName) + ".\(fileExtension)"
+    }
+
+    return resolved
+  }
+
   private func imagePreview(_ url: URL, maxPixelSize: Int = 1280) -> UIImage? {
     guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
     let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxPixelSize]
     guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
     return UIImage(cgImage: image)
+  }
+
+  private func showProjectLoadError(_ text: String) {
+    guard !didClose else { return }
+    retryProjectLoading = true
+    spinner.stopAnimating()
+    uploadProgress.isHidden = true
+    spinner.isHidden = true
+    emptyProjectIcon.isHidden = true
+    preview.isHidden = true
+    reviewPanel.isHidden = true
+    changeProjectButton.isHidden = true
+    table.isHidden = true
+    footerSummary.isHidden = true
+    signOutButton.isHidden = true
+    emailField.isHidden = true
+    passwordField.isHidden = true
+    signInButton.isHidden = true
+    detailLabel.isHidden = false
+    titleLabel.text = "Projects could not load"
+    titleLabel.textAlignment = .left
+    detailLabel.text = text
+    detailLabel.textAlignment = .left
+    uploadButton.configuration = primaryButtonConfiguration(title: "Retry loading projects", symbol: "arrow.clockwise")
+    uploadButton.isEnabled = true
+    uploadButton.alpha = 1
+    uploadButton.isHidden = false
+    preferredContentSize = CGSize(width: 0, height: 360)
   }
 
   private func showError(_ text: String, allowRetry: Bool = true) {
@@ -1424,6 +1530,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     autoCloseTimer?.invalidate()
     autoCloseTimer = nil
     didClose = true
+    callbackGate.close()
     view.endEditing(true)
     previewGenerator?.cancelAllCGImageGeneration()
     closeButton.isEnabled = false
@@ -1551,6 +1658,26 @@ private struct ShareAppendDecision {
     guard self.projectID == projectID, self.generation == generation else { return }
     loading = false
     failed = !success
+  }
+}
+
+private struct ShareCallbackGate {
+  private(set) var generation = 0
+  private(set) var closed = false
+
+  mutating func begin() -> Int {
+    generation += 1
+    closed = false
+    return generation
+  }
+
+  mutating func close() {
+    generation += 1
+    closed = true
+  }
+
+  func accepts(_ callbackGeneration: Int) -> Bool {
+    !closed && generation == callbackGeneration
   }
 }
 
@@ -1706,6 +1833,64 @@ private struct SharedFile {
   }
 }
 
+private enum ShareMediaSupport {
+  private static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "tif", "tiff"]
+  private static let movieExtensions: Set<String> = ["mp4", "mov", "m4v"]
+
+  static func preferredRepresentations(from identifiers: [String]) -> [String] {
+    let movies = identifiers.filter { isSupportedMovie($0) }
+    if !movies.isEmpty { return movies }
+
+    let genericMovies = identifiers.filter { isGenericMovie($0) }
+    if !genericMovies.isEmpty { return genericMovies }
+
+    let images = identifiers.filter { isSupportedImage($0) }
+    if !images.isEmpty { return images }
+
+    let genericImages = identifiers.filter { isGenericImage($0) }
+    if !genericImages.isEmpty { return genericImages }
+
+    return identifiers.filter(isPrivacyReportType)
+  }
+
+  static func needsPreparedAssetValidation(_ identifier: String) -> Bool {
+    isGenericMovie(identifier) || isGenericImage(identifier)
+  }
+
+  static func acceptsPreparedType(_ type: UTType) -> Bool {
+    guard let fileExtension = type.preferredFilenameExtension?.lowercased() else { return false }
+    if type.conforms(to: .movie) { return movieExtensions.contains(fileExtension) }
+    if type.conforms(to: .image) { return imageExtensions.contains(fileExtension) }
+    return false
+  }
+
+  private static func isSupportedMovie(_ identifier: String) -> Bool {
+    guard let type = UTType(identifier), type.conforms(to: .movie),
+          let fileExtension = type.preferredFilenameExtension?.lowercased() else { return false }
+    return movieExtensions.contains(fileExtension)
+  }
+
+  private static func isSupportedImage(_ identifier: String) -> Bool {
+    guard let type = UTType(identifier), type.conforms(to: .image),
+          let fileExtension = type.preferredFilenameExtension?.lowercased() else { return false }
+    return imageExtensions.contains(fileExtension)
+  }
+
+  private static func isGenericMovie(_ identifier: String) -> Bool {
+    UTType(identifier)?.identifier == UTType.movie.identifier
+  }
+
+  private static func isGenericImage(_ identifier: String) -> Bool {
+    UTType(identifier)?.identifier == UTType.image.identifier
+  }
+
+  private static func isPrivacyReportType(_ identifier: String) -> Bool {
+    guard let type = UTType(identifier) else { return false }
+    if let ndjson = UTType("public.ndjson"), type.conforms(to: ndjson) { return true }
+    return type.tags[.filenameExtension]?.contains { $0.lowercased() == "ndjson" } == true
+  }
+}
+
 /// iPhone App Privacy Report exported from Settings > Privacy & Security > App Privacy Report.
 private enum SharePrivacyReport {
   static let mime = "application/x-ndjson"
@@ -1774,7 +1959,7 @@ private struct AppendResult: Decodable {
 }
 private struct ChunkResult: Decodable { let id: String; let images: [UploadedImage] }
 private struct UploadedImage: Decodable { let id: String; let name: String; let comments: String }
-private enum UploadError: Error { case cannotReadFile }
+private enum UploadError: Error { case cannotReadFile, unsupportedRepresentation }
 
 private struct DraftResult: Decodable { let id: String }
 
@@ -1806,15 +1991,21 @@ private enum UploadinyKeychainStore {
   }
 
   static func write(_ data: Data, account: String) -> Bool {
-    delete(account: account)
+    let updateStatus = SecItemUpdate(query(account: account) as CFDictionary, [kSecValueData: data] as CFDictionary)
+    if updateStatus == errSecSuccess { return true }
+    guard updateStatus == errSecItemNotFound else { return false }
     var attributes = query(account: account)
     attributes[kSecAttrAccessible] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     attributes[kSecValueData] = data
-    return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    let addStatus = SecItemAdd(attributes as CFDictionary, nil)
+    if addStatus == errSecSuccess { return true }
+    guard addStatus == errSecDuplicateItem else { return false }
+    return SecItemUpdate(query(account: account) as CFDictionary, [kSecValueData: data] as CFDictionary) == errSecSuccess
   }
 
-  static func delete(account: String) {
-    SecItemDelete(query(account: account) as CFDictionary)
+  static func delete(account: String) -> Bool {
+    let status = SecItemDelete(query(account: account) as CFDictionary)
+    return status == errSecSuccess || status == errSecItemNotFound
   }
 }
 
@@ -1829,7 +2020,7 @@ private enum UploadinyDeviceTokenStore {
     }
   }
 
-  static func delete() { UploadinyKeychainStore.delete(account: account) }
+  static func delete() -> Bool { UploadinyKeychainStore.delete(account: account) }
 }
 
 private enum UploadinyDeviceTokenStoreError: Error { case unavailable }

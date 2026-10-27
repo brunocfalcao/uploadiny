@@ -25,8 +25,9 @@ class DescribeUploadImage implements ShouldQueue
     public static function schedule(int $imageId): void
     {
         try {
-            // Materialize dispatch here so enqueue failures cannot escape through a destructor.
-            $pending = self::dispatch($imageId)->afterCommit();
+            // The same-database queue row commits with its image. Materialize
+            // dispatch here so enqueue failures cannot escape through a destructor.
+            $pending = self::dispatch($imageId)->beforeCommit();
             unset($pending);
         } catch (Throwable $error) {
             UploadImage::whereKey($imageId)->where('description_status', 'pending')->update([

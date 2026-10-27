@@ -9,10 +9,11 @@ import { createCalloutEditor } from './callout-editor.js';
 import { drawingShortcutAction } from './drawing-shortcuts.js';
 import { keepLoadedImages } from './gallery-images.js';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory.js';
+import { clipboardFiles } from './clipboard-files.js';
 import { renderReportEntries, reportSummary } from './privacy-report.js';
 import { appendTarget, formatChunkTime, formatLastUpload, localizeTimes as localizeChunkTimes, readAppendPreference, writeAppendPreference } from './append-to-last.js';
 
-const requestSource = readFileSync(new URL('./workspace-request.js', import.meta.url), 'utf8').replace('export ', '');
+const requestSource = readFileSync(new URL('./workspace-request.js', import.meta.url), 'utf8').replaceAll('export ', '');
 const app = requestSource + '\n' + readFileSync(new URL('./app.js', import.meta.url), 'utf8').replace(/^import[\s\S]*?;\n/gm, '');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -27,7 +28,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     const where = { pathname: '/projects/1', search, hash: '', reload() { reloads++; } };
     const updateLocation = url => { const parsed = new URL(url, 'https://workspace.test'); where.search = parsed.search; where.hash = parsed.hash; };
     const history = { pushState(_s, _t, url) { urlCalls.push(['push', url]); updateLocation(url); }, replaceState(_s, _t, url) { urlCalls.push(['replace', url]); updateLocation(url); } };
-    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, files: ['one', 'two', 'three'], fileRequests: 0, imageResponse: null, missingImages: extraConfig.missing_images ?? [], imageErrors: extraConfig.image_errors ?? [], holdImage: Boolean(extraConfig.hold_image), page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
+    const remote = { chunk: { id: 'chunk-one', completed_at: 't1', file_count: 3 }, files: ['one', 'two', 'three'], fileRequests: 0, imageResponse: null, descriptionResponse: null, missingImages: extraConfig.missing_images ?? [], imageErrors: extraConfig.image_errors ?? [], holdImage: Boolean(extraConfig.hold_image), page: null, chunkResponse: null, pageResponse: null, chunkRequests: 0, pageRequests: 0 };
     let releaseHeldImage = null;
     class Element {
         constructor(id = '', tagName = 'div') {
@@ -43,13 +44,14 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
         click() { if (!this.disabled) this.emit('click'); }
         focus() { document.activeElement?.blur(); document.activeElement = this; this.emit('focus'); }
         blur() { if (document.activeElement === this) { document.activeElement = null; this.emit('blur'); } }
-        closest(selector) { return (selector === '.callout-text' && this.className === 'callout-text') || (selector.includes('textarea') && this.tagName === 'textarea') || (selector.startsWith('input,') && this.tagName === 'input') ? this : null; }
+        closest(selector) { return (selector === '.callout-text' && this.className === 'callout-text') || (selector.includes('textarea') && this.tagName === 'textarea') || (selector.startsWith('input,') && this.tagName === 'input') || (selector.includes('button') && this.tagName === 'button') || (selector.includes('summary') && this.tagName === 'summary') ? this : null; }
         append(...children) { for (const child of children) { if (typeof child === 'object') child.parentElement = this; this.children.push(child); } }
         replaceChildren(...children) { this.children = []; this.append(...children); }
         setAttribute(name, value) { this.attributeMap ??= new Map(); this.attributeMap.set(name, value); }
         getAttribute(name) { return this.attributeMap?.get(name); }
         get attributes() { return [...(this.attributeMap ?? new Map())].map(([name, value]) => ({ name, value })); }
         removeAttribute() {} toggleAttribute() {} setPointerCapture() {}
+        remove() { const list = this.parentElement?.children; const index = list?.indexOf?.(this); if (index >= 0) list.splice(index, 1); }
         querySelector(selector) { return this.children.find(child => child.tagName === selector) ?? node(`${this.id}:${selector}`); }
         querySelectorAll(selector) {
             const all = this.children.flatMap(child => [child, ...(child.querySelectorAll?.('*') ?? [])]);
@@ -83,7 +85,7 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
     t.after(() => { globalThis.document = previousDocument; });
     runInNewContext(app, {
         ...drawing, createWorkspaceOperations, createCalloutEditor, drawingShortcutAction, document, appendTarget, formatLastUpload, readAppendPreference, writeAppendPreference, localStorage: storage,
-        renderReportEntries, reportSummary, enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes: localizeChunkTimes, keepLoadedImages, chunkStartFile, rememberChunkFile, setRecordingPoster() {},
+        renderReportEntries, reportSummary, enhanceAgentAccess() {}, enhanceProjectSelect() {}, enhanceRecordingPreviews() {}, localizeTimes: localizeChunkTimes, keepLoadedImages, chunkStartFile, rememberChunkFile, clipboardFiles, setRecordingPoster() {},
         window: { innerWidth: 1200, addEventListener(type, listener) { if (type === 'popstate') popstate.push(listener); } },
         history, URLSearchParams, AbortController,
         ResizeObserver: class { observe() {} }, Event: class { constructor(type) { this.type = type; } },
@@ -143,6 +145,10 @@ function workspace(t, search = '', storage = memoryStorage(), extraConfig = {}) 
                     : { ok: false, status: 404, json: async () => ({ message: 'File not found' }) };
                 if (!remote.holdImage) return response;
                 return new Promise(resolve => { releaseHeldImage = () => { remote.holdImage = false; resolve(response); }; });
+            }
+            if (options.method === 'POST' && url.endsWith('/description')) {
+                if (remote.descriptionResponse) return remote.descriptionResponse(id);
+                return { ok: true, json: async () => structuredClone(assets[id]) };
             }
             if (options.method === 'POST' && url.endsWith('/duplicate')) {
                 duplicates.push({ id, saved: writes.length });
@@ -1045,6 +1051,66 @@ test('holding Space pans the zoomed image instead of drawing, and Space still ty
     const feedback = ui.node('image-comments'); feedback.focus();
     assert.equal(ui.key(' ', feedback, { metaKey: false }).defaultPrevented, false);
     assert.equal(hint.textContent, 'Pen: draw freely on the image.');
+});
+
+test('Space keeps native activation available on focused editor buttons', async t => {
+    const ui = workspace(t); await ui.open();
+    const button = ui.node('next-file'); button.tagName = 'button'; button.focus();
+    assert.equal(ui.key(' ', button, { metaKey: false }).defaultPrevented, false);
+});
+
+test('pasting while the project dialog is open does not start an upload', async t => {
+    const ui = workspace(t); ui.node('project-dialog').open = true;
+    ui.document.emit('paste', { clipboardData: { files: [{ name: 'shot.png', type: 'image/png', size: 10 }] } });
+    await ui.settle();
+    assert.deepEqual(ui.starts, []);
+});
+
+test('a stale remembered gallery file reconciles to a surviving neighbour', async t => {
+    const ui = workspace(t, '', memoryStorage({ 'uploadiny.lastViewedFile': '{"chunk-one":"one"}' }));
+    delete ui.assets.one;
+    ui.card.click(); await ui.settle(); await ui.settle(); await ui.settle();
+    assert.equal(ui.remote.fileRequests, 1);
+    assert.equal(ui.node('editor-name').textContent, 'two');
+});
+
+test('a stale gallery file with no surviving neighbour removes its empty card', async t => {
+    const ui = workspace(t, '', memoryStorage({ 'uploadiny.lastViewedFile': '{"chunk-one":"one"}' }));
+    ui.remote.files = ['one']; delete ui.assets.one;
+    ui.card.click(); await ui.settle(); await ui.settle(); await ui.settle();
+    assert.equal(ui.remote.fileRequests, 1);
+    assert.equal(ui.node('chunk-list').children.includes(ui.card), false);
+    assert.equal(ui.node('gallery').hidden, false);
+});
+
+test('a late description retry error cannot notify a different editor view', async t => {
+    const ui = workspace(t); ui.assets.one.description_status = 'failed'; await ui.open();
+    let rejectRetry;
+    ui.remote.descriptionResponse = () => new Promise((_, reject) => { rejectRetry = reject; });
+    ui.node('retry-description').click(); await ui.settle();
+    ui.node('next-file').click(); await ui.settle();
+    rejectRetry(new Error('Old image retry failed')); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'two');
+    assert.notEqual(ui.node('workspace-message').textContent, 'Old image retry failed');
+});
+
+test('a stale description poll cannot overwrite a reopened same-id editor', async t => {
+    const ui = workspace(t); ui.assets.one.description_status = 'pending'; await ui.open();
+    let releaseOld; let firstPoll = true;
+    ui.remote.imageResponse = id => {
+        if (id === 'one' && firstPoll) {
+            firstPoll = false;
+            return new Promise(resolve => { releaseOld = () => resolve({ ok: true, json: async () => ({ ...structuredClone(ui.assets.one), description_status: 'ready', description: 'Old description' }) }); });
+        }
+        return { ok: true, json: async () => structuredClone(ui.assets[id]) };
+    };
+    [...ui.timers.values()].at(-1)(); await ui.settle();
+    ui.node('next-file').click(); await ui.settle();
+    ui.assets.one.description_status = 'ready'; ui.assets.one.description = 'Current description';
+    ui.node('previous-file').click(); await ui.settle();
+    releaseOld(); await ui.settle();
+    assert.equal(ui.node('editor-name').textContent, 'one');
+    assert.equal(ui.node('vision-description').textContent, 'Current description');
 });
 
 test('append helpers: preference defaults ON, remembers OFF, survives broken storage', () => {

@@ -1,4 +1,4 @@
-import { requestJson } from './workspace-request';
+import { requestJson, requestText } from './workspace-request';
 import { createWorkspaceOperations } from './workspace-operations';
 import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
@@ -179,7 +179,7 @@ if (workspace) {
     for (const eventName of ['dragleave', 'drop']) dropzone?.addEventListener(eventName, event => { event.preventDefault(); dropzone.classList.remove('dragging'); });
     dropzone?.addEventListener('drop', event => upload([...event.dataTransfer.files]));
     document.addEventListener('paste', event => {
-        if (!config.project || active || event.target?.closest?.('input,textarea,[contenteditable]')) return;
+        if (!config.project || active || dialog.open || event.target?.closest?.('input,textarea,[contenteditable]')) return;
         const files = clipboardFiles(event.clipboardData);
         if (!files.length) return;
         event.preventDefault();
@@ -373,14 +373,22 @@ if (workspace) {
         else { document.getElementById('gallery').focus(); if (announced) notifyTransient('New upload arrived.'); }
     }
     document.getElementById('close-editor').addEventListener('click', closeEditor);
-    async function reconcileImageMembership(id, generation) {
-        const chunkId = chunkIdentity(id);
-        if (!chunkId || !config.chunk_files_url) return;
+    function removeEmptyGalleryCard(card) {
+        if (!card) return;
+        const container = card.closest?.('.chunk-card') ?? (card.parentElement?.tagName?.toLowerCase?.() === 'article' ? card.parentElement : card);
+        container?.remove?.();
+        if (container) chunkGroups = readChunkGroups();
+    }
+    async function reconcileImageMembership(id, generation, chunkId = chunkIdentity(id)) {
+        if (!chunkId || !config.chunk_files_url) return null;
         let files;
         try { ({ files } = await request(config.chunk_files_url.replace('__chunk__', encodeURIComponent(chunkId)))); }
-        catch (error) { if (error.status !== 404) return; files = []; }
-        if (generation !== loadGeneration || !Array.isArray(files)) return;
-        updateMembership(chunkCard(id), files);
+        catch (error) { if (error.status !== 404) return null; files = []; }
+        if (generation !== loadGeneration || !Array.isArray(files)) return null;
+        const card = chunkCard(id);
+        updateMembership(card, files);
+        if (!files.length) removeEmptyGalleryCard(card);
+        return files;
     }
     window.addEventListener('popstate', async () => {
         const id = new URLSearchParams(location.search).get('image');
@@ -430,7 +438,7 @@ if (workspace) {
         }
         else leaveEditor();
     }
-    async function openImage(id, playRecording = false, fromUrl = false) {
+    async function openImage(id, playRecording = false, fromUrl = false, recovering = false) {
         if (operations.editorBusy || active?.id === id) return;
         if (draft || eraseStart || calloutEditor.busy()) { notify('Finish your current drawing before switching files.'); return; }
         calloutEditor.finishText();
@@ -439,6 +447,8 @@ if (workspace) {
         document.getElementById('save-feedback').disabled = true;
         const generation = ++loadGeneration;
         const openingChunkId = chunkIdentity(id);
+        const openingCard = chunkCard(id);
+        const openingFiles = chunkGroups.find(files => files.includes(id)) ?? [];
         try {
             const data = await request(`/images/${id}`);
             if (generation !== loadGeneration) return;
@@ -488,7 +498,7 @@ if (workspace) {
                 finishNavigation(); document.getElementById('editor-name').focus({ preventScroll: true });
                 return;
             }
-            updateChunkNavigation(); showDescription(data);
+            updateChunkNavigation(); showDescription(data, generation, id);
             const image = new Image();
             image.onload = () => {
                 if (generation !== loadGeneration) return;
@@ -512,11 +522,28 @@ if (workspace) {
             document.getElementById('editor-name').focus({ preventScroll: true });
         } catch (error) {
             if (generation !== loadGeneration) return;
-            if (fromUrl && error.status === 404) {
-                await reconcileImageMembership(id, generation);
+            if (error.status === 404 && !recovering) {
+                const files = await reconcileImageMembership(id, generation, openingChunkId);
                 if (generation !== loadGeneration) return;
-                if (active) syncImageUrl(active.id);
-                else leaveEditor();
+                if (!fromUrl && Array.isArray(files) && !files.includes(id)) {
+                    const index = openingFiles.indexOf(id);
+                    const neighbour = files[Math.min(Math.max(index, 0), files.length - 1)];
+                    if (neighbour) {
+                        finishNavigation();
+                        await openImage(neighbour, playRecording, false, true);
+                        return;
+                    }
+                    removeEmptyGalleryCard(openingCard);
+                    if (active) syncImageUrl(active.id); else leaveEditor(false);
+                    finishNavigation();
+                    document.getElementById('save-feedback').disabled = !active;
+                    notifyTransient('This file is no longer available.');
+                    return;
+                }
+                if (fromUrl) {
+                    if (active) syncImageUrl(active.id);
+                    else leaveEditor();
+                }
             }
             finishNavigation(); document.getElementById('save-feedback').disabled = !active; notify(error.message, true);
         }
@@ -550,11 +577,13 @@ if (workspace) {
     }
     document.getElementById('report-previous').addEventListener('click', () => { if (active?.media_type === 'privacy_report' && reportPage > 1) loadReportPage(active, reportPage - 1); });
     document.getElementById('report-next').addEventListener('click', () => { if (active?.media_type === 'privacy_report') loadReportPage(active, reportPage + 1); });
-    function showDescription(data) {
+    function showDescription(data, generation = loadGeneration, id = active?.id) {
+        if (generation !== loadGeneration || !id || active?.id !== id) return;
         clearTimeout(pollTimer);
         const text = document.getElementById('vision-description');
         const retry = document.getElementById('retry-description');
         const status = document.getElementById('vision-status');
+        retry.disabled = false;
         status.textContent = data.description_status === 'ready' ? 'Ready' : data.description_status === 'failed' ? 'Unavailable' : 'Generating';
         status.dataset.state = data.description_status;
         text.parentElement.scrollTop = 0;
@@ -563,10 +592,10 @@ if (workspace) {
         else text.textContent = 'Describing this image… You can add feedback now.';
         retry.hidden = data.description_status !== 'failed';
         if (['pending', 'processing'].includes(data.description_status) && active) {
-            const id = active.id;
+            const ownerGeneration = generation;
             pollTimer = setTimeout(async () => {
-                try { const updated = await request(`/images/${id}`); if (active?.id === id) showDescription(updated); }
-                catch (error) { if (active?.id === id) notify(error.message, true); }
+                try { const updated = await request(`/images/${id}`); if (ownerGeneration === loadGeneration && active?.id === id) showDescription(updated, ownerGeneration, id); }
+                catch (error) { if (ownerGeneration === loadGeneration && active?.id === id) notify(error.message, true); }
             }, 3000);
         }
     }
@@ -726,6 +755,9 @@ if (workspace) {
     const panHint = 'Hold Space and drag to move · scroll to zoom';
     const hintElement = document.getElementById('canvas-tool-hint');
     let panMode = false; let panning = null; let hintBeforePan = '';
+    function isInteractiveTarget(target) {
+        return target?.closest?.('button,summary,a,input,textarea,select,[contenteditable],[role=button],[role=link],[role=combobox],.callout-text');
+    }
     function setPanMode(on) {
         if (panMode === on) return;
         panMode = on;
@@ -752,11 +784,11 @@ if (workspace) {
     document.addEventListener('keydown', event => {
         if (event.key !== ' ' || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
         if (!active || !source || dialog.open || draft || eraseStart || calloutEditor.busy()) return;
-        if (event.target?.closest?.('input,textarea,select,[contenteditable],[role=combobox],.callout-text')) return;
+        if (isInteractiveTarget(event.target)) return;
         event.preventDefault();
         setPanMode(true);
     });
-    document.addEventListener('keyup', event => { if (event.key !== ' ' || !panMode) return; event.preventDefault(); setPanMode(false); });
+    document.addEventListener('keyup', event => { if (event.key !== ' ' || !panMode) return; if (!isInteractiveTarget(event.target)) event.preventDefault(); setPanMode(false); });
     window.addEventListener('blur', () => setPanMode(false));
 
     function commitStrokes(next) {
@@ -867,10 +899,11 @@ if (workspace) {
     document.getElementById('retry-description').addEventListener('click', async event => {
         if (!active) return;
         const id = active.id;
+        const generation = loadGeneration;
         event.currentTarget.disabled = true;
-        try { const result = await request(`/images/${id}/description`, { method: 'POST' }); if (active?.id === id) showDescription(result); }
-        catch (error) { notify(error.message, true); }
-        finally { document.getElementById('retry-description').disabled = false; }
+        try { const result = await request(`/images/${id}/description`, { method: 'POST' }); if (generation === loadGeneration && active?.id === id) showDescription(result, generation, id); }
+        catch (error) { if (generation === loadGeneration && active?.id === id) notify(error.message, true); }
+        finally { if (generation === loadGeneration && active?.id === id) document.getElementById('retry-description').disabled = false; }
     });
     let chunkDestinations = null;
     const targetChunk = document.getElementById('target-chunk');
@@ -988,9 +1021,8 @@ if (workspace) {
         try {
             const pageNumber = new URLSearchParams(location.search).get('page');
             const galleryUrl = config.project_url + (pageNumber ? `?page=${encodeURIComponent(pageNumber)}` : '');
-            const response = await fetch(galleryUrl, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
-            if (!response.ok) return 'failed';
-            const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const html = await requestText(galleryUrl, { credentials: 'same-origin', headers: { Accept: 'text/html' } }, token);
+            const page = new DOMParser().parseFromString(html, 'text/html');
             if (sequence !== refreshSequence) return 'stale';
             if (!force && galleryBusy()) return 'busy';
             return applyPage(page) ? 'applied' : 'failed';

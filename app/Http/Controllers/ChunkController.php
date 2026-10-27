@@ -61,24 +61,19 @@ class ChunkController extends Controller
     public function store(ChunkUploadRequest $request, Project $project, ChunkStorage $storage): JsonResponse
     {
         $chunk = $storage->store($project, $request->file('files'));
-        foreach ($chunk->images->where('description_status', 'pending') as $image) {
-            DescribeUploadImage::schedule($image->id);
-        }
 
         return response()->json(['id' => $chunk->uuid, 'uploaded_at' => $chunk->uploadedAt()->toIso8601String(), 'images' => $chunk->images->map(static fn (UploadImage $image): array => $image->agentData())->values()], 201);
     }
 
     public function start(StartChunkRequest $request, Project $project): JsonResponse
     {
-        $target = $request->filled('append_to') ? $project->chunks()->where('uuid', $request->string('append_to')->toString())->first() : null;
-        $chunk = UploadChunk::create(['upload_project_id' => $project->id, 'append_to_chunk_id' => $target?->id, 'expected_images' => $request->integer('image_count'), 'status' => 'uploading']);
+        $chunk = DB::transaction(function () use ($request, $project): UploadChunk {
+            $target = $request->filled('append_to') ? $project->chunks()->where('uuid', $request->string('append_to')->toString())->first() : null;
+            $chunk = UploadChunk::create(['upload_project_id' => $project->id, 'append_to_chunk_id' => $target?->id, 'expected_images' => $request->integer('image_count'), 'status' => 'uploading']);
+            DiscardIncompleteUpload::dispatch($chunk->id)->delay(now()->addDay())->beforeCommit();
 
-        try {
-            DiscardIncompleteUpload::dispatch($chunk->id)->delay(now()->addDay())->afterCommit();
-        } catch (\Throwable $error) {
-            $chunk->delete();
-            throw $error;
-        }
+            return $chunk;
+        });
 
         return response()->json(['id' => $chunk->uuid], 201);
     }
@@ -113,19 +108,22 @@ class ChunkController extends Controller
                 $target->update(['completed_at' => now()]);
                 $locked->delete();
 
-                return $phoneCompletion
+                $completed = $phoneCompletion
                     ? $target->load(['images' => fn ($query) => $query->whereKey($newImageIds)])
                     : $target->load('images');
-            }
-            $locked->update(['status' => 'complete', 'completed_at' => now()]);
+            } else {
+                $locked->update(['status' => 'complete', 'completed_at' => now()]);
 
-            return $phoneCompletion
-                ? $locked->load(['images' => fn ($query) => $query->whereKey($newImageIds)])
-                : $locked->load('images');
+                $completed = $phoneCompletion
+                    ? $locked->load(['images' => fn ($query) => $query->whereKey($newImageIds)])
+                    : $locked->load('images');
+            }
+            foreach (UploadImage::query()->whereKey($newImageIds)->where('description_status', 'pending')->get() as $image) {
+                DescribeUploadImage::schedule($image->id);
+            }
+
+            return $completed;
         });
-        foreach ($completed->images->whereIn('id', $newImageIds)->where('description_status', 'pending') as $image) {
-            DescribeUploadImage::schedule($image->id);
-        }
 
         $images = $phoneCompletion ? $completed->images->whereIn('id', $newImageIds) : $completed->images;
 

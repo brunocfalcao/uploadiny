@@ -1,6 +1,52 @@
 # Where Are We — Uploadiny
 
-## 2026-10-25 — v0.15.1 candidate, not deployed
+## 2026-10-27 — v0.15.2 candidate, not deployed
+
+- Complete candidate since deployed v0.15.1 (`0e0f923e21`), including all
+  eligible uncommitted product source and coverage. Local agent configuration
+  and instruction pointers remain untracked and excluded from public source.
+- Agent-key recovery retains its cache lease through outer transaction
+  completion, nested rollback and physical SQLite commit failures. Upload
+  numbering verifies a complete temporary high-water mark before publication.
+- Draft cleanup and description jobs use the same-database queue transaction
+  boundary; published files survive optional description enqueue failure.
+  Changing the queue backend/connection requires reviewing this guarantee.
+- Browser fixes preserve Space activation on controls, bound gallery requests,
+  recover deleted files, ignore stale description responses and avoid paste
+  uploads behind a dialog. Control targets and muted format text are improved.
+- Image resizing and vision previews apply EXIF orientation, including mirrored
+  rotations, without changing private originals. Agent report failures retain
+  authenticated download guidance, and singular omitted-line text is correct.
+- Share Extension fixes preserve Keychain values on failed updates, retain
+  sign-in when sign-out deletion fails, discard callbacks after close, offer
+  project-load retry and validate supported prepared media. The app manifest
+  owns the activation rule copied by the native plugin.
+- Shipped migrations remain byte-identical. An explicit
+  `uploadiny:recover-canonicals` command repairs an interrupted older SQLite
+  backfill, preserves assigned codes and records completion atomically.
+- iPhone 0.15.2 build 39. No dependency version changes, new environment keys,
+  new migrations or migration-review flag. FAST recommended: established
+  database path and schema stay unchanged. Shipping takes no backup or CI/CD.
+- Passed locally: full 259 PHP tests / 2,870 assertions, 134 web tests,
+  33 native checks, Pint, TypeScript, Vite build, Composer validation and clean
+  locked Composer/npm installs. PHPUnit 11.5 has no Pest TIA.
+- Current-source generic iPhoneOS Release compilation and generated-source/
+  plist checks passed (unsigned; no device connected).
+  No production connection or device installation occurred. Browser visuals,
+  real Keychain persistence and physical Share Sheet acceptance remain unobserved.
+- Fresh refactor covered the complete candidate and current official version
+  guidance. Laravel 13, Vite 8, Expo 58 and newer React Native would require
+  separate compatibility upgrades; existing versions remain suitable for this
+  patch. No PHP quality gate, overnight triage or CI/CD ran or was waited on.
+
+## 2026-10-25 — v0.15.1 deployed via FAST
+
+- The matching `deployed.json` and completed `current.json` run
+  `1c03cc3a0b834767ae34d473145b528c` record `0e0f923e21` completing at
+  17:33:23 UTC, with 34,422 seconds of recorded elapsed time.
+  Website/API checks and signed physical iPhone 0.15.1 build 38 installation,
+  launch and a surviving process completed. No fresh production check was
+  performed during the 27 October preparation.
 
 - Supersedes the published `v0.15.0` tag, which was never shipped: the shipping
   check refused it because it tracked the local agent pointer files

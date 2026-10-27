@@ -12,6 +12,28 @@ const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'app.json'), '
 const swift = fs.readFileSync(path.join(mobileRoot, 'native/ShareIntoViewController.swift'), 'utf8');
 const rule = extensionPlist.NSExtension.NSExtensionAttributes.NSExtensionActivationRule;
 
+function probeHostUTIs() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-uti-host-'));
+  try {
+    const fixture = path.join(directory, 'main.swift');
+    fs.writeFileSync(fixture, String.raw`
+import Foundation
+import UniformTypeIdentifiers
+let checks = [("public.png", "public.image"), ("com.apple.quicktime-movie", "public.movie"), ("public.ndjson", "public.ndjson")]
+for (identifier, parent) in checks {
+  guard let type = UTType(identifier), let expected = UTType(parent), type.conforms(to: expected) else {
+    FileHandle.standardError.write(Data("host UTI unavailable: \(identifier) -> \(parent)\n".utf8))
+    exit(2)
+  }
+}
+`);
+    const executable = path.join(directory, 'verify');
+    const compile = spawnSync('xcrun', ['swiftc', '-module-cache-path', path.join(directory, 'cache'), fixture, '-o', executable], { encoding: 'utf8', timeout: 60000 });
+    if (compile.status !== 0) return compile;
+    return spawnSync(executable, [], { encoding: 'utf8', timeout: 10000 });
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+}
+
 test('the share sheet rule names images, movies and App Privacy Reports and nothing broader', () => {
   assert.equal(typeof rule, 'string');
   const types = [...rule.matchAll(/UTI-CONFORMS-TO "([^"]+)"/g)].map(match => match[1]);
@@ -32,7 +54,22 @@ test('the containing app imports the ndjson type for systems that do not declare
   });
 });
 
-test('the activation rule accepts reports and supported mixes and refuses other files', { skip: process.platform !== 'darwin' }, () => {
+test('the native host UTI registry is checked separately from activation predicate behavior', { skip: process.platform !== 'darwin' }, (t) => {
+  const result = probeHostUTIs();
+  if (result.status === 2) {
+    t.skip(`${result.stderr.trim()}; iOS target validation remains required`);
+    return;
+  }
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
+
+test('the activation rule accepts reports and supported mixes and refuses other files', { skip: process.platform !== 'darwin' }, (t) => {
+  const host = probeHostUTIs();
+  if (host.status === 2) {
+    t.skip(`${host.stderr.trim()}; iOS target validation remains required`);
+    return;
+  }
+  assert.equal(host.status, 0, host.stderr || host.error?.message);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-activation-'));
   try {
     const fixture = path.join(directory, 'main.swift');
@@ -74,8 +111,8 @@ for (name, items, expected) in cases where predicate.evaluate(with: share(items)
 
 test('reports load after movies and images, keep their .ndjson name and upload as ndjson text', () => {
   const prepare = swift.slice(swift.indexOf('  private func prepareProvider(at index: Int) {'), swift.indexOf('  private func loadRepresentation('));
-  assert.match(prepare, /let identifiers = !movies\.isEmpty \? movies : !images\.isEmpty \? images : reports/);
-  assert.match(prepare, /guard !identifiers\.isEmpty else \{\s*showError\("Uploadiny accepts screenshots, recordings and App Privacy Reports\.[^"]*", allowRetry: false\)\s*return/);
+  assert.match(prepare, /ShareMediaSupport\.preferredRepresentations\(from: registered\)/);
+  assert.match(prepare, /guard !identifiers\.isEmpty else \{\s*showError\("Uploadiny accepts JPG, PNG, GIF, WEBP, BMP, MP4, MOV, M4V and App Privacy Reports\.[^"]*", allowRetry: false\)\s*return/);
   const load = swift.slice(swift.indexOf('  private func loadRepresentation('), swift.indexOf('  private func uploadChunk()'));
   assert.match(load, /let report = Self\.isPrivacyReportType\(identifier\)/);
   assert.match(load, /if report, URL\(fileURLWithPath: fileName\)\.pathExtension\.lowercased\(\) != SharePrivacyReport\.fileExtension \{ fileName \+= /);
@@ -84,6 +121,29 @@ test('reports load after movies and images, keep their .ndjson name and upload a
   assert.match(swift, /static let typeIdentifier = "public\.ndjson"/);
   assert.match(swift, /static let mime = "application\/x-ndjson"/);
   assert.match(swift, /if let ndjson = UTType\(SharePrivacyReport\.typeIdentifier\), type\.conforms\(to: ndjson\) \{ return true \}/);
+});
+
+test('unsupported provider representations are rejected before a draft while supported alternatives win', { skip: process.platform !== 'darwin' }, () => {
+  const start = swift.indexOf('private enum ShareMediaSupport {');
+  const end = swift.indexOf('private enum SharePrivacyReport {');
+  assert.ok(start >= 0 && end > start, 'Media support policy must be isolated for Foundation tests');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-media-support-'));
+  try {
+    const fixture = path.join(directory, 'main.swift');
+    fs.writeFileSync(fixture, 'import Foundation\nimport UniformTypeIdentifiers\n' + swift.slice(start, end) + String.raw`
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.avif"]).isEmpty)
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.avif", "public.png"]) == ["public.png"])
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.movie", "public.mpeg-4"]) == ["public.mpeg-4"])
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.image"]) == ["public.image"])
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.movie"]) == ["public.movie"])
+precondition(ShareMediaSupport.preferredRepresentations(from: ["public.ndjson"]) == ["public.ndjson"])
+`);
+    const executable = path.join(directory, 'verify');
+    const compile = spawnSync('xcrun', ['swiftc', '-module-cache-path', path.join(directory, 'cache'), fixture, '-o', executable], { encoding: 'utf8', timeout: 60000 });
+    assert.equal(compile.status, 0, compile.stderr);
+    const run = spawnSync(executable, [], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(run.status, 0, run.stderr);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('report review shows a document preview with size and entries, never the recording or image paths', () => {

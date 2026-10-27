@@ -401,7 +401,10 @@ progress { accent-color: var(--accent); flex: 1; }
 .callout-text { position: absolute; inset: 0; width: 100%; height: 100%; resize: none; border: 0; border-radius: 0; line-height: 1.4; font-weight: 500; background: #fff; color: #182337; }
 .callout-text:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .callout-grip { position: absolute; left: 0; top: -25px; height: 24px; padding: 2px 7px; color: #fff; border: 0; border-radius: 4px 4px 0 0; font-size: 11px; cursor: move; z-index: 2; white-space: nowrap; }
+.callout-grip::before, .callout-handle::before { content: ""; position: absolute; pointer-events: auto; }
+.callout-grip::before { inset: -8px; }
 .callout-handle { position: absolute; width: 12px; height: 12px; padding: 0; background: #fff; border: 2px solid #3455db; border-radius: 3px; z-index: 3; touch-action: none; }
+.callout-handle::before { inset: -10px; }
 .handle-nw { left: -6px; top: -6px; cursor: nwse-resize; }
 .handle-n { left: calc(50% - 6px); top: -6px; cursor: ns-resize; }
 .handle-ne { right: -6px; top: -6px; cursor: nesw-resize; }
@@ -503,7 +506,7 @@ input, textarea, select { border-color: #d5d9e2; border-radius: 12px; }
 .sidebar-add { min-width: 40px; min-height: 40px; font-size: 20px; color: var(--ink-2); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); transition: background-color 150ms ease-out, color 150ms ease-out; }
 .sidebar-add:hover { background: var(--accent-tint); color: var(--accent); border-color: transparent; }
 .project-nav { gap: 2px; }
-.project-link { padding: 9px 10px; border-radius: 12px; color: var(--ink-2); font-weight: 550; transition: background-color 150ms ease-out, color 150ms ease-out; }
+.project-link { min-height: 40px; padding: 9px 10px; border-radius: 12px; color: var(--ink-2); font-weight: 550; transition: background-color 150ms ease-out, color 150ms ease-out; }
 .project-link:hover { background: var(--raised); color: var(--ink); }
 .project-link.active { background: var(--accent-tint); color: var(--accent-hover); font-weight: 650; }
 .project-count { min-width: 26px; padding: 1px 7px; border-radius: 999px; background: var(--raised); color: var(--muted); font-size: 11px; font-weight: 600; text-align: center; }
@@ -754,7 +757,7 @@ input, textarea, select { border-color: #d5d9e2; border-radius: 12px; }
 .drop-copy { grid-area: copy; }
 .drop-copy strong { font-family: var(--font-display); font-size: 16px; letter-spacing: -.01em; }
 .drop-copy p { margin-top: 3px; color: var(--muted); font-size: 13px; }
-.drop-formats { grid-area: formats; color: #8a91a1; font-size: 11.5px; letter-spacing: .01em; }
+.drop-formats { grid-area: formats; color: var(--muted); font-size: 11.5px; letter-spacing: .01em; }
 .drop-button { grid-area: action; display: inline-flex; align-items: center; min-height: 42px; padding: 9px 20px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; box-shadow: 0 1px 2px rgb(81 70 229 / .2), 0 8px 20px -8px rgb(81 70 229 / .55); transition: background-color 150ms ease-out, transform 120ms ease-out; }
 .dropzone:hover .drop-button { background: var(--accent-hover); }
 .dropzone:active .drop-button { transform: scale(.97); }
@@ -802,7 +805,9 @@ details.vision-section .vision-caption { display: none; }
 @media (prefers-reduced-motion: reduce) { .append-track, .append-knob { transition: none; } }
 
 @media (pointer: coarse) {
-    .button, .text-button, .tool, .sidebar-add, .canonical-chip, .stroke-control input, .color-hex { min-width: 44px; min-height: 44px; }
+    .button, .text-button, .tool, .sidebar-add, .canonical-chip, .stroke-control input, .color-hex, .project-link, .qr-select-option { min-width: 44px; min-height: 44px; }
+    .callout-grip::before { inset: -10px; }
+    .callout-handle::before { inset: -16px; }
     .color-gradient { min-height: 44px; height: 44px; }
     .custom-color { width: 44px; height: 44px; }
 }

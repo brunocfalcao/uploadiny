@@ -13,7 +13,24 @@ test('share extension persists only the limited device token in a ThisDeviceOnly
   assert.match(swift, /kSecAttrAccessibleWhenUnlockedThisDeviceOnly/);
   assert.match(swift, /UploadinyDeviceTokenStore\.write\(result\.token\)/);
   assert.match(swift, /UploadinyDeviceTokenStore\.delete\(\)/);
+  assert.match(swift, /guard UploadinyDeviceTokenStore\.delete\(\) else/);
+  assert.match(swift, /This iPhone sign-in could not be removed\. Try again\./);
   assert.doesNotMatch(swift, /UserDefaults|NSLog|print\(/);
+});
+
+test('initial project loading exposes a retry action without entering the upload path', () => {
+  assert.match(swift, /private var retryProjectLoading = false/);
+  assert.match(swift, /@objc private func primaryButtonTapped\(\)/);
+  assert.match(swift, /retryProjectLoading \? true : false|retryProjectLoading/);
+  assert.match(swift, /Retry loading projects/);
+  assert.match(swift, /showProjectLoadError\(/);
+});
+
+test('project and sign-in responses are fenced before UI or credential mutation after close', () => {
+  assert.match(swift, /private var callbackGate = ShareCallbackGate\(\)/);
+  assert.match(swift, /callbackGate\.close\(\)/);
+  assert.match(swift, /callbackGate\.accepts\(callbackGeneration\)/);
+  assert.match(swift, /guard let self, !self\.didClose, self\.callbackGate\.accepts\(callbackGeneration\) else \{ return \}/);
 });
 
 test('the "Add to the last upload" choice lives in its own ThisDeviceOnly Keychain item and never holds the token', () => {

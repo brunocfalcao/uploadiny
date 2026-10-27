@@ -25,7 +25,12 @@ final class AgentReportText
         try {
             $report = $this->reports->agentText($image, $limitBytes, $reservedBytes);
         } catch (RuntimeException $error) {
-            return ['note' => $subject.' text is unavailable: '.$error->getMessage(), 'text' => null, 'bytes' => 0];
+            $message = $error->getMessage();
+            if (! str_contains($message, $download)) {
+                $message .= ' Download the complete original with the authenticated URL: '.$download;
+            }
+
+            return ['note' => $subject.' text is unavailable: '.$message, 'text' => null, 'bytes' => 0];
         }
         $size = $this->number($report['total_bytes']).' bytes, '.$this->number($report['total_lines']).' '.($report['total_lines'] === 1 ? 'line' : 'lines');
         if (! $report['truncated']) {
@@ -36,7 +41,7 @@ final class AgentReportText
 
         return [
             'note' => $subject.' is TRUNCATED. The text that follows contains only the first '.$this->number($report['included_bytes']).' of '.$this->number($report['total_bytes']).' bytes (lines 1-'.$this->number($report['included_lines']).' of '.$this->number($report['total_lines']).'). '
-                .$this->number($omittedBytes).' bytes and '.$this->number($omittedLines).' '.($omittedLines === 1 ? 'line were' : 'lines were').' omitted. Download the complete original with the authenticated URL: '.$download,
+                .$this->number($omittedBytes).' bytes and '.$this->number($omittedLines).' '.($omittedLines === 1 ? 'line was' : 'lines were').' omitted. Download the complete original with the authenticated URL: '.$download,
             'text' => $report['text'],
             'bytes' => strlen($report['text']),
         ];

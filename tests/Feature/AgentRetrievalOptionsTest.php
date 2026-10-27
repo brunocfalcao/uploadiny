@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
+use League\Flysystem\UnableToRetrieveMetadata;
 use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
@@ -77,6 +78,60 @@ class AgentRetrievalOptionsTest extends TestCase
         $this->tool('get_asset', ['asset_id' => $image->uuid, 'image_width' => 900])->assertOk()->assertJsonPath('result.content.1.data', base64_encode($png));
 
         $this->assertSame($png, Storage::disk('local')->get($image->path));
+    }
+
+    public function test_exif_oriented_jpeg_preview_is_upright_without_changing_the_original(): void
+    {
+        $this->reader('orientation');
+        $image = UploadImage::factory()->create(['name' => 'orientation.jpg', 'mime_type' => 'image/jpeg']);
+        $jpeg = $this->jpegWithOrientation(6, 120, 80);
+        Storage::disk('local')->put($image->path, $jpeg);
+
+        $response = $this->tool('get_asset', ['asset_id' => $image->uuid, 'image_width' => 60])->assertOk();
+        $dimensions = getimagesizefromstring(base64_decode($response->json('result.content.1.data'), true));
+
+        $this->assertSame([60, 90], [$dimensions[0], $dimensions[1]]);
+        $this->assertSame($jpeg, Storage::disk('local')->get($image->path));
+    }
+
+    /** @return array<string, array{int, array{top_left: string, top_right: string, bottom_left: string, bottom_right: string}}> */
+    public static function mirroredExifOrientations(): array
+    {
+        return [
+            'main diagonal transpose' => [5, [
+                'top_left' => 'red', 'top_right' => 'blue', 'bottom_left' => 'green', 'bottom_right' => 'yellow',
+            ]],
+            'anti diagonal transverse' => [7, [
+                'top_left' => 'yellow', 'top_right' => 'green', 'bottom_left' => 'blue', 'bottom_right' => 'red',
+            ]],
+        ];
+    }
+
+    /** @param array{top_left: string, top_right: string, bottom_left: string, bottom_right: string} $expectedCorners */
+    #[DataProvider('mirroredExifOrientations')]
+    public function test_exif_transpose_orientations_preserve_the_expected_corner_order(int $orientation, array $expectedCorners): void
+    {
+        $this->reader('orientation-'.$orientation);
+        $image = UploadImage::factory()->create([
+            'name' => 'orientation-'.$orientation.'.jpg',
+            'mime_type' => 'image/jpeg',
+        ]);
+        $jpeg = $this->jpegWithQuadrantsOrientation($orientation);
+        Storage::disk('local')->put($image->path, $jpeg);
+
+        $payload = app(AgentImageContent::class)->read($image, 'original', 80);
+        $preview = @imagecreatefromstring($payload['data']);
+        if ($preview === false) {
+            $this->fail('The generated preview is not a readable image.');
+        }
+
+        $this->assertSame('image/png', $payload['mime_type']);
+        $this->assertSame([80, 120], [imagesx($preview), imagesy($preview)]);
+        $this->assertSame($expectedCorners['top_left'], $this->quadrantColor($preview, 10, 10));
+        $this->assertSame($expectedCorners['top_right'], $this->quadrantColor($preview, 70, 10));
+        $this->assertSame($expectedCorners['bottom_left'], $this->quadrantColor($preview, 10, 110));
+        $this->assertSame($expectedCorners['bottom_right'], $this->quadrantColor($preview, 70, 110));
+        $this->assertSame($jpeg, Storage::disk('local')->get($image->path));
     }
 
     public function test_first_feedback_call_includes_only_marked_screenshots_in_the_selected_project(): void
@@ -270,6 +325,36 @@ class AgentRetrievalOptionsTest extends TestCase
             ->assertSee('unavailable');
     }
 
+    public function test_file_size_disappearance_uses_the_unavailable_asset_message_without_a_storage_path(): void
+    {
+        $this->reader('disappearing-size');
+        $image = UploadImage::factory()->create(['name' => 'disappearing-size']);
+        $disk = Storage::disk('local');
+        $proxy = Mockery::mock($disk);
+        $proxy->shouldReceive('exists')->once()->with($image->path)->andReturnTrue();
+        $proxy->shouldReceive('size')->once()->with($image->path)->andThrow(UnableToRetrieveMetadata::fileSize($image->path));
+        Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
+
+        $response = $this->tool('get_asset', ['asset_id' => $image->uuid])->assertOk();
+
+        $response->assertJsonPath('result.isError', true)->assertSee('The original asset file is unavailable.')->assertDontSee($image->path);
+    }
+
+    public function test_annotated_file_size_disappearance_uses_the_annotated_unavailable_message(): void
+    {
+        $this->reader('disappearing-annotated-size');
+        $image = UploadImage::factory()->create(['name' => 'disappearing-annotated-size', 'annotated_path' => 'annotations/disappearing.png']);
+        $disk = Storage::disk('local');
+        $proxy = Mockery::mock($disk);
+        $proxy->shouldReceive('exists')->once()->with($image->annotated_path)->andReturnTrue();
+        $proxy->shouldReceive('size')->once()->with($image->annotated_path)->andThrow(UnableToRetrieveMetadata::fileSize($image->annotated_path));
+        Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
+
+        $response = $this->tool('get_asset', ['asset_id' => $image->uuid, 'variant' => 'annotated'])->assertOk();
+
+        $response->assertJsonPath('result.isError', true)->assertSee('No annotated image is available for this asset. Try original.')->assertDontSee($image->annotated_path);
+    }
+
     public function test_feedback_keeps_other_images_available_when_an_annotated_read_disappears(): void
     {
         $this->reader('disappearing-feedback-image');
@@ -360,5 +445,66 @@ class AgentRetrievalOptionsTest extends TestCase
         $this->tool($tool, $options + ['project_canonical' => $project->canonical, 'asset_id' => $image->uuid])->assertOk()->assertJsonPath('result.isError', true);
 
         $this->assertSame($before, $image->fresh()->getAttributes());
+    }
+
+    private function jpegWithOrientation(int $orientation, int $width, int $height): string
+    {
+        $source = imagecreatetruecolor($width, $height);
+        imagefill($source, 0, 0, imagecolorallocate($source, 40, 120, 200));
+        ob_start();
+        imagejpeg($source, null, 90);
+        $jpeg = (string) ob_get_clean();
+        unset($source);
+
+        return $this->injectExifOrientation($jpeg, $orientation);
+    }
+
+    private function jpegWithQuadrantsOrientation(int $orientation): string
+    {
+        $source = imagecreatetruecolor(120, 80);
+        $colors = [
+            'red' => imagecolorallocate($source, 255, 0, 0),
+            'green' => imagecolorallocate($source, 0, 255, 0),
+            'blue' => imagecolorallocate($source, 0, 0, 255),
+            'yellow' => imagecolorallocate($source, 255, 255, 0),
+        ];
+        imagefilledrectangle($source, 0, 0, 59, 39, $colors['red']);
+        imagefilledrectangle($source, 60, 0, 119, 39, $colors['green']);
+        imagefilledrectangle($source, 0, 40, 59, 79, $colors['blue']);
+        imagefilledrectangle($source, 60, 40, 119, 79, $colors['yellow']);
+        ob_start();
+        imagejpeg($source, null, 100);
+        $jpeg = (string) ob_get_clean();
+        unset($source);
+
+        return $this->injectExifOrientation($jpeg, $orientation);
+    }
+
+    private function injectExifOrientation(string $jpeg, int $orientation): string
+    {
+        $tiff = 'II'.pack('v', 42).pack('V', 8).pack('v', 1)
+            .pack('v', 0x0112).pack('v', 3).pack('V', 1).pack('v', $orientation).pack('v', 0).pack('V', 0);
+        $payload = "Exif\0\0".$tiff;
+        $segment = pack('CCn', 255, 225, strlen($payload) + 2).$payload;
+
+        return substr($jpeg, 0, 2).$segment.substr($jpeg, 2);
+    }
+
+    private function quadrantColor(mixed $image, int $x, int $y): string
+    {
+        $rgb = imagecolorsforindex($image, imagecolorat($image, $x, $y));
+        $colors = [
+            'red' => [255, 0, 0],
+            'green' => [0, 255, 0],
+            'blue' => [0, 0, 255],
+            'yellow' => [255, 255, 0],
+        ];
+        $distances = [];
+        foreach ($colors as $name => [$red, $green, $blue]) {
+            $distances[$name] = ($rgb['red'] - $red) ** 2 + ($rgb['green'] - $green) ** 2 + ($rgb['blue'] - $blue) ** 2;
+        }
+        asort($distances);
+
+        return (string) array_key_first($distances);
     }
 }

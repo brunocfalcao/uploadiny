@@ -638,4 +638,42 @@ class WorkspaceTest extends TestCase
         Storage::disk('local')->assertExists($image->path);
         $this->assertStringNotContainsString('SECRET', $image->description_error);
     }
+
+    public function test_vision_description_applies_jpeg_orientation_before_sending_the_preview(): void
+    {
+        Storage::fake('local');
+        config(['services.uploadiny.vision_key' => 'test-vision-key']);
+        $image = UploadImage::factory()->create(['mime_type' => 'image/jpeg']);
+        Storage::disk('local')->put($image->path, $this->jpegWithOrientation(6, 120, 80));
+        Http::fake(['https://api.openai.com/v1/chat/completions' => Http::response([
+            'choices' => [['message' => ['content' => 'An upright image.']]],
+        ])]);
+
+        (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
+
+        Http::assertSent(function ($request): bool {
+            $encoded = $request['messages'][0]['content'][1]['image_url']['url'];
+            $bytes = base64_decode((string) substr($encoded, strlen('data:image/jpeg;base64,')), true);
+            $dimensions = is_string($bytes) ? getimagesizefromstring($bytes) : false;
+
+            return $dimensions !== false && [$dimensions[0], $dimensions[1]] === [80, 120];
+        });
+    }
+
+    private function jpegWithOrientation(int $orientation, int $width, int $height): string
+    {
+        $source = imagecreatetruecolor($width, $height);
+        imagefill($source, 0, 0, imagecolorallocate($source, 40, 120, 200));
+        ob_start();
+        imagejpeg($source, null, 90);
+        $jpeg = (string) ob_get_clean();
+        unset($source);
+
+        $tiff = 'II'.pack('v', 42).pack('V', 8).pack('v', 1)
+            .pack('v', 0x0112).pack('v', 3).pack('V', 1).pack('v', $orientation).pack('v', 0).pack('V', 0);
+        $payload = "Exif\0\0".$tiff;
+        $segment = pack('CCn', 255, 225, strlen($payload) + 2).$payload;
+
+        return substr($jpeg, 0, 2).$segment.substr($jpeg, 2);
+    }
 }

@@ -20,6 +20,15 @@ Start at the repository `README.md`. When the sibling documentation checkout is 
 - Run the smallest relevant existing executable checks. Ordinary implementation defers new coverage to the release pass; authentication, privacy, billing, data integrity, concurrency, and production regressions require immediate coverage. Do not claim browser/device/provider acceptance without observing it.
 - Resolve shared `do` workflows from `~/Herd/.dynamic-commands/` freshly. Read applicable global rules and project/nested instructions. Keep handoffs concise and outcome-first.
 
+## Verification policy
+
+This policy is shared by both agent entrypoints and governs conflicting generated defaults.
+
+- During development, run new/changed tests and existing tests covering the changed behavior. Widen to callers, related paths, or the full suite when scope, failures, or unresolved risk warrant it; no separate go-ahead is needed.
+- New coverage follows the existing critical-scope rule above and any explicitly invoked workflow. Ordinary coverage gaps belong to the release pass.
+- Run Laravel Pint, PHPStan/Larastan, linters, and formatters only when Bruno requests them. Frontend asset builds remain required after frontend changes.
+- Explicitly invoked `*-release-*` dynamic commands retain their mandatory full test suite and Laravel Pint requirements; the invoked command defines its release scope.
+
 ## Dependency contract
 
 Manifest requirements: PHP `^8.2`, `laravel/framework` `^12.0`. Exact resolved versions come from `composer.lock`; runtime versions require a fresh check.
@@ -33,7 +42,7 @@ Manifest requirements: PHP `^8.2`, `laravel/framework` `^12.0`. Exact resolved v
 - Follow sibling file structure, naming, types, casts, and observer patterns. Use explicit PHP types and curly braces; useful PHPDoc replaces redundant inline commentary. Do not create abstractions, dependencies, or base directories without a task reason.
 - Reuse existing Blade/Livewire components and frontend conventions. Build assets after frontend changes. Livewire actions preserve the same validation and authorization boundaries as HTTP requests.
 - Use the existing test runner and factory states; never convert or remove tests merely because a generic guideline names a different runner. Read the applicable testing skill before authoring coverage.
-- Format changed PHP with the project's Pint workflow. Herd serves local Laravel sites; do not launch a second web server to verify a Herd-served app.
+- Follow the verification policy above for formatters and static analysis; it overrides conflicting generated defaults in `.ai/boost-guidelines.md`. Herd serves local Laravel sites; do not launch a second web server to verify a Herd-served app.
 - Schema changes retain existing column attributes and relationships. Do not introduce cascading deletes. Preserve existing queue, notification, and shared-package ownership.
 
 ## Project constraints
@@ -43,7 +52,7 @@ Manifest requirements: PHP `^8.2`, `laravel/framework` `^12.0`. Exact resolved v
 - Browser history invalidates pending image requests even before the editor opens. Unavailable direct links reconcile chunk membership and restore a surviving active URL or the gallery. Thickness pointer gestures preview live and create one undo step; cancellation restores the prior width. Recording preview observers disconnect before gallery replacement is rebound. Desktop interactive controls retain a 40px minimum and touch controls a 44px minimum.
 - The website's “Delete all Chunks” action clears all published and draft feedback in the current project, including private files and annotations, while retaining the project and assets assigned elsewhere. It uses the same transactional, recoverable file deletion as project deletion.
 - Preserve private storage, Sanctum-only API authentication, phone/agent ability separation, complete/draft chunk transitions, feedback revisions, and moved-image deletion behavior. API token and Share Extension changes require immediate security coverage. Keep the mobile Keychain and native Share Extension contracts aligned with the server.
-- Agent API access is managed at `/agent-access`. Backoffice keys read feedback, authorize explicit completed-chunk deletion through MCP, and remain nonexpiring until rotated or revoked; the CLI preserves its explicit lifetime option. Both use `AgentAccess` and the same protected credential file. Project canonicals are generated six-letter codes, stay stable across name/slug changes, and select feedback at `/api/feedback/{project:canonical}`. Keep slug-based browser/mobile routes compatible.
+- Agent API access is managed at `/agent-access`. Backoffice keys read feedback, authorize explicit completed-chunk deletion through MCP, and remain nonexpiring until rotated or revoked; the CLI preserves its explicit lifetime option. Both use `AgentAccess` and the same protected credential file. Project canonicals are generated six-letter codes, stay stable across name/slug changes, and select feedback at `/api/feedback/{project:canonical}`. Shipped migration files are immutable; `uploadiny:recover-canonicals` explicitly repairs an interrupted older SQLite backfill, preserving assigned codes and recording completion in one transaction. Keep slug-based browser/mobile routes compatible.
 - The remote MCP endpoint `/mcp` uses the same dedicated agent Sanctum abilities and key as the agent API. `routes/ai.php` registers five tools: project discovery, latest completed feedback, private screenshot content, timestamped recording frames, and explicit completed-chunk deletion. `delete_chunk` requires the pinned chunk UUID, project canonical, and review_token from the reviewed feedback; changed contents require renewed review and consent. Deletion preserves assets assigned elsewhere and uses `WorkspaceDeletion` staged-file rollback. Committed deletions retain staged-file cleanup intents until removal succeeds; the scheduler retries these every minute. The shared `do uploadiny` command retains reviewed chunk identity and review_token and never deletes automatically. REST remains read-only for the agent; MCP deletion uses the existing agent key without changing its stored abilities. `FeedbackReader` keeps REST and MCP payloads aligned. `laravel/mcp` must remain a production dependency. Recording frames require FFmpeg, configured through `services.uploadiny.ffmpeg_binary` / `UPLOADINY_FFMPEG_BINARY`; the web process must be able to execute it. `uploadiny:mcp-smoke` verifies the configured application with disposable fixtures and credentials; its URL must target the same database. Keep HTTPS verification enabled, supplying the trusted local CA when needed.
 - App Privacy Reports (`.ndjson` exported from iPhone Settings) are accepted only on the phone append path `api.chunks.append`; website and one-shot uploads stay image/video only. `PrivacyReport::accepts` requires the client extension `ndjson`, a sniffed text MIME (`application/x-ndjson`, `application/json`, `text/plain`, JSON Lines variants) and no NUL byte. Accepted reports store `mime_type` `application/x-ndjson` (`UploadImage::PRIVACY_REPORT_MIME_TYPE`), `media_type` `privacy_report`, and `description_status` `not_applicable`; no migration was needed. Reports refuse drawing, annotated images, AI descriptions, and recording frames, but support written feedback, duplicate, copy, move, and deletion. The website reads them through `/images/{image}/report` in 200-entry pages, showing unparseable lines raw and escaped; downloads are always attachments with nosniff and a sandbox CSP. MCP `get_feedback` and `get_asset` return report text inline, capped at 48 KiB per report and 64 KiB per `get_feedback` response, with an explicit truncation note and the authenticated download URL. REST stays URL-based.
 
@@ -82,14 +91,32 @@ locks protect uncommitted writes; reconciliation removes only journal-owned
 paths without surviving image references. Cleanup removes recovery metadata
 before its manifest, releases the lock before retiring its pathname, and uses
 atomic empty-directory removal. Referenced and unlisted siblings survive.
-Agent-key rotation and revocation retain a protected 0600 recovery record until
-the outer database transaction commits; interrupted operations restore the key
+Agent-key rotation and revocation retain a protected 0600 recovery record and
+the same connection-owned cache lease through the outermost database commit or
+rollback, including nested savepoint rollbacks; interrupted operations restore the key
 matching a surviving token or finish revoked-file cleanup. Scheduler recovery
 does not wait on an active agent-key cache lease; an interrupted lease expires
 after at most ten minutes. The scheduler overlap mutex expires after five minutes.
+An interruption between recovery-directory creation and publishing its lock or
+journal may retain an empty, unclaimed directory. This preparation gap owns no
+private bytes; recovery deliberately leaves it alone because an active writer
+can occupy the same gap. Directory location or emptiness never proves ownership.
+The upload-number high-water mark is published only after the temporary counter
+has been fully written and verified. Publication failures retain its previous
+value; a malformed saved counter requires recovery from trustworthy numbering
+evidence before uploads or copies resume.
 The existing cleanup-status fields remain; `orphan_recovery` separately reports
 pending count, oldest age, attempts, deferred count, and last attempt without
-private paths, credentials, or feedback.
+private paths, credentials, or feedback. `writing_recovery` separately reports
+new-file recovery count, age, attempts, deferred work, active leases, and last
+attempt. Its progress sidecars are best-effort diagnostics and never gate a
+healthy upload; cleanup retires owned sidecars before their journal. Status
+sampling tolerates retiring journals and malformed timestamps without changing
+recovery ownership.
+
+The existing same-connection database queue stores draft-cleanup and description
+job records in the transaction that publishes their state. Changing the queue
+backend or its database connection requires reviewing that atomic handoff.
 
 Phone API completion returns acknowledgements for newly uploaded assets only,
 including saved comments and the final merged chunk UUID. Website completion

@@ -1,9 +1,9 @@
 # Uploadiny
 
-Uploadiny is a private workspace for collecting product-feedback images. It
-groups one or more uploads into a project chunk, lets the owner annotate and
-comment on each image, and exposes the latest completed chunk to an
-authenticated coding agent.
+Uploadiny is a private workspace for product-feedback screenshots, recordings
+and iPhone App Privacy Reports. It groups uploads into project chunks, lets
+the owner annotate screenshots and comment on each asset, and exposes the
+latest completed chunk to an authenticated coding agent.
 
 The Laravel website and API live at the repository root. The Expo iPhone app
 and Share Extension live in [`mobile/`](mobile/); the extension sends uploads
@@ -219,16 +219,30 @@ running-process proof. It refreshed deployment documentation and kept existing
 runtime behavior and dependencies. Recording retrieval retains its per-frame
 timeout and returns all requested frames or its existing safe error.
 
-The release candidate is `v0.15.1`, candidate, not deployed, with iPhone version
-`0.15.1` build `38`. It supersedes the unshipped `v0.15.0` tag, which tracked the
-local agent pointer files that shipping excludes. The Share Extension accepts the iPhone App Privacy Report
-export (`.ndjson`). The website shows it as a paged, readable report view with
-written feedback and a download of the original; MCP agents receive its text
-inline up to 48 KiB per report (64 KiB per feedback response) with an explicit truncation note. The website's
-own upload picker still accepts screenshots and recordings only. AI screenshot
-descriptions use `gpt-5.4-nano` by default, because OpenAI retired
-`gpt-4.1-nano` and production descriptions had been failing. Runtime
-dependency `laravel/mcp` moves from 1.0.1 to 1.1.1, and the iPhone client aligns
-`expo` 57.0.31 and `expo-sharing` 57.0.24 within SDK 57. No migrations or new
-environment keys are required.
+`v0.15.1` (`0e0f923e21`) completed FAST shipping on 25 October 2026 at
+17:33:23 UTC. The matching completed run records 34,422 seconds of elapsed time,
+website/API verification, and signed physical
+iPhone 0.15.1 build 38 installation, launch and running-process proof. It added
+App Privacy Report sharing/readable reports and restored screenshot descriptions
+with the configured `gpt-5.4-nano` default.
+
+The release candidate is **v0.15.2, candidate, not deployed**, with iPhone
+version **0.15.2 build 39**. It repairs transaction-owned agent-key recovery,
+atomic upload numbering, background-job handoffs, stale editor responses and
+keyboard actions, oriented image previews, and Share Extension Keychain,
+close/retry and media preparation. Recovery diagnostics remain read-only and
+omit private paths. Dependency versions and environment keys are unchanged;
+there are no new migrations and no migration-review flag is required.
+
+For an older SQLite installation interrupted while assigning project codes,
+`php artisan uploadiny:recover-canonicals` completes missing codes and the
+unique index without changing existing codes, then records that migration as
+complete. Continue with normal `php artisan migrate` afterward. This explicit
+recovery command leaves completed installations unchanged; routine releases
+do not run it. Previously shipped migration files remain unchanged.
+
+Local preparation passed 259 PHP tests / 2,870 assertions, 134 web tests,
+33 native checks, Pint, TypeScript, locked installs, Composer validation and
+the Vite build. Native Release compilation is recorded in `WhereAreWe.md`.
+Browser, real Keychain and physical Share Sheet acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

@@ -120,7 +120,7 @@ class OvernightFindingsTest extends TestCase
         $intent = StagedFileDeletion::create(['paths' => ['annotations/PRIVATE-feedback.png']]);
         $this->travel(75)->seconds();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
+            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null], 'writing_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'active' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $this->assertSame(0, $intent->fresh()->attempts);
         $disk = Storage::disk('local');
@@ -133,13 +133,13 @@ class OvernightFindingsTest extends TestCase
         Storage::shouldReceive('disk')->with('local')->andReturn($proxy);
         app(WorkspaceDeletion::class)->cleanupPending();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 1, 'deferred' => 1, 'last_attempt_at' => '2026-10-10T01:01:15+00:00', 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
+            'pending' => 1, 'oldest_pending_seconds' => 75, 'attempts' => 1, 'deferred' => 1, 'last_attempt_at' => '2026-10-10T01:01:15+00:00', 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null], 'writing_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'active' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $this->assertSame('old private bytes', $disk->get('annotations/PRIVATE-feedback.png'));
         $fails = false;
         app(WorkspaceDeletion::class)->cleanupPending();
         $this->artisan('uploadiny:cleanup-status')->expectsOutput(json_encode([
-            'pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null],
+            'pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null, 'recovery_journals' => 0, 'orphan_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'last_attempt_at' => null], 'writing_recovery' => ['pending' => 0, 'oldest_pending_seconds' => null, 'attempts' => 0, 'deferred' => 0, 'active' => 0, 'last_attempt_at' => null],
         ], JSON_THROW_ON_ERROR))->assertSuccessful();
         $disk->assertMissing('annotations/PRIVATE-feedback.png');
     }

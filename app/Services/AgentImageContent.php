@@ -8,10 +8,13 @@ use App\UploadImage;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 use League\Flysystem\UnableToReadFile;
+use League\Flysystem\UnableToRetrieveMetadata;
 use RuntimeException;
 
 final class AgentImageContent
 {
+    public function __construct(private ImageOrientation $orientation) {}
+
     /** @return array{data: string, mime_type: string} */
     public function read(UploadImage $image, string $variant, ?int $width = null, int $reservedBytes = 0): array
     {
@@ -23,7 +26,11 @@ final class AgentImageContent
         if ($path === null || ! $disk->exists($path)) {
             throw new RuntimeException($variant === 'annotated' ? 'No annotated image is available for this asset. Try original.' : 'The original asset file is unavailable.');
         }
-        $size = $disk->size($path);
+        try {
+            $size = $disk->size($path);
+        } catch (UnableToReadFile|UnableToRetrieveMetadata) {
+            throw new RuntimeException($this->unavailableMessage($variant));
+        }
         if ($size > 250 * 1024 * 1024) {
             throw new RuntimeException('This image is larger than 250 MB and cannot be sent to the agent. Ask the user to share a smaller export.');
         }
@@ -47,16 +54,20 @@ final class AgentImageContent
         if ($dimensions === false) {
             throw new RuntimeException('This image cannot be resized. Request it without image_width or use its authenticated download URL: '.$download);
         }
-        if ($dimensions[0] <= $width) {
+        $orientation = $dimensions[2] === IMAGETYPE_JPEG ? $this->orientation->read($absolutePath) : 1;
+        $orientedWidth = in_array($orientation, [5, 6, 7, 8], true) ? $dimensions[1] : $dimensions[0];
+        $orientedHeight = in_array($orientation, [5, 6, 7, 8], true) ? $dimensions[0] : $dimensions[1];
+        if ($orientation === 1 && $dimensions[0] <= $width) {
             return ['data' => $this->readBytes($disk, $path, $variant), 'mime_type' => $mime];
         }
         if (! extension_loaded('gd')) {
             throw new RuntimeException('Image resizing is unavailable. Request it without image_width.');
         }
-        $height = max(1, (int) round($dimensions[1] * $width / $dimensions[0]));
+        $targetWidth = min($width, $orientedWidth);
+        $height = max(1, (int) round($orientedHeight * $targetWidth / $orientedWidth));
         // Decoding peaks before the destination exists. PNG encoding needs both
         // canvases, but GD is released before base64 and JSON are built.
-        $pixels = $width * $height;
+        $pixels = $targetWidth * $height;
         $sourcePixels = $dimensions[0] * $dimensions[1];
         if (max($sourcePixels * 8, $sourcePixels * 4 + $pixels * 9) > $available) {
             throw new RuntimeException($budgetError);
@@ -72,11 +83,14 @@ final class AgentImageContent
         if ($source === false) {
             throw new RuntimeException('This image format cannot be resized. Request it without image_width.');
         }
-        $preview = imagecreatetruecolor($width, $height);
+        if ($orientation !== 1) {
+            $source = $this->orientation->apply($source, $absolutePath);
+        }
+        $preview = imagecreatetruecolor($targetWidth, $height);
         try {
             imagealphablending($preview, false);
             imagesavealpha($preview, true);
-            imagecopyresampled($preview, $source, 0, 0, 0, 0, $width, $height, $dimensions[0], $dimensions[1]);
+            imagecopyresampled($preview, $source, 0, 0, 0, 0, $targetWidth, $height, imagesx($source), imagesy($source));
             ob_start();
             imagepng($preview);
             $bytes = (string) ob_get_clean();
@@ -100,9 +114,14 @@ final class AgentImageContent
         }
 
         if (! is_string($bytes)) {
-            throw new RuntimeException($variant === 'annotated' ? 'No annotated image is available for this asset. Try original.' : 'The original asset file is unavailable.');
+            throw new RuntimeException($this->unavailableMessage($variant));
         }
 
         return $bytes;
+    }
+
+    private function unavailableMessage(string $variant): string
+    {
+        return $variant === 'annotated' ? 'No annotated image is available for this asset. Try original.' : 'The original asset file is unavailable.';
     }
 }

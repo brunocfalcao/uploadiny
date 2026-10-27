@@ -314,16 +314,43 @@ class WorkspaceDeletion
     {
         $disk = Storage::disk('local');
         $path = dirname($journal).'/recovery.json';
+        $saved = [];
         if ($disk->exists($path)) {
-            $saved = json_decode($disk->get($path) ?? '', true);
+            try {
+                $candidate = json_decode($disk->get($path) ?? '', true, flags: JSON_THROW_ON_ERROR);
+                $saved = is_array($candidate) ? $candidate : [];
+            } catch (Throwable) {
+                $saved = [];
+            }
+        }
+        $createdAt = $this->recoveryTimestamp($saved['created_at'] ?? null);
+        if ($createdAt === null) {
+            $modified = $disk->lastModified($journal);
+            if (! is_int($modified) && ! is_numeric($modified)) {
+                throw new RuntimeException('Deletion recovery journal metadata is unavailable.');
+            }
+            $createdAt = Carbon::createFromTimestamp((int) $modified)->toIso8601String();
         }
 
         return [
-            'created_at' => $saved['created_at'] ?? Carbon::createFromTimestamp($disk->lastModified($journal))->toIso8601String(),
-            'attempts' => (int) ($saved['attempts'] ?? 0),
-            'last_attempt_at' => $saved['last_attempt_at'] ?? null,
-            'last_error' => $saved['last_error'] ?? null,
+            'created_at' => $createdAt,
+            'attempts' => is_numeric($saved['attempts'] ?? null) ? max(0, (int) $saved['attempts']) : 0,
+            'last_attempt_at' => $this->recoveryTimestamp($saved['last_attempt_at'] ?? null),
+            'last_error' => is_string($saved['last_error'] ?? null) && $saved['last_error'] !== '' ? $saved['last_error'] : null,
         ];
+    }
+
+    private function recoveryTimestamp(mixed $value): ?string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->toIso8601String();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     /** @param array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} $progress */
@@ -346,7 +373,17 @@ class WorkspaceDeletion
             if (! $disk->exists($journal) || StagedFileDeletion::where('journal_path', $journal)->exists()) {
                 continue;
             }
-            $progress = $this->recoveryProgress($journal);
+            try {
+                $progress = $this->recoveryProgress($journal);
+            } catch (Throwable $error) {
+                // Status is a read-only sample. A journal retiring or losing metadata during sampling is unavailable, not a cleanup success.
+                Log::debug('Orphan deletion status sample skipped.', ['category' => class_basename($error)]);
+
+                continue;
+            }
+            if (! $disk->exists($journal)) {
+                continue;
+            }
             $status['pending']++;
             $age = max(0, (int) Carbon::parse($progress['created_at'])->diffInSeconds(now()));
             $status['oldest_pending_seconds'] = max($status['oldest_pending_seconds'] ?? 0, $age);
