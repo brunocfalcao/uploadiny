@@ -53,24 +53,28 @@ prompt. There is no direct OpenAI API-key fallback.
 The production bridge source is `bin/uploadiny-vision.py`. Install it
 root-owned with mode 0755 at `/usr/local/libexec/uploadiny-vision.py`, with a
 sudoers rule allowing the application user to run only that exact command,
-without arguments, as `olloma-agent`. Keep that account's installed Node and
-OpenClaw paths aligned with the script. `UPLOADINY_VISION_BINARY` selects the
+without arguments, as `olloma-agent`. `UPLOADINY_VISION_BINARY` selects the
 installed bridge, and `UPLOADINY_VISION_TIMEOUT` bounds the application call.
-Its 80-second default includes the OpenClaw command start and stays below the existing
-90-second description-job timeout and 120-second database queue retry window.
-The bridge uses a fresh agent session and a private temporary directory for
-each image; it removes that directory after success, failure, or cancellation.
-OpenClaw's agent session records remain governed by its own storage policy.
-Each call runs on the host's always-on shared OpenClaw gateway
-(`openclaw-gateway.service`, owned by Olloma's `scripts/openclaw-host/`), which
-the bridge selects through `OPENCLAW_CONFIG_PATH=/home/olloma-agent/.openclaw/gateway.json`.
-The bridge no longer starts a separate local OpenClaw runtime and fails closed
-while the gateway is unavailable. It also requires low reasoning effort.
+Its 80-second default stays above the bridge's 75-second gateway wait and below
+the existing 90-second description-job timeout and 120-second database queue
+retry window.
 
-The agent must allow only `view_image`, restricted to its workspace. Existing
-agents retain their prior tool permissions. The bridge refuses an answer unless
-OpenClaw reports successful image inspection through the Codex runtime on the
-requested model. OAuth credentials remain in OpenClaw's credential store.
+Each call sends the image, attached to the request, to a fresh `uploadiny`
+session on the host's always-on shared OpenClaw gateway
+(`openclaw-gateway.service`, owned by Olloma's `scripts/openclaw-host/`) over
+loopback, using the gateway token and port from
+`/home/olloma-agent/.openclaw/gateway.json`. The image is never written to disk
+and no OpenClaw process is started per image. OpenClaw's agent session records
+remain governed by its own storage policy. The bridge fails closed while the
+gateway is unavailable.
+
+The gateway's reply names the agent, not the model that answered, so before
+every call the bridge refuses a gateway configuration whose `uploadiny` agent is
+not `openai/gpt-6-luna` at low effort. It accepts only one complete, non-empty
+answer from the `uploadiny` agent. Attaching the image matters: through the
+agent's `view_image` tool, Luna at low effort did not receive the picture and
+described unrelated images (measured 2026-11-06). Existing agents retain their
+prior tool permissions. OAuth credentials remain in OpenClaw's credential store.
 
 ## Local development
 
@@ -261,22 +265,26 @@ verification and signed physical iPhone 0.15.2 build 39 installation, launch,
 and running-process proof. It shipped the recovery, queue-handoff, editor,
 orientation, canonical-recovery and Share Extension reliability repairs.
 
-The release candidate is **v0.16.2, candidate, not deployed**, with iPhone
-version **0.16.2 build 42**. Screenshot descriptions run on the host's shared
-OpenClaw gateway described above (from v0.16.1, tagged but never shipped on its
-own) and switch from GPT-6.1 Sol to GPT-6 Luna at low effort, which Bruno chose
-for speed. The application now records and accepts `gpt-6-luna`; the server's
-`uploadiny` agent and installed bridge switch to Luna immediately before this
-release ships, because shipping runs a live description. There are no
-migration, environment or dependency changes.
+The release candidate is **v0.16.3, candidate, not deployed**, with iPhone
+version **0.16.3 build 43**. Screenshot descriptions run on the host's shared
+OpenClaw gateway described above with GPT-6 Luna at low effort, which Bruno
+chose for speed, and the image attached to the request (about 8 seconds per
+synthetic screenshot on the server, against 25–35 seconds with GPT-6.1 Sol and
+the image tool). v0.16.1 (gateway, Sol) and v0.16.2 (Luna through the image
+tool, which misdescribed images) were tagged but never shipped. The application
+records and accepts `gpt-6-luna`; the server's `uploadiny` agent and installed
+bridge switch to Luna immediately before this release ships, because shipping
+runs a live description. There are no migration, environment or dependency
+changes.
 
 v0.16.0 completed FAST shipping on 6 November 2026 at 15:13:47 UTC in
 250 seconds (run `48826c116c1c492b802a2c00a39a4975`), with website/API proof
 and signed physical iPhone 0.16.0 build 40 installation, launch and running-process
 proof. It introduced subscription-backed OpenClaw screenshot descriptions
 through the dedicated agent and subscription login described above.
-The bridge stops its process group even when its launcher exits first and
-cleans each temporary preview. `UPLOADINY_VISION_BINARY` is a new optional
+v0.16.0's bridge started a local OpenClaw process per image, stopped its
+process group even when its launcher exited first and cleaned each temporary
+preview. `UPLOADINY_VISION_BINARY` is a new optional
 override; its default points to the installed bridge. The timeout default is
 80 seconds. API-key, model and connection-timeout environment settings are no
 longer consumed by descriptions. Shipping preflight requires an explicit

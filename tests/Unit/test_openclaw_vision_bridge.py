@@ -1,12 +1,12 @@
+import base64
+import http.server
 import importlib.util
 import io
 import json
-import os
 from pathlib import Path
-import signal
-import subprocess
-import sys
+import re
 import tempfile
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -17,153 +17,142 @@ SPEC = importlib.util.spec_from_file_location('vision_bridge', ROOT / 'bin/uploa
 bridge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bridge)
 
+TOKEN = 'a' * 64
+
+
+class FakeGateway(http.server.BaseHTTPRequestHandler):
+    """Records each request and answers with the reply the test configured."""
+
+    def do_POST(self):
+        length = int(self.headers['content-length'])
+        self.server.requests.append({
+            'path': self.path, 'headers': dict(self.headers), 'body': json.loads(self.rfile.read(length)),
+        })
+        if self.server.delay:
+            time.sleep(self.server.delay)
+        status, reply = self.server.reply
+        payload = reply if isinstance(reply, bytes) else json.dumps(reply).encode()
+        self.send_response(status)
+        self.send_header('content-type', 'application/json')
+        self.send_header('content-length', str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *_):
+        pass
+
 
 class VisionBridgeTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.workspace = Path(self.directory.name)
         self.image = b'\xff\xd8\xffPRIVATE image bytes\xff\xd9'
-        self.receipt = self.workspace / 'receipt.json'
-        self.envelope = {
-            'runId': 'synthetic-run', 'status': 'ok', 'summary': 'completed',
-            'result': {
-                'payloads': [{'text': '  A blue Save button.  '}],
-                'meta': {
-                    'agentMeta': {
-                        'model': 'gpt-6-luna', 'provider': 'openai', 'agentHarnessId': 'codex',
-                        'terminalReceipt': {'successfulToolNames': ['view_image'], 'rerouted': False},
-                    },
-                    'requestShaping': {'authMode': 'auth-profile', 'thinking': 'low'},
-                },
+
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), FakeGateway)
+        self.server.daemon_threads = True
+        self.server.requests, self.server.delay = [], 0
+        self.server.reply = (200, self.completion('  A blue Save button.  '))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+        self.config_path = Path(self.directory.name) / 'gateway.json'
+        self.config = {
+            'gateway': {
+                'port': self.server.server_address[1],
+                'auth': {'mode': 'token', 'token': TOKEN},
+                'http': {'endpoints': {'chatCompletions': {'enabled': True}}},
             },
+            'agents': {'entries': {'uploadiny': {'model': 'openai/gpt-6-luna', 'thinkingDefault': 'low'}}},
         }
+        self.write_config()
         self.addCleanup(patch.stopall)
-        patch.object(bridge, 'WORKSPACE', self.workspace).start()
+        patch.object(bridge, 'GATEWAY_CONFIG', str(self.config_path)).start()
 
-    def cli(self, envelope=None, delay=False, exit_code=0):
-        stub = self.workspace / 'cli.py'
-        stub.write_text(
-            'import json, os, pathlib, sys, time\n'
-            'args = sys.argv[1:]\n'
-            'prompt = pathlib.Path(args[args.index("--message-file") + 1])\n'
-            'picture = prompt.parent / "screenshot.jpg"\n'
-            f'pathlib.Path({str(self.receipt)!r}).write_text(json.dumps({{"args": args, '
-            '"prompt": prompt.read_text(), "image": picture.read_bytes().hex(), "api_key_in_environment": "OPENAI_API_KEY" in os.environ, '
-            '"config": os.environ.get("OPENCLAW_CONFIG_PATH")}))\n'
-            + ('time.sleep(10)\n' if delay else '')
-            + f'print("[state/agent-db] clean-close receipt")\nprint({json.dumps(envelope if envelope is not None else self.envelope)!r})\n'
-            + f'sys.exit({exit_code})\n'
-        )
-        patch.object(bridge, 'OPENCLAW', [sys.executable, str(stub)]).start()
+    def write_config(self):
+        self.config_path.write_text(json.dumps(self.config))
 
-    def assert_clean(self):
-        self.assertEqual([], list(self.workspace.glob('image-*')))
+    @staticmethod
+    def completion(content, model='openclaw/uploadiny', finish='stop', choices=1):
+        choice = {'index': 0, 'message': {'role': 'assistant', 'content': content}, 'finish_reason': finish}
+        return {'id': 'chatcmpl-synthetic', 'object': 'chat.completion', 'model': model, 'choices': [choice] * choices}
 
-    def test_only_prepared_bytes_reach_a_fresh_uploadiny_turn_on_the_shared_gateway(self):
-        self.cli()
-        self.assertFalse(self.receipt.exists())
-
+    def test_only_the_prepared_bytes_reach_a_fresh_uploadiny_session_as_an_attached_image(self):
         self.assertEqual({'description': 'A blue Save button.', 'model': 'gpt-6-luna'}, bridge.describe(self.image))
-        first = json.loads(self.receipt.read_text())
-        self.assertEqual(self.image.hex(), first['image'])
-        args = first['args']
-        self.assertEqual('uploadiny', args[args.index('--agent') + 1])
-        self.assertNotIn('--local', args)
-        self.assertNotIn('--model', args)
-        self.assertEqual('60', args[args.index('--timeout') + 1])
-        self.assertIn('--json', args)
-        self.assertEqual('/home/olloma-agent/.openclaw/gateway.json', first['config'])
-        self.assertNotIn('PRIVATE', first['prompt'])
-        self.assertNotIn('--deliver', args)
-        self.assertFalse(first['api_key_in_environment'])
-        self.assert_clean()
-
         bridge.describe(self.image)
-        second = json.loads(self.receipt.read_text())['args']
-        self.assertNotEqual(args[args.index('--session-id') + 1], second[second.index('--session-id') + 1])
-        self.assert_clean()
 
-    def test_uninspected_images_wrong_models_and_empty_answers_are_refused(self):
-        outcomes = ['no-image', 'wrong-model', 'wrong-provider', 'wrong-runtime', 'rerouted', 'empty',
-                    'wrong-thinking', 'no-thinking', 'local-envelope', 'no-result']
-        for outcome in outcomes:
-            with self.subTest(outcome=outcome):
-                envelope = json.loads(json.dumps(self.envelope))
-                result = envelope['result']
-                meta = result['meta']['agentMeta']
-                if outcome == 'no-image': meta['terminalReceipt']['successfulToolNames'] = []
-                if outcome == 'wrong-model': meta['model'] = 'gpt-6-astra'
-                if outcome == 'wrong-provider': meta['provider'] = 'anthropic'
-                if outcome == 'wrong-runtime': meta['agentHarnessId'] = 'openclaw'
-                if outcome == 'rerouted': meta['terminalReceipt']['rerouted'] = True
-                if outcome == 'empty': result['payloads'] = [{'text': '   '}]
-                if outcome == 'wrong-thinking': result['meta']['requestShaping']['thinking'] = 'xhigh'
-                if outcome == 'no-thinking': del result['meta']['requestShaping']
-                if outcome == 'local-envelope': envelope = result
-                if outcome == 'no-result': del envelope['result']
-                self.cli(envelope)
+        first, second = self.server.requests
+        self.assertEqual('/v1/chat/completions', first['path'])
+        self.assertEqual(f'Bearer {TOKEN}', first['headers']['authorization'])
+        body = first['body']
+        self.assertEqual('openclaw/uploadiny', body['model'])
+        self.assertIs(False, body['stream'])
+        [message] = body['messages']
+        self.assertEqual('user', message['role'])
+        text, attached = message['content']
+        self.assertEqual('text', text['type'])
+        self.assertNotIn('PRIVATE', text['text'])
+        self.assertEqual('image_url', attached['type'])
+        self.assertEqual('data:image/jpeg;base64,' + base64.b64encode(self.image).decode(), attached['image_url']['url'])
+        self.assertNotIn('x-openclaw-model', {key.lower() for key in first['headers']})
+
+        pattern = re.compile(r'^agent:uploadiny:uploadiny-[0-9a-f-]{36}$')
+        keys = [request['headers']['x-openclaw-session-key'] for request in (first, second)]
+        self.assertTrue(all(pattern.match(key) for key in keys), keys)
+        self.assertNotEqual(*keys)
+
+    def test_a_route_that_is_not_luna_at_low_effort_is_refused_before_any_call(self):
+        changes = {
+            'old-model': lambda c: c['agents']['entries']['uploadiny'].update(model='openai/gpt-6.1-sol'),
+            'other-effort': lambda c: c['agents']['entries']['uploadiny'].update(thinkingDefault='high'),
+            'no-agent': lambda c: c['agents']['entries'].pop('uploadiny'),
+            'no-token': lambda c: c['gateway']['auth'].pop('token'),
+            'short-token': lambda c: c['gateway']['auth'].update(token='short'),
+            'other-auth': lambda c: c['gateway']['auth'].update(mode='none'),
+            'endpoint-off': lambda c: c['gateway']['http']['endpoints']['chatCompletions'].update(enabled=False),
+            'bad-port': lambda c: c['gateway'].update(port='18789'),
+        }
+        original = json.loads(json.dumps(self.config))
+        for name, change in changes.items():
+            with self.subTest(name):
+                self.config = json.loads(json.dumps(original))
+                change(self.config)
+                self.write_config()
                 with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(self.image)
-                self.assert_clean()
+        self.assertEqual([], self.server.requests)
 
-    def test_failure_and_timeout_remove_private_previews(self):
-        self.cli(exit_code=1)
-        with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(self.image)
-        self.assert_clean()
-        self.cli(delay=True)
-        with patch.object(bridge, 'PROCESS_TIMEOUT', 0.15):
-            with self.assertRaises(subprocess.TimeoutExpired): bridge.describe(self.image)
-        self.assert_clean()
+    def test_failed_foreign_incomplete_and_empty_replies_are_refused(self):
+        replies = {
+            'server-error': (500, {'error': 'failed'}),
+            'unauthorized': (401, {'error': 'unauthorized'}),
+            'other-agent': (200, self.completion('A blue Save button.', model='openclaw/main')),
+            'cut-off': (200, self.completion('A blue Save', finish='length')),
+            'two-choices': (200, self.completion('A blue Save button.', choices=2)),
+            'blank': (200, self.completion('   ')),
+            'no-content': (200, self.completion(None)),
+        }
+        for name, reply in replies.items():
+            with self.subTest(name):
+                self.server.reply = reply
+                with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(self.image)
+        self.server.reply = (200, b'not json')
+        with self.assertRaises(ValueError): bridge.describe(self.image)
 
-    def test_empty_unsupported_and_oversized_input_never_starts_openclaw(self):
-        with patch.object(bridge.subprocess, 'Popen') as start:
-            for image in [b'', b'not a JPEG', b'\xff\xd8\xff' + b'x' * bridge.MAX_BYTES]:
-                with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(image)
-            start.assert_not_called()
-        self.assert_clean()
+    def test_an_unanswered_turn_times_out(self):
+        self.server.delay = 1
+        with patch.object(bridge, 'TURN_TIMEOUT', 0.2):
+            # socket.timeout before Python 3.10, TimeoutError after; both are OSError, which main() reports.
+            with self.assertRaises(OSError): bridge.describe(self.image)
 
-    def test_timeout_stops_descendants_after_the_launcher_has_already_exited(self):
-        ready = self.workspace / 'child-ready'
-        stopped = self.workspace / 'child-stopped'
-        child = self.workspace / 'child.py'
-        child.write_text(
-            'import pathlib, signal, sys, time\n'
-            f'def stop(*_):\n pathlib.Path({str(stopped)!r}).write_text("stopped"); sys.exit(0)\n'
-            'signal.signal(signal.SIGTERM, stop)\n'
-            f'pathlib.Path({str(ready)!r}).write_text("ready")\n'
-            'time.sleep(30)\n'
-        )
-        launcher = self.workspace / 'launcher.py'
-        launcher.write_text(
-            'import pathlib, subprocess, sys, time\n'
-            f'p = subprocess.Popen([sys.executable, "-S", {str(child)!r}])\n'
-            f'pathlib.Path({str(self.receipt)!r}).write_text(str(p.pid))\n'
-            f'while not pathlib.Path({str(ready)!r}).exists(): time.sleep(0.01)\n'
-        )
-        self.assertFalse(stopped.exists())
-        start = subprocess.Popen
+    def test_an_unavailable_gateway_fails_closed(self):
+        self.server.shutdown()
+        self.server.server_close()
+        with self.assertRaises(OSError): bridge.describe(self.image)
 
-        def exited_launcher(*args, **kwargs):
-            process = start(*args, **kwargs)
-            deadline = time.monotonic() + 20
-            while process.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.01)
-            self.assertIsNotNone(process.poll(), 'The launcher must exit before the timed wait.')
-            self.assertTrue(ready.exists(), 'The descendant must be ready before timeout.')
-            return process
-
-        with patch.object(bridge, 'OPENCLAW', [sys.executable, '-S', str(launcher)]), \
-             patch.object(bridge, 'PROCESS_TIMEOUT', 0.2), \
-             patch.object(bridge.subprocess, 'Popen', side_effect=exited_launcher):
-            try:
-                with self.assertRaises(subprocess.TimeoutExpired): bridge.describe(self.image)
-                self.assertTrue(ready.exists(), 'The descendant must be ready before timeout.')
-                self.assertEqual('stopped', stopped.read_text() if stopped.exists() else None)
-                self.assert_clean()
-            finally:
-                if self.receipt.exists() and not stopped.exists():
-                    try: os.kill(int(self.receipt.read_text()), signal.SIGKILL)
-                    except ProcessLookupError: pass
+    def test_empty_unsupported_and_oversized_input_never_contacts_the_gateway(self):
+        for image in [b'', b'not a JPEG', b'\xff\xd8\xff' + b'x' * bridge.MAX_BYTES]:
+            with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(image)
+        self.assertEqual([], self.server.requests)
 
     def test_cli_failures_never_print_image_provider_or_filesystem_details(self):
         with patch.object(bridge.sys, 'argv', ['uploadiny-vision']), \
@@ -174,6 +163,13 @@ class VisionBridgeTest(unittest.TestCase):
             self.assertEqual(1, bridge.main())
             self.assertEqual('', output.getvalue())
             self.assertEqual('Image description unavailable.\n', errors.getvalue())
+
+    def test_cli_prints_one_json_line_for_a_described_image(self):
+        with patch.object(bridge.sys, 'argv', ['uploadiny-vision']), \
+             patch.object(bridge.sys, 'stdin', type('Input', (), {'buffer': io.BytesIO(self.image)})()), \
+             patch.object(bridge.sys, 'stdout', new_callable=io.StringIO) as output:
+            self.assertEqual(0, bridge.main())
+        self.assertEqual({'description': 'A blue Save button.', 'model': 'gpt-6-luna'}, json.loads(output.getvalue()))
 
 
 if __name__ == '__main__':

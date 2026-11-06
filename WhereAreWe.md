@@ -1,5 +1,23 @@
 # Where Are We — Uploadiny
 
+## 2026-11-06 — v0.16.3 candidate, not deployed
+
+- Baseline: completed v0.16.0 (`46b8e74d72`). Includes the unshipped v0.16.1
+  and v0.16.2 tags.
+- v0.16.2 is withdrawn and must not ship: through the agent's `view_image`
+  tool, Luna at low effort received the image only as text and described
+  unrelated pictures ("rocky coastline", "abstract image") for a white
+  "Invoice settings" screen. Luna at medium also failed; only high succeeded
+  (18 seconds). Sol worked because it retried until the image loaded.
+- v0.16.3 attaches the image directly to the gateway request instead. On the
+  server, Luna at low effort described two different synthetic screenshots
+  correctly in six of six runs, 7–15 seconds each (about 8 seconds warm).
+- The bridge no longer writes the image to disk or starts an OpenClaw process.
+  It checks that the gateway's `uploadiny` agent is `openai/gpt-6-luna` at low
+  effort before every call, because the gateway reply does not name the model.
+- iPhone version 0.16.3 build 43. No migration, environment or dependency change.
+- No deployment for this candidate has occurred.
+
 ## 2026-11-06 — v0.16.2 candidate, not deployed
 
 - Baseline: completed v0.16.0 (`46b8e74d72`). Includes v0.16.1 (shared
