@@ -1,5 +1,20 @@
 # Where Are We — Uploadiny
 
+## 2026-11-06 — v0.16.2 candidate, not deployed
+
+- Baseline: completed v0.16.0 (`46b8e74d72`). Includes v0.16.1 (shared
+  OpenClaw gateway bridge, tagged `c7cfb74ce0` but never shipped on its own).
+- Screenshot descriptions switch from GPT-6.1 Sol to GPT-6 Luna at low effort
+  for speed (Bruno, 2026-11-06). OpenClaw lists Luna with text and image input
+  on the subscription. The bridge and the application both require
+  `gpt-6-luna`; the application records it as the description model.
+- The server's `uploadiny` agent and installed bridge switch to Luna just before
+  shipping, because the ship's live description check needs the new model.
+  Until this release ships, the running v0.16.0 application rejects Luna
+  descriptions and leaves them retryable.
+- iPhone version 0.16.2 build 42. No migration, environment or dependency change.
+- No deployment for this candidate has occurred.
+
 ## 2026-11-06 — v0.16.1 candidate, not deployed
 
 - Baseline: completed v0.16.0 (`46b8e74d72`), plus every eligible staged,

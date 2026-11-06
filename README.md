@@ -45,7 +45,7 @@ to `https://uploadiny.com/api`.
   the published upload and leaves a retryable description.
 
 Screenshot descriptions use the dedicated OpenClaw `uploadiny` agent with
-`openai/gpt-6.1-sol` and low reasoning effort, through Bruno's existing ChatGPT
+`openai/gpt-6-luna` and low reasoning effort, through Bruno's existing ChatGPT
 subscription login. The application sends only its prepared JPEG preview to
 the local bridge; owner comments and drawings stay outside the description
 prompt. There is no direct OpenAI API-key fallback.
@@ -261,11 +261,14 @@ verification and signed physical iPhone 0.15.2 build 39 installation, launch,
 and running-process proof. It shipped the recovery, queue-handoff, editor,
 orientation, canonical-recovery and Share Extension reliability repairs.
 
-The release candidate is **v0.16.1, candidate, not deployed**, with iPhone
-version **0.16.1 build 41**. It moves screenshot descriptions onto the host's
-shared OpenClaw gateway described above; the installed root-owned bridge is
-switched together with the gateway during Olloma v4.35.0's deployment. There
-are no application, migration, environment or dependency changes.
+The release candidate is **v0.16.2, candidate, not deployed**, with iPhone
+version **0.16.2 build 42**. Screenshot descriptions run on the host's shared
+OpenClaw gateway described above (from v0.16.1, tagged but never shipped on its
+own) and switch from GPT-6.1 Sol to GPT-6 Luna at low effort, which Bruno chose
+for speed. The application now records and accepts `gpt-6-luna`; the server's
+`uploadiny` agent and installed bridge switch to Luna immediately before this
+release ships, because shipping runs a live description. There are no
+migration, environment or dependency changes.
 
 v0.16.0 completed FAST shipping on 6 November 2026 at 15:13:47 UTC in
 250 seconds (run `48826c116c1c492b802a2c00a39a4975`), with website/API proof

@@ -40,7 +40,7 @@ return [
         'ffmpeg_timeout' => (int) env('UPLOADINY_FFMPEG_TIMEOUT', 5),
         'device_token_expiration_days' => (int) env('UPLOADINY_DEVICE_TOKEN_EXPIRATION_DAYS', 90),
         'vision_binary' => env('UPLOADINY_VISION_BINARY', '/usr/local/libexec/uploadiny-vision.py'),
-        'vision_model' => 'gpt-6.1-sol',
+        'vision_model' => 'gpt-6-luna',
         'vision_timeout' => (int) env('UPLOADINY_VISION_TIMEOUT', 80),
     ],
 

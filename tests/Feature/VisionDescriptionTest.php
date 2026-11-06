@@ -26,14 +26,14 @@ class VisionDescriptionTest extends TestCase
         $image = UploadImage::factory()->create(['original_name' => 'vision-private.png', 'comments' => 'PRIVATE owner instruction', 'annotations' => [['text' => 'PRIVATE annotation']]]);
         $original = UploadedFile::fake()->image('vision-private.png', 2000, 1000)->getContent();
         Storage::disk('local')->put($image->path, $original);
-        Process::fake(['*' => Process::result(output: '{"description":"A Save button.","model":"gpt-6.1-sol"}')]);
+        Process::fake(['*' => Process::result(output: '{"description":"A Save button.","model":"gpt-6-luna"}')]);
         $this->assertNull($image->description);
         $this->assertSame('pending', $image->description_status);
 
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
 
         $image->refresh();
-        $this->assertSame(['A Save button.', 'ready', 'gpt-6.1-sol', null], [$image->description, $image->description_status, $image->description_model, $image->description_error]);
+        $this->assertSame(['A Save button.', 'ready', 'gpt-6-luna', null], [$image->description, $image->description_status, $image->description_model, $image->description_error]);
         $this->assertSame('PRIVATE owner instruction', $image->comments);
         $this->assertSame([['text' => 'PRIVATE annotation']], $image->annotations);
         $this->assertSame($original, Storage::disk('local')->get($image->path));
@@ -52,7 +52,7 @@ class VisionDescriptionTest extends TestCase
     {
         Storage::fake('local');
         $original = UploadedFile::fake()->image('vision-malformed.png', 20, 20)->getContent();
-        foreach (['PRIVATE invalid JSON', '{}', '{"description":"   ","model":"gpt-6.1-sol"}', '{"description":"Wrong route","model":"gpt-6-astra"}'] as $index => $output) {
+        foreach (['PRIVATE invalid JSON', '{}', '{"description":"   ","model":"gpt-6-luna"}', '{"description":"Wrong route","model":"gpt-6-astra"}'] as $index => $output) {
             $image = UploadImage::factory()->create(['original_name' => "vision-malformed-{$index}.png"]);
             Storage::disk('local')->put($image->path, $original);
             Process::fake(['*' => Process::result(output: $output)]);

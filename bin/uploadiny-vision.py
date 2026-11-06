@@ -23,7 +23,7 @@ OPENCLAW = [
     '/home/olloma-agent/node/bin/node',
     '/home/olloma-agent/openclaw/lib/node_modules/openclaw/openclaw.mjs',
 ]
-MODEL = 'gpt-6.1-sol'
+MODEL = 'gpt-6-luna'
 THINKING = 'low'
 MAX_BYTES = 4 * 1024 * 1024
 TURN_TIMEOUT = 60

@@ -31,7 +31,7 @@ class VisionBridgeTest(unittest.TestCase):
                 'payloads': [{'text': '  A blue Save button.  '}],
                 'meta': {
                     'agentMeta': {
-                        'model': 'gpt-6.1-sol', 'provider': 'openai', 'agentHarnessId': 'codex',
+                        'model': 'gpt-6-luna', 'provider': 'openai', 'agentHarnessId': 'codex',
                         'terminalReceipt': {'successfulToolNames': ['view_image'], 'rerouted': False},
                     },
                     'requestShaping': {'authMode': 'auth-profile', 'thinking': 'low'},
@@ -64,7 +64,7 @@ class VisionBridgeTest(unittest.TestCase):
         self.cli()
         self.assertFalse(self.receipt.exists())
 
-        self.assertEqual({'description': 'A blue Save button.', 'model': 'gpt-6.1-sol'}, bridge.describe(self.image))
+        self.assertEqual({'description': 'A blue Save button.', 'model': 'gpt-6-luna'}, bridge.describe(self.image))
         first = json.loads(self.receipt.read_text())
         self.assertEqual(self.image.hex(), first['image'])
         args = first['args']

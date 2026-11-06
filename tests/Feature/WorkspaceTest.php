@@ -617,13 +617,13 @@ class WorkspaceTest extends TestCase
         Storage::disk('local')->put($image->path, $png);
         $this->assertNull($image->description);
         Process::fake(['*' => Process::sequence()->push(Process::result(output: json_encode([
-            'description' => 'A receipt screen with a blue Save button.', 'model' => 'gpt-6.1-sol',
+            'description' => 'A receipt screen with a blue Save button.', 'model' => 'gpt-6-luna',
         ])))->push(Process::result(errorOutput: 'SECRET provider details', exitCode: 1))]);
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
         $image->refresh();
         $this->assertSame('ready', $image->description_status);
         $this->assertSame('A receipt screen with a blue Save button.', $image->description);
-        $this->assertSame('gpt-6.1-sol', $image->description_model);
+        $this->assertSame('gpt-6-luna', $image->description_model);
         Process::assertRan(fn ($process) => $process->command === ['/usr/bin/sudo', '-n', '-H', '-u', 'olloma-agent', config('services.uploadiny.vision_binary')] && str_starts_with($process->input, "\xff\xd8\xff"));
         $image->update(['description_status' => 'pending']);
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
@@ -640,7 +640,7 @@ class WorkspaceTest extends TestCase
         $image = UploadImage::factory()->create(['mime_type' => 'image/jpeg']);
         Storage::disk('local')->put($image->path, $this->jpegWithOrientation(6, 120, 80));
         Process::fake(['*' => Process::result(output: json_encode([
-            'description' => 'An upright image.', 'model' => 'gpt-6.1-sol',
+            'description' => 'An upright image.', 'model' => 'gpt-6-luna',
         ]))]);
 
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
