@@ -1,9 +1,10 @@
 #!/usr/bin/python3
-"""Accept one prepared JPEG on stdin; return an isolated OpenClaw description.
+"""Accept one prepared JPEG on stdin; return an OpenClaw description of it.
 
 Install root-owned, mode 0755, at /usr/local/libexec/uploadiny-vision.py.
 The application may invoke only this command, without arguments, as olloma-agent.
-OAuth credentials stay in OpenClaw's own credential store.
+Each call runs one fresh `uploadiny` session on the host's shared OpenClaw gateway
+(openclaw-gateway.service). OAuth credentials stay in OpenClaw's own credential store.
 """
 
 import json
@@ -17,11 +18,13 @@ import uuid
 
 
 WORKSPACE = Path('/home/olloma-agent/.openclaw/workspaces/uploadiny')
+GATEWAY_CONFIG = '/home/olloma-agent/.openclaw/gateway.json'
 OPENCLAW = [
     '/home/olloma-agent/node/bin/node',
     '/home/olloma-agent/openclaw/lib/node_modules/openclaw/openclaw.mjs',
 ]
 MODEL = 'gpt-6.1-sol'
+THINKING = 'low'
 MAX_BYTES = 4 * 1024 * 1024
 TURN_TIMEOUT = 60
 PROCESS_TIMEOUT = 75
@@ -73,8 +76,7 @@ def describe(image):
             encoding='utf-8',
         )
         command = [
-            *OPENCLAW, 'agent', '--local', '--agent', 'uploadiny',
-            '--model', f'openai/{MODEL}', '--thinking', 'low',
+            *OPENCLAW, 'agent', '--agent', 'uploadiny',
             '--session-id', f'uploadiny-{uuid.uuid4()}',
             '--timeout', str(TURN_TIMEOUT), '--json', '--message-file', str(prompt),
         ]
@@ -82,6 +84,7 @@ def describe(image):
             'HOME': '/home/olloma-agent', 'USER': 'olloma-agent',
             'PATH': '/home/olloma-agent/node/bin:/usr/bin:/bin',
             'LANG': 'C.UTF-8', 'NO_COLOR': '1',
+            'OPENCLAW_CONFIG_PATH': GATEWAY_CONFIG,
         }
         process = subprocess.Popen(
             command, cwd=WORKSPACE, env=environment, stdin=subprocess.DEVNULL,
@@ -95,17 +98,20 @@ def describe(image):
             raise DescriptionUnavailable('provider_failure')
 
         # OpenClaw can write a clean-close notice before its JSON envelope.
-        envelope = json.loads(output[output.index(b'{'):])
-        meta = envelope.get('meta', {}).get('agentMeta', {})
+        # Gateway-backed turns nest the run's metadata and payloads under `result`.
+        result = json.loads(output[output.index(b'{'):]).get('result', {})
+        run = result.get('meta', {})
+        meta = run.get('agentMeta', {})
         receipt = meta.get('terminalReceipt', {})
         if (
             meta.get('model') != MODEL or meta.get('provider') != 'openai'
             or meta.get('agentHarnessId') != 'codex'
+            or run.get('requestShaping', {}).get('thinking') != THINKING
             or 'view_image' not in receipt.get('successfulToolNames', [])
             or receipt.get('rerouted') is True
         ):
             raise DescriptionUnavailable('unverified_image')
-        payloads = envelope.get('payloads', [])
+        payloads = result.get('payloads', [])
         description = '\n\n'.join(
             p['text'].strip() for p in payloads
             if isinstance(p, dict) and isinstance(p.get('text'), str) and p['text'].strip()

@@ -26,11 +26,17 @@ class VisionBridgeTest(unittest.TestCase):
         self.image = b'\xff\xd8\xffPRIVATE image bytes\xff\xd9'
         self.receipt = self.workspace / 'receipt.json'
         self.envelope = {
-            'payloads': [{'text': '  A blue Save button.  '}],
-            'meta': {'agentMeta': {
-                'model': 'gpt-6.1-sol', 'provider': 'openai', 'agentHarnessId': 'codex',
-                'terminalReceipt': {'successfulToolNames': ['view_image'], 'rerouted': False},
-            }},
+            'runId': 'synthetic-run', 'status': 'ok', 'summary': 'completed',
+            'result': {
+                'payloads': [{'text': '  A blue Save button.  '}],
+                'meta': {
+                    'agentMeta': {
+                        'model': 'gpt-6.1-sol', 'provider': 'openai', 'agentHarnessId': 'codex',
+                        'terminalReceipt': {'successfulToolNames': ['view_image'], 'rerouted': False},
+                    },
+                    'requestShaping': {'authMode': 'auth-profile', 'thinking': 'low'},
+                },
+            },
         }
         self.addCleanup(patch.stopall)
         patch.object(bridge, 'WORKSPACE', self.workspace).start()
@@ -43,7 +49,8 @@ class VisionBridgeTest(unittest.TestCase):
             'prompt = pathlib.Path(args[args.index("--message-file") + 1])\n'
             'picture = prompt.parent / "screenshot.jpg"\n'
             f'pathlib.Path({str(self.receipt)!r}).write_text(json.dumps({{"args": args, '
-            '"prompt": prompt.read_text(), "image": picture.read_bytes().hex(), "api_key_in_environment": "OPENAI_API_KEY" in os.environ}))\n'
+            '"prompt": prompt.read_text(), "image": picture.read_bytes().hex(), "api_key_in_environment": "OPENAI_API_KEY" in os.environ, '
+            '"config": os.environ.get("OPENCLAW_CONFIG_PATH")}))\n'
             + ('time.sleep(10)\n' if delay else '')
             + f'print("[state/agent-db] clean-close receipt")\nprint({json.dumps(envelope if envelope is not None else self.envelope)!r})\n'
             + f'sys.exit({exit_code})\n'
@@ -53,7 +60,7 @@ class VisionBridgeTest(unittest.TestCase):
     def assert_clean(self):
         self.assertEqual([], list(self.workspace.glob('image-*')))
 
-    def test_only_prepared_bytes_reach_a_fresh_low_effort_uploadiny_turn(self):
+    def test_only_prepared_bytes_reach_a_fresh_uploadiny_turn_on_the_shared_gateway(self):
         self.cli()
         self.assertFalse(self.receipt.exists())
 
@@ -62,8 +69,11 @@ class VisionBridgeTest(unittest.TestCase):
         self.assertEqual(self.image.hex(), first['image'])
         args = first['args']
         self.assertEqual('uploadiny', args[args.index('--agent') + 1])
-        self.assertEqual('openai/gpt-6.1-sol', args[args.index('--model') + 1])
-        self.assertEqual('low', args[args.index('--thinking') + 1])
+        self.assertNotIn('--local', args)
+        self.assertNotIn('--model', args)
+        self.assertEqual('60', args[args.index('--timeout') + 1])
+        self.assertIn('--json', args)
+        self.assertEqual('/home/olloma-agent/.openclaw/gateway.json', first['config'])
         self.assertNotIn('PRIVATE', first['prompt'])
         self.assertNotIn('--deliver', args)
         self.assertFalse(first['api_key_in_environment'])
@@ -75,15 +85,23 @@ class VisionBridgeTest(unittest.TestCase):
         self.assert_clean()
 
     def test_uninspected_images_wrong_models_and_empty_answers_are_refused(self):
-        for outcome in ['no-image', 'wrong-model', 'wrong-runtime', 'rerouted', 'empty']:
+        outcomes = ['no-image', 'wrong-model', 'wrong-provider', 'wrong-runtime', 'rerouted', 'empty',
+                    'wrong-thinking', 'no-thinking', 'local-envelope', 'no-result']
+        for outcome in outcomes:
             with self.subTest(outcome=outcome):
                 envelope = json.loads(json.dumps(self.envelope))
-                meta = envelope['meta']['agentMeta']
+                result = envelope['result']
+                meta = result['meta']['agentMeta']
                 if outcome == 'no-image': meta['terminalReceipt']['successfulToolNames'] = []
                 if outcome == 'wrong-model': meta['model'] = 'gpt-6-astra'
+                if outcome == 'wrong-provider': meta['provider'] = 'anthropic'
                 if outcome == 'wrong-runtime': meta['agentHarnessId'] = 'openclaw'
                 if outcome == 'rerouted': meta['terminalReceipt']['rerouted'] = True
-                if outcome == 'empty': envelope['payloads'] = [{'text': '   '}]
+                if outcome == 'empty': result['payloads'] = [{'text': '   '}]
+                if outcome == 'wrong-thinking': result['meta']['requestShaping']['thinking'] = 'xhigh'
+                if outcome == 'no-thinking': del result['meta']['requestShaping']
+                if outcome == 'local-envelope': envelope = result
+                if outcome == 'no-result': del envelope['result']
                 self.cli(envelope)
                 with self.assertRaises(bridge.DescriptionUnavailable): bridge.describe(self.image)
                 self.assert_clean()

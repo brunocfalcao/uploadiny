@@ -1,5 +1,36 @@
 # Where Are We — Uploadiny
 
+## 2026-11-06 — v0.16.1 candidate, not deployed
+
+- Baseline: completed v0.16.0 (`46b8e74d72`), plus every eligible staged,
+  unstaged and untracked application change. Local agent wiring stays excluded
+  and preserved.
+- `bin/uploadiny-vision.py` runs each description as one fresh `uploadiny`
+  session on the host's always-on shared OpenClaw gateway instead of a
+  separate local OpenClaw runtime per image. It selects the gateway through
+  `OPENCLAW_CONFIG_PATH`, reads the gateway envelope's nested `result`, and also
+  requires low reasoning effort. Same installed path, sudoers command and
+  stdin/stdout contract.
+- Gateway proof on the server (temporary gateway, 2026-11-06): 13–25 seconds
+  per description with an inline image and 34 seconds with file plus
+  `view_image`, against 54.5 seconds for the previous local runtime. Observed
+  provider proof, not a latency guarantee.
+- The installed bridge is switched during Olloma v4.35.0's gateway runbook,
+  because the previous bridge cannot run once the gateway owns OpenClaw's state.
+- iPhone version 0.16.1 build 41. No application, migration, environment or
+  dependency change.
+- No deployment for this candidate has occurred. FAST takes no backup and runs
+  no CI/CD; the PHP quality gate and overnight triage are not run or waited on.
+
+## 2026-11-06 — Previous v0.16.0 deployment receipt reconciled
+
+The matching completed `deployed.json` and `current.json` run
+`48826c116c1c492b802a2c00a39a4975` record v0.16.0 (`46b8e74d72`)
+completing FAST shipping on 6 November 2026 at 15:13:47 UTC in 250 seconds,
+with website/API proof and signed physical iPhone 0.16.0 build 40 installation,
+launch and a running process. The dated candidate entry below records its
+earlier preparation, not its final shipping state.
+
 ## 2026-11-06 — v0.16.0 candidate, not deployed
 
 - Baseline: completed v0.15.2 (`7852ab2bd4`), plus every eligible staged,

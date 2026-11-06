@@ -56,11 +56,16 @@ sudoers rule allowing the application user to run only that exact command,
 without arguments, as `olloma-agent`. Keep that account's installed Node and
 OpenClaw paths aligned with the script. `UPLOADINY_VISION_BINARY` selects the
 installed bridge, and `UPLOADINY_VISION_TIMEOUT` bounds the application call.
-Its 80-second default includes OpenClaw startup and stays below the existing
+Its 80-second default includes the OpenClaw command start and stays below the existing
 90-second description-job timeout and 120-second database queue retry window.
 The bridge uses a fresh agent session and a private temporary directory for
 each image; it removes that directory after success, failure, or cancellation.
 OpenClaw's agent session records remain governed by its own storage policy.
+Each call runs on the host's always-on shared OpenClaw gateway
+(`openclaw-gateway.service`, owned by Olloma's `scripts/openclaw-host/`), which
+the bridge selects through `OPENCLAW_CONFIG_PATH=/home/olloma-agent/.openclaw/gateway.json`.
+The bridge no longer starts a separate local OpenClaw runtime and fails closed
+while the gateway is unavailable. It also requires low reasoning effort.
 
 The agent must allow only `view_image`, restricted to its workspace. Existing
 agents retain their prior tool permissions. The bridge refuses an answer unless
@@ -256,10 +261,17 @@ verification and signed physical iPhone 0.15.2 build 39 installation, launch,
 and running-process proof. It shipped the recovery, queue-handoff, editor,
 orientation, canonical-recovery and Share Extension reliability repairs.
 
-The release candidate is **v0.16.0, candidate, not deployed**, with iPhone
-version **0.16.0 build 40**. Screenshot descriptions use the dedicated OpenClaw
-agent and subscription login described above. The bridge has been installed
-and checked separately; application activation belongs to shipping.
+The release candidate is **v0.16.1, candidate, not deployed**, with iPhone
+version **0.16.1 build 41**. It moves screenshot descriptions onto the host's
+shared OpenClaw gateway described above; the installed root-owned bridge is
+switched together with the gateway during Olloma v4.35.0's deployment. There
+are no application, migration, environment or dependency changes.
+
+v0.16.0 completed FAST shipping on 6 November 2026 at 15:13:47 UTC in
+250 seconds (run `48826c116c1c492b802a2c00a39a4975`), with website/API proof
+and signed physical iPhone 0.16.0 build 40 installation, launch and running-process
+proof. It introduced subscription-backed OpenClaw screenshot descriptions
+through the dedicated agent and subscription login described above.
 The bridge stops its process group even when its launcher exits first and
 cleans each temporary preview. `UPLOADINY_VISION_BINARY` is a new optional
 override; its default points to the installed bridge. The timeout default is
