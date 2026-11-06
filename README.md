@@ -44,6 +44,29 @@ to `https://uploadiny.com/api`.
   failed descriptions never block feedback or retrieval. Queue failure keeps
   the published upload and leaves a retryable description.
 
+Screenshot descriptions use the dedicated OpenClaw `uploadiny` agent with
+`openai/gpt-6.1-sol` and low reasoning effort, through Bruno's existing ChatGPT
+subscription login. The application sends only its prepared JPEG preview to
+the local bridge; owner comments and drawings stay outside the description
+prompt. There is no direct OpenAI API-key fallback.
+
+The production bridge source is `bin/uploadiny-vision.py`. Install it
+root-owned with mode 0755 at `/usr/local/libexec/uploadiny-vision.py`, with a
+sudoers rule allowing the application user to run only that exact command,
+without arguments, as `olloma-agent`. Keep that account's installed Node and
+OpenClaw paths aligned with the script. `UPLOADINY_VISION_BINARY` selects the
+installed bridge, and `UPLOADINY_VISION_TIMEOUT` bounds the application call.
+Its 80-second default includes OpenClaw startup and stays below the existing
+90-second description-job timeout and 120-second database queue retry window.
+The bridge uses a fresh agent session and a private temporary directory for
+each image; it removes that directory after success, failure, or cancellation.
+OpenClaw's agent session records remain governed by its own storage policy.
+
+The agent must allow only `view_image`, restricted to its workspace. Existing
+agents retain their prior tool permissions. The bridge refuses an answer unless
+OpenClaw reports successful image inspection through the Codex runtime on the
+requested model. OAuth credentials remain in OpenClaw's credential store.
+
 ## Local development
 
 Requirements: PHP 8.5, Composer, Node.js, and SQLite. Copy `.env.example` to
@@ -168,6 +191,7 @@ an LRU cache; expired posters can be regenerated from the private original.
 
 ```sh
 php artisan test --compact
+python3 -B -m unittest discover -s tests/Unit -p 'test_openclaw_vision_bridge.py'
 npm test
 npm run build
 composer run quality
@@ -226,13 +250,25 @@ iPhone 0.15.1 build 38 installation, launch and running-process proof. It added
 App Privacy Report sharing/readable reports and restored screenshot descriptions
 with the configured `gpt-5.4-nano` default.
 
-The release candidate is **v0.15.2, candidate, not deployed**, with iPhone
-version **0.15.2 build 39**. It repairs transaction-owned agent-key recovery,
-atomic upload numbering, background-job handoffs, stale editor responses and
-keyboard actions, oriented image previews, and Share Extension Keychain,
-close/retry and media preparation. Recovery diagnostics remain read-only and
-omit private paths. Dependency versions and environment keys are unchanged;
-there are no new migrations and no migration-review flag is required.
+`v0.15.2` (`7852ab2bd4`) completed FAST shipping on 27 October 2026 at
+22:17:48 UTC in 129 seconds. Its matching completed receipt records website/API
+verification and signed physical iPhone 0.15.2 build 39 installation, launch,
+and running-process proof. It shipped the recovery, queue-handoff, editor,
+orientation, canonical-recovery and Share Extension reliability repairs.
+
+The release candidate is **v0.16.0, candidate, not deployed**, with iPhone
+version **0.16.0 build 40**. Screenshot descriptions use the dedicated OpenClaw
+agent and subscription login described above. The bridge has been installed
+and checked separately; application activation belongs to shipping.
+The bridge stops its process group even when its launcher exits first and
+cleans each temporary preview. `UPLOADINY_VISION_BINARY` is a new optional
+override; its default points to the installed bridge. The timeout default is
+80 seconds. API-key, model and connection-timeout environment settings are no
+longer consumed by descriptions. Shipping preflight requires an explicit
+`UPLOADINY_VISION_BINARY` setting. Mobile SDK patches align `expo` 57.0.31
+to 57.0.32 and `expo-sharing` 57.0.24 to 57.0.25, with their locked runtime
+and build dependencies. Composer and root web dependencies are unchanged.
+There are no migration changes and no migration-review flag is required.
 
 For an older SQLite installation interrupted while assigning project codes,
 `php artisan uploadiny:recover-canonicals` completes missing codes and the
@@ -241,8 +277,8 @@ complete. Continue with normal `php artisan migrate` afterward. This explicit
 recovery command leaves completed installations unchanged; routine releases
 do not run it. Previously shipped migration files remain unchanged.
 
-Local preparation passed 259 PHP tests / 2,870 assertions, 134 web tests,
-33 native checks, Pint, TypeScript, locked installs, Composer validation and
-the Vite build. Native Release compilation is recorded in `WhereAreWe.md`.
+Local preparation evidence for the current candidate is recorded in
+`WhereAreWe.md`, including PHP, bridge, web, native, formatting, locked-install,
+asset-build and native compilation checks.
 Browser, real Keychain and physical Share Sheet acceptance remain separate.
 Each signed device installation must increment `mobile/app.json` `ios.buildNumber`.

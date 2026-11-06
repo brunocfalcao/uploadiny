@@ -15,14 +15,12 @@ use App\UploadChunk;
 use App\UploadImage;
 use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\Factory;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Log\LogManager;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -96,17 +94,15 @@ class OvernightRecoveryTest extends TestCase
     public function test_vision_failures_have_sanitized_diagnostics_without_private_provider_or_transport_details(): void
     {
         Storage::fake('local');
-        config(['services.uploadiny.vision_key' => 'fixture-key']);
         $path = UploadedFile::fake()->image('diagnostics.png')->store('images', 'local');
-        foreach ([[429, 'provider_refusal'], [500, 'provider_refusal'], [200, 'malformed_response'], [0, 'ConnectionException']] as [$status, $category]) {
+        foreach (['failure' => 'provider_refusal', 'malformed' => 'malformed_response', 'exception' => 'RuntimeException'] as $outcome => $category) {
             Log::swap(Mockery::spy(LogManager::class));
-            Http::swap(new Factory);
-            Http::fake(fn () => $status === 0 ? throw new ConnectionException('PRIVATE transport details') : Http::response(['error' => ['message' => 'PRIVATE provider details']], $status));
+            Process::fake(fn () => $outcome === 'exception' ? throw new RuntimeException('PRIVATE transport details') : Process::result(output: 'PRIVATE provider details', exitCode: $outcome === 'failure' ? 1 : 0));
             $image = UploadImage::factory()->create(['path' => $path, 'description_status' => 'pending', 'comments' => 'PRIVATE owner feedback']);
             (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
             $this->assertSame('failed', $image->fresh()->description_status);
             $this->assertStringNotContainsString('PRIVATE', $image->fresh()->description_error);
-            Log::shouldHaveReceived('warning')->with('Image description failed.', ['image_id' => $image->id, 'category' => $category, 'http_status' => $status >= 400 ? $status : null])->once();
+            Log::shouldHaveReceived('warning')->with('Image description failed.', ['image_id' => $image->id, 'category' => $category, 'http_status' => null])->once();
             Storage::disk('local')->assertExists($path);
         }
     }

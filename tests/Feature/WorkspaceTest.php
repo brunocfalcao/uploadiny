@@ -15,7 +15,7 @@ use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
@@ -24,12 +24,6 @@ use Tests\TestCase;
 class WorkspaceTest extends TestCase
 {
     use RefreshDatabase;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-        config(['services.uploadiny.vision_key' => 'test-vision-key']);
-    }
 
     private function prepare(): User
     {
@@ -617,19 +611,20 @@ class WorkspaceTest extends TestCase
     public function test_vision_descriptions_are_saved_and_provider_errors_do_not_remove_images(): void
     {
         Storage::fake('local');
-        Http::preventStrayRequests();
+        Process::preventStrayProcesses();
         $image = UploadImage::factory()->create();
         $png = UploadedFile::fake()->image('vision.png', 20, 20)->getContent();
         Storage::disk('local')->put($image->path, $png);
         $this->assertNull($image->description);
-        Http::fake(['https://api.openai.com/v1/chat/completions' => Http::sequence()->push([
-            'choices' => [['message' => ['content' => 'A receipt screen with a blue Save button.']]],
-        ])->push(['error' => ['message' => 'SECRET provider details']], 500)]);
+        Process::fake(['*' => Process::sequence()->push(Process::result(output: json_encode([
+            'description' => 'A receipt screen with a blue Save button.', 'model' => 'gpt-6.1-sol',
+        ])))->push(Process::result(errorOutput: 'SECRET provider details', exitCode: 1))]);
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
         $image->refresh();
         $this->assertSame('ready', $image->description_status);
         $this->assertSame('A receipt screen with a blue Save button.', $image->description);
-        Http::assertSent(fn ($request) => $request['model'] === 'gpt-5.4-nano' && str_starts_with($request['messages'][0]['content'][1]['image_url']['url'], 'data:image/jpeg;base64,'));
+        $this->assertSame('gpt-6.1-sol', $image->description_model);
+        Process::assertRan(fn ($process) => $process->command === ['/usr/bin/sudo', '-n', '-H', '-u', 'olloma-agent', config('services.uploadiny.vision_binary')] && str_starts_with($process->input, "\xff\xd8\xff"));
         $image->update(['description_status' => 'pending']);
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
         $image->refresh();
@@ -642,19 +637,16 @@ class WorkspaceTest extends TestCase
     public function test_vision_description_applies_jpeg_orientation_before_sending_the_preview(): void
     {
         Storage::fake('local');
-        config(['services.uploadiny.vision_key' => 'test-vision-key']);
         $image = UploadImage::factory()->create(['mime_type' => 'image/jpeg']);
         Storage::disk('local')->put($image->path, $this->jpegWithOrientation(6, 120, 80));
-        Http::fake(['https://api.openai.com/v1/chat/completions' => Http::response([
-            'choices' => [['message' => ['content' => 'An upright image.']]],
-        ])]);
+        Process::fake(['*' => Process::result(output: json_encode([
+            'description' => 'An upright image.', 'model' => 'gpt-6.1-sol',
+        ]))]);
 
         (new DescribeUploadImage($image->id))->handle(app(VisionDescription::class));
 
-        Http::assertSent(function ($request): bool {
-            $encoded = $request['messages'][0]['content'][1]['image_url']['url'];
-            $bytes = base64_decode((string) substr($encoded, strlen('data:image/jpeg;base64,')), true);
-            $dimensions = is_string($bytes) ? getimagesizefromstring($bytes) : false;
+        Process::assertRan(function ($process): bool {
+            $dimensions = getimagesizefromstring($process->input);
 
             return $dimensions !== false && [$dimensions[0], $dimensions[1]] === [80, 120];
         });

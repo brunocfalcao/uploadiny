@@ -1,6 +1,6 @@
 {
   "name": "uploadiny-mobile",
-  "version": "0.15.2",
+  "version": "0.16.0",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -12,8 +12,8 @@
     "test:share-extension": "node --test scripts/*.test.js"
   },
   "dependencies": {
-    "expo": "~57.0.31",
-    "expo-sharing": "~57.0.24",
+    "expo": "~57.0.32",
+    "expo-sharing": "~57.0.25",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.3",

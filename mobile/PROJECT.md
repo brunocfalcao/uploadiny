@@ -12,7 +12,7 @@ The Share Extension also accepts App Privacy Reports. The canonical `NSExtension
 
 ## Version and structure
 
-Expo manifest requirement: `~57.0.31`. Verify the lockfile and installed version before using APIs. Read the matching versioned documentation at https://docs.expo.dev/versions/v57.0.0/ for Expo changes. Inspect `package.json`, the app configuration, native code/plugins, and sibling screens before editing. Keep provider secrets out of the client.
+Expo manifest requirement: `~57.0.32`. Verify the lockfile and installed version before using APIs. Read the matching versioned documentation at https://docs.expo.dev/versions/v57.0.0/ for Expo changes. Inspect `package.json`, the app configuration, native code/plugins, and sibling screens before editing. Keep provider secrets out of the client.
 
 Code map: `App.tsx`, `src/`, `plugins/`, `native/`, `scripts/`, `app.json`, `ios/`. Generated native files must be handled through the existing prebuild/plugin workflow when applicable.
 
@@ -23,6 +23,8 @@ Node must satisfy the manifest's checked engine range. `expo-doctor` 1.20.4 and 
 Append mode requires successful last-upload lookup for the current project/generation; failure requires retry. The upload coordinator owns session invalidation and serial background multipart staging. Keep prepared originals and notes for sign-in/retry, removing multipart copies after each response and all owned files on success/close. Controllable Foundation URLSession tests exercise success, 401, cancellation, and lost completion; UIKit/browser/device acceptance remains separate.
 
 Declared checks: `npm run typecheck`, `npm run doctor`, `npm run test:share-extension`. Run the relevant existing unit/type checks. Native build, simulator execution, and physical-device acceptance are separate evidence; do not install or launch on a device unless the task requires it.
+
+On the current Mac with Node 22.22.2, `NODE_OPTIONS=--use-system-ca npm run doctor` uses the trusted system certificate store for the package metadata checks. Keep TLS verification enabled. The v0.16.0 SDK alignment was checked with this invocation.
 
 ## Keep this file current
 

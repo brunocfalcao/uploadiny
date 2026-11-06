@@ -1,5 +1,57 @@
 # Where Are We — Uploadiny
 
+## 2026-11-06 — v0.16.0 candidate, not deployed
+
+- Baseline: completed v0.15.2 (`7852ab2bd4`), plus every eligible staged,
+  unstaged and untracked application change. Local agent wiring stays excluded
+  and preserved.
+- Screenshot descriptions now use OpenClaw's dedicated `uploadiny` agent,
+  `openai/gpt-6.1-sol`, low effort, and the existing subscription OAuth login.
+  PHP passes only its oriented JPEG preview to the root-owned bridge; owner
+  notes and drawings are excluded. No API-key fallback remains.
+- Each call has a fresh session and private temporary preview. The agent has
+  only workspace-scoped `view_image`. The bridge verifies the effective model,
+  Codex runtime and successful image inspection; cleanup stops descendants
+  even if the launcher already exited. OpenClaw session records follow its
+  own retention policy. Existing agents keep their prior tool permissions.
+- The production agent and bridge passed synthetic-image checks before this
+  preparation; the installed bridge described readable text and controls in
+  54.5 seconds. This is observed provider proof, not a latency guarantee.
+  Application activation and the final bridge revision remain shipping work.
+- iPhone version 0.16.0 build 40. Mobile SDK patches align `expo` 57.0.31 to
+  57.0.32 and `expo-sharing` 57.0.24 to 57.0.25, with their locked runtime
+  and build dependencies. Composer/root web locks and shipped migration bytes
+  are unchanged. `UPLOADINY_VISION_BINARY` is an optional application override
+  that the shipping preflight requires explicitly;
+  the timeout default is 80 seconds, below the existing 90-second job timeout
+  and 120-second queue retry window.
+- Passed locally: 262 PHP tests / 2,900 assertions, six bridge tests,
+  134 web tests, 33 native checks, TypeScript, Expo Doctor 21/21, Pint,
+  PHP syntax, clean locked installs, Composer validation, Vite build, and
+  regenerated current-source iPhoneOS Release compilation (unsigned).
+  The cancellation regression was red for an exited launcher with a ready
+  child, then green with the successful-description control preserved.
+  Doctor initially failed because Node lacked the Mac's trusted system CA;
+  using the system store retained TLS verification and exposed the required
+  SDK patches. Updated checks and native compilation passed afterward.
+- Fresh refactor covered all 15 eligible paths against v0.15.2, reviewed
+  current official PHP/Laravel/Python/OpenClaw/test/build guidance, and kept
+  compatible existing runtime contracts. All seven canonical Markdown files
+  were reviewed and updated. Local tooling exclusions remain unchanged.
+- No deployment for this candidate has occurred.
+  Browser visuals, physical Share Sheet and real Keychain acceptance remain
+  separate. FAST takes no backup and runs no CI/CD; the PHP quality gate and
+  overnight triage are not run or waited on.
+
+## 2026-11-06 — Previous v0.15.2 deployment receipt reconciled
+
+The matching completed `deployed.json` and `current.json` run
+`71c085fd41aa407d9788c3559c447c3a` record v0.15.2 (`7852ab2bd4`)
+completing FAST shipping on 27 October 2026 at 22:17:48 UTC in 129 seconds,
+with website/API proof and signed physical iPhone 0.15.2 build 39 installation,
+launch and a surviving process. The dated candidate entry below records its
+earlier preparation, not its final shipping state.
+
 ## 2026-10-27 — v0.15.2 candidate, not deployed
 
 - Complete candidate since deployed v0.15.1 (`0e0f923e21`), including all
