@@ -148,6 +148,25 @@ class UploadSequenceTest extends TestCase
         $this->assertTrue($project->images()->doesntExist());
     }
 
+    public function test_missing_counter_recovers_issued_names_for_uploads_and_copies(): void
+    {
+        [$project, $source, , $disk] = $this->prepareCopy();
+        $source->update(['name' => 'upload-920.png']);
+        $disk->delete('.uploadiny-sequence');
+        $this->actingAs(User::factory()->create(['email' => 'missing-sequence@example.test']));
+        $this->assertSame(1, $source->id);
+        $disk->assertMissing('.uploadiny-sequence');
+
+        $this->postJson(route('images.duplicate', $source))->assertCreated()->assertJsonPath('name', 'upload-921.png');
+        $this->assertSame('921', $disk->get('.uploadiny-sequence'));
+        $disk->delete('.uploadiny-sequence');
+        $this->postJson(route('chunks.store', $project), ['files' => [UploadedFile::fake()->image('recover.png')]])
+            ->assertCreated()->assertJsonPath('images.0.name', 'upload-922.png');
+        $this->assertSame('922', $disk->get('.uploadiny-sequence'));
+        $this->assertSame('upload-920.png', $source->fresh()->name);
+        $this->assertSame('source bytes', $disk->get($source->path));
+    }
+
     /** @return array{Project, object} */
     private function prepareUpload(): array
     {

@@ -81,6 +81,14 @@ class WorkspaceTest extends TestCase
         $this->get('/')->assertRedirect('/login');
     }
 
+    public function test_project_dialog_is_named_by_its_visible_heading(): void
+    {
+        $this->prepare();
+        $this->get('/')->assertOk()
+            ->assertSee('aria-labelledby="project-dialog-title"', false)
+            ->assertSee('id="project-dialog-title"', false);
+    }
+
     public function test_reloading_with_an_open_image_renders_the_editor_directly_without_the_gallery(): void
     {
         $this->prepare();

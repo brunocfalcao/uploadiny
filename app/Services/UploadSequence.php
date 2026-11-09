@@ -18,7 +18,8 @@ final class UploadSequence
     /**
      * Return the greatest upload number that has already been issued or persisted.
      *
-     * A missing counter is recoverable from the database. A present counter must
+     * A missing counter recovers surviving issued names and row IDs. Deleted
+     * historical numbers require restoring the durable counter from trusted evidence. A present counter must
      * remain a valid canonical non-negative integer: resetting a damaged counter
      * could reuse a number whose row has since been deleted.
      */
@@ -28,6 +29,15 @@ final class UploadSequence
 
         if (! $disk->exists(self::PATH)) {
             $counter = 0;
+            foreach (UploadImage::query()->select('id', 'name')->lazyById() as $image) {
+                if (preg_match('/\Aupload-([1-9][0-9]*)(?:\.[^\/]+)?\z/D', $image->name, $match) === 1) {
+                    $issued = filter_var($match[1], FILTER_VALIDATE_INT);
+                    if ($issued === false || $issued === PHP_INT_MAX) {
+                        throw new RuntimeException($this->invalidCounterMessage());
+                    }
+                    $counter = max($counter, $issued);
+                }
+            }
         } else {
             try {
                 $raw = $disk->get(self::PATH);

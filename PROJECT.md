@@ -102,9 +102,10 @@ An interruption between recovery-directory creation and publishing its lock or
 journal may retain an empty, unclaimed directory. This preparation gap owns no
 private bytes; recovery deliberately leaves it alone because an active writer
 can occupy the same gap. Directory location or emptiness never proves ownership.
+Recovery reconciliation begins only for published journals; unpublished lock-only preparations remain with their creators. Both journal owners share metadata and inode-lock mechanics through `RecoveryJournal`, while retaining their separate ownership and cleanup rules.
 The upload-number high-water mark is published only after the temporary counter
 has been fully written and verified. Publication failures retain its previous
-value; a malformed saved counter requires recovery from trustworthy numbering
+value. An absent marker recovers surviving issued filenames and row IDs; deleted historical numbers still require a trusted high-water counter backup. A malformed saved counter requires recovery from trustworthy numbering
 evidence before uploads or copies resume.
 The existing cleanup-status fields remain; `orphan_recovery` separately reports
 pending count, oldest age, attempts, deferred count, and last attempt without
@@ -152,3 +153,16 @@ or verified constraints change. Correct documentation that is not supported by
 current codebase evidence; codebase wins. Distinguish implemented behavior from
 plans and historical records. Keep `AGENTS.md` and `CLAUDE.md` as thin pointers
 to this shared file so Codex and Claude follow the same project guidance.
+
+## Reliability repairs — v0.16.4 candidate, not deployed
+
+Screenshot previews shrink before EXIF rotation and check concurrent allocation
+budgets; insufficient memory returns a safe description failure. Late job-failure
+callbacks preserve ready and non-applicable descriptions.
+Private JSON responses use `private, no-store`, including authentication errors.
+Report readers cache only derived counts for one hour, keyed by the opened local
+original's path and file identity. Replaced/deleted files do not reuse those counts;
+cache failure retains streaming. Originals remain immutable through application flows.
+UI fonts are bundled locally at the established weights with their OFL notices.
+
+Description retries carry a persisted attempt identity so late callbacks and provider results cannot overwrite a newer attempt. Apply `2026_11_09_180000_add_description_attempt_to_upload_images` before deploying this job code or restarting workers; legacy queued jobs remain valid only for rows without a newer attempt. This additive migration has been exercised in isolated tests, not applied to production.

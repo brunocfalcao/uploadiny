@@ -1,6 +1,5 @@
 import { requestJson, requestText } from './workspace-request';
 import { createWorkspaceOperations } from './workspace-operations';
-import './bootstrap';
 import { enhanceAgentAccess } from './agent-access';
 import { chunkStartFile, rememberChunkFile } from './chunk-memory';
 import { clipboardFiles } from './clipboard-files';
@@ -534,8 +533,24 @@ if (workspace) {
                         return;
                     }
                     removeEmptyGalleryCard(openingCard);
-                    if (active) syncImageUrl(active.id); else leaveEditor(false);
                     finishNavigation();
+                    if (active && activeChunkId === openingChunkId && !files.includes(active.id)) {
+                        unavailableChunkFiles = files;
+                        clearTimeout(autosaveTimer); clearTimeout(pollTimer);
+                        updateChunkNavigation();
+                        if (dirty) {
+                            syncImageUrl(active.id);
+                            notify('This file is no longer in this upload chunk. Your unsaved feedback is still here; copy it before going back.', true);
+                            return;
+                        }
+                        if (!leaveEditor(false)) return;
+                    }
+                    if (active) syncImageUrl(active.id);
+                    else {
+                        leaveEditor(false); syncImageUrl(null);
+                        await refreshGallery(true);
+                        if (generation !== loadGeneration) return;
+                    }
                     document.getElementById('save-feedback').disabled = !active;
                     notifyTransient('This file is no longer available.');
                     return;
@@ -626,7 +641,7 @@ if (workspace) {
         gradientThumb.hidden = !picked;
         if (picked) { gradientThumb.style.left = `${picked.x * 100}%`; gradientThumb.style.top = `${picked.y * 100}%`; }
         gradient.setAttribute('aria-valuenow', String(Math.round((picked?.x ?? 0) * 360)));
-        gradient.setAttribute('aria-valuetext', picked ? ink.value : 'No colour picked from the gradient');
+        gradient.setAttribute('aria-valuetext', picked ? `Hue ${Math.round(picked.x * 360)} degrees, lightness ${Math.round((1 - picked.y) * 100)} percent, ${ink.value}` : 'No colour picked from the gradient');
     }
     function gradientColor(x, y) {
         const lightness = 1 - y; const chroma = 1 - Math.abs(2 * lightness - 1); const hue = x * 6 % 6; const second = chroma * (1 - Math.abs(hue % 2 - 1)); const base = lightness - chroma / 2;

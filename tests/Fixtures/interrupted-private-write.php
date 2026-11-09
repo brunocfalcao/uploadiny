@@ -16,13 +16,16 @@ use Illuminate\Database\Events\TransactionCommitted;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 $app = require dirname(__DIR__, 2).'/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 [$directory, $id, $operation, $point] = array_slice($argv, 1);
-config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => $directory.'/database.sqlite', 'filesystems.disks.local.root' => $directory.'/private', 'cache.default' => 'file', 'cache.stores.file.path' => $directory.'/cache', 'cache.stores.file.lock_path' => $directory.'/cache', 'queue.default' => 'sync', 'services.vision.api_key' => null]);
+config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => $directory.'/database.sqlite', 'filesystems.disks.local.root' => $directory.'/private', 'cache.default' => 'file', 'cache.stores.file.path' => $directory.'/cache', 'cache.stores.file.lock_path' => $directory.'/cache', 'queue.default' => 'sync']);
+Process::preventStrayProcesses();
+Process::fake(['*' => Process::result(output: json_encode(['description' => 'Recovery fixture.', 'model' => config('services.uploadiny.vision_model')]))]);
 DB::purge();
 Storage::forgetDisk('local');
 $disk = Storage::disk('local');

@@ -73,7 +73,7 @@ final class PrivateFileWrites
     {
         $disk = Storage::disk('local');
         foreach ($disk->directories('writing') as $directory) {
-            if (! $disk->exists($directory.'/journal.json') && ! $disk->exists($directory.'/.lock') && ! $disk->exists($directory.'/recovery.json') && ! $disk->exists($directory.'/recovery.next') && ! $disk->exists($directory.'/journal.next')) {
+            if (! $disk->exists($directory.'/journal.json')) {
                 continue;
             }
             $lock = $this->acquire($directory);
@@ -187,50 +187,7 @@ final class PrivateFileWrites
     /** @return array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} */
     private function recoveryProgress(string $directory): array
     {
-        $disk = Storage::disk('local');
-        $saved = [];
-        $path = $directory.'/recovery.json';
-        if ($disk->exists($path)) {
-            try {
-                $candidate = json_decode($disk->get($path) ?? '', true, flags: JSON_THROW_ON_ERROR);
-                $saved = is_array($candidate) ? $candidate : [];
-            } catch (Throwable) {
-                $saved = [];
-            }
-        }
-        $createdAt = $this->recoveryTimestamp($saved['created_at'] ?? null);
-        if ($createdAt === null) {
-            $journal = $directory.'/journal.json';
-            if ($disk->exists($journal)) {
-                $modified = $disk->lastModified($journal);
-                if (! is_int($modified) && ! is_numeric($modified)) {
-                    throw new RuntimeException('Private file recovery journal metadata is unavailable.');
-                }
-                $createdAt = Carbon::createFromTimestamp((int) $modified)->toIso8601String();
-            } else {
-                $createdAt = now()->toIso8601String();
-            }
-        }
-
-        return [
-            'created_at' => $createdAt,
-            'attempts' => is_numeric($saved['attempts'] ?? null) ? max(0, (int) $saved['attempts']) : 0,
-            'last_attempt_at' => $this->recoveryTimestamp($saved['last_attempt_at'] ?? null),
-            'last_error' => is_string($saved['last_error'] ?? null) && $saved['last_error'] !== '' ? $saved['last_error'] : null,
-        ];
-    }
-
-    private function recoveryTimestamp(mixed $value): ?string
-    {
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return Carbon::parse($value)->toIso8601String();
-        } catch (Throwable) {
-            return null;
-        }
+        return app(RecoveryJournal::class)->progress($directory.'/journal.json', true, 'Private file recovery journal metadata is unavailable.');
     }
 
     /** @param array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string}|null $progress */
@@ -266,9 +223,7 @@ final class PrivateFileWrites
 
     private function saveRecoveryProgress(string $directory, array $progress): void
     {
-        $disk = Storage::disk('local');
-        $temporary = $directory.'/recovery.next';
-        throw_unless($disk->put($temporary, json_encode($progress, JSON_THROW_ON_ERROR)) && $disk->move($temporary, $directory.'/recovery.json'), RuntimeException::class, 'Private file recovery progress could not be saved.');
+        app(RecoveryJournal::class)->saveProgress($directory.'/journal.json', $progress, 'Private file recovery progress could not be saved.');
     }
 
     private function deleteIfPresent($disk, string $path): void
@@ -306,45 +261,13 @@ final class PrivateFileWrites
     /** @return resource|null */
     private function acquire(string $directory)
     {
-        $path = Storage::disk('local')->path($directory.'/.lock');
-        if (! is_dir(dirname($path))) {
-            return null;
-        }
-        $lock = fopen($path, 'c');
-        throw_if($lock === false, RuntimeException::class, 'Private file recovery lock could not be opened.');
-        if (! flock($lock, LOCK_EX | LOCK_NB)) {
-            fclose($lock);
-
-            return null;
-        }
-        clearstatcache(true, $path);
-        $current = @stat($path);
-        if ($current === false || fstat($lock)['ino'] !== $current['ino']) {
-            flock($lock, LOCK_UN);
-            fclose($lock);
-
-            return null;
-        }
-
-        return $lock;
+        return app(RecoveryJournal::class)->acquire($directory, 'Private file recovery lock could not be opened.');
     }
 
     /** @param resource|null $lock */
     private function release($lock): void
     {
-        if ($lock !== null) {
-            $path = stream_get_meta_data($lock)['uri'];
-            $inode = fstat($lock)['ino'];
-            flock($lock, LOCK_UN);
-            fclose($lock);
-            // Retire the lock only after releasing it and publishing completion.
-            clearstatcache(true, $path);
-            $current = @stat($path);
-            if ($current !== false && $current['ino'] === $inode && ! is_file(dirname($path).'/journal.json') && ! is_file(dirname($path).'/journal.next') && ! is_file(dirname($path).'/recovery.json') && ! is_file(dirname($path).'/recovery.next')) {
-                @unlink($path);
-                @rmdir(dirname($path));
-            }
-        }
+        app(RecoveryJournal::class)->release($lock, ['journal.json', 'journal.next', 'recovery.json', 'recovery.next']);
     }
 
     public function __destruct()

@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $description
  * @property string $description_status
  * @property string|null $description_error
+ * @property string|null $description_attempt
  * @property string|null $description_model
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -40,6 +41,8 @@ class UploadImage extends Model
     use HasFactory;
 
     protected $fillable = ['uuid', 'project_id', 'chunk_id', 'name', 'original_name', 'path', 'mime_type', 'size', 'annotations', 'comments', 'description', 'description_status', 'description_error', 'description_model', 'annotated_path', 'feedback_revision', 'feedback_updated_at'];
+
+    protected $hidden = ['description_attempt'];
 
     protected function casts(): array
     {

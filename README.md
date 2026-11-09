@@ -265,17 +265,36 @@ verification and signed physical iPhone 0.15.2 build 39 installation, launch,
 and running-process proof. It shipped the recovery, queue-handoff, editor,
 orientation, canonical-recovery and Share Extension reliability repairs.
 
-The release candidate is **v0.16.3, candidate, not deployed**, with iPhone
-version **0.16.3 build 43**. Screenshot descriptions run on the host's shared
-OpenClaw gateway described above with GPT-6 Luna at low effort, which Bruno
-chose for speed, and the image attached to the request (about 8 seconds per
-synthetic screenshot on the server, against 25–35 seconds with GPT-6.1 Sol and
-the image tool). v0.16.1 (gateway, Sol) and v0.16.2 (Luna through the image
-tool, which misdescribed images) were tagged but never shipped. The application
-records and accepts `gpt-6-luna`; the server's `uploadiny` agent and installed
-bridge switch to Luna immediately before this release ships, because shipping
-runs a live description. There are no migration, environment or dependency
-changes.
+The release candidate is **v0.16.4, candidate, not deployed**, with iPhone
+version **0.16.4 build 44**. It restores in-place retry when the Share Extension
+cannot prepare a shared attachment, retaining prepared files and notes. No
+upload begins until all attachments are ready; unsupported formats stay rejected.
+Generic movie providers cannot acquire screenshot metadata from a misleading name.
+
+Description previews resize before orientation under a bounded memory budget.
+Attempt identities prevent late job results or failures from overwriting a newer
+retry. Recovery cleanup leaves unpublished journals with their owners, and a
+missing upload counter recovers surviving issued filenames. Deleted numbering
+history still needs a trusted counter backup.
+
+Private JSON is served with `private, no-store`. Repeated report reads cache
+only derived counts, preserving exact results and streaming when cache access
+fails. The editor returns clean empty chunks to the gallery and preserves dirty
+feedback. Dialog naming and colour announcements improve keyboard/accessibility
+feedback. Fonts are served locally; unused Axios and its exclusive dependencies
+are removed. Other locked package versions are unchanged.
+
+One additive migration adds nullable `upload_images.description_attempt` before
+new job code is activated. Previously shipped migration files are unchanged;
+previous code tolerates the new column. No `--migrations-reviewed` flag or new
+environment key is required. No production or device deployment has occurred.
+
+v0.16.3 (`1120428af7`) completed FAST shipping on 6 November 2026 at
+21:07:47 UTC in 120 seconds. Matching completed receipts record website/API
+and signed physical iPhone 0.16.3 build 43 installation, launch and process
+proof. It attached screenshot previews to the shared OpenClaw gateway request
+for GPT-6 Luna at low effort. v0.16.1 and the withdrawn v0.16.2 were tagged but
+not shipped. These are recorded receipt results, not fresh production checks.
 
 v0.16.0 completed FAST shipping on 6 November 2026 at 15:13:47 UTC in
 250 seconds (run `48826c116c1c492b802a2c00a39a4975`), with website/API proof

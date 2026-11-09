@@ -18,6 +18,44 @@ class RecoveryStatusTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_cleanup_leaves_an_unpublished_private_write_lock_for_its_creator(): void
+    {
+        Storage::fake('local');
+        $disk = Storage::disk('local');
+        $directory = 'writing/unpublished';
+        $disk->makeDirectory($directory);
+        $lock = fopen($disk->path($directory.'/.lock'), 'c');
+        $this->assertNotFalse($lock);
+
+        try {
+            app(PrivateFileWrites::class)->cleanupPending();
+
+            $disk->assertExists($directory.'/.lock');
+            $this->assertSame([$directory], $disk->directories('writing'));
+        } finally {
+            fclose($lock);
+        }
+    }
+
+    public function test_cleanup_leaves_an_unpublished_deletion_lock_for_its_creator(): void
+    {
+        Storage::fake('local');
+        $disk = Storage::disk('local');
+        $directory = 'deleting/unpublished';
+        $disk->makeDirectory($directory);
+        $lock = fopen($disk->path($directory.'/.lock'), 'c');
+        $this->assertNotFalse($lock);
+
+        try {
+            app(WorkspaceDeletion::class)->cleanupPending();
+
+            $disk->assertExists($directory.'/.lock');
+            $this->assertSame([$directory], $disk->directories('deleting'));
+        } finally {
+            fclose($lock);
+        }
+    }
+
     public function test_orphan_status_skips_a_journal_retired_during_metadata_sampling(): void
     {
         Storage::fake('local');

@@ -35,6 +35,17 @@ test('a text request deadline covers a stalled HTML response body', async t => {
     await assert.rejects(requestText('/gallery', { timeoutMs: 5 }), /timed out/);
 });
 
+test('a failed text response reports its status before buffering the body', async t => {
+    let consumed = false;
+    t.mock.method(globalThis, 'fetch', async () => ({
+        ok: false,
+        status: 502,
+        text: async () => { consumed = true; throw new Error('large error page'); },
+    }));
+    await assert.rejects(requestText('/gallery'), error => error.status === 502 && error.message === 'The request failed. Try again.');
+    assert.equal(consumed, false);
+});
+
 test('an already cancelled request cannot proceed', async t => {
     const cancel = new AbortController(); cancel.abort();
     t.mock.method(globalThis, 'fetch', (_url, settings) => untilAbort(settings.signal));

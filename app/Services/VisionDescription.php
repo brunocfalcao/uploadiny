@@ -23,6 +23,16 @@ class VisionDescription
         if (! $dimensions || $dimensions[0] * $dimensions[1] > 24000000) {
             throw new VisionFailure('unsupported_image', 'This image cannot be prepared for a vision description.');
         }
+        $ratio = min(1, 1536 / max($dimensions[0], $dimensions[1]));
+        $width = max(1, (int) round($dimensions[0] * $ratio));
+        $height = max(1, (int) round($dimensions[1] * $ratio));
+        $limit = ini_parse_quantity((string) ini_get('memory_limit'));
+        $limit = $limit > 0 ? $limit : 256 * 1024 * 1024;
+        // GD needs the decoded source and preview together; rotation only retains bounded canvases.
+        $available = max(0, $limit - memory_get_usage(true) - 16 * 1024 * 1024);
+        if (max($dimensions[0] * $dimensions[1] * 4 + $width * $height * 4, $width * $height * 9) > $available) {
+            throw new VisionFailure('unsupported_image', 'This image cannot be prepared for a vision description.');
+        }
         $source = match ($image->mime_type) {
             'image/jpeg' => @imagecreatefromjpeg($path),
             'image/png' => @imagecreatefrompng($path),
@@ -34,11 +44,11 @@ class VisionDescription
         if (! $source) {
             throw new VisionFailure('unsupported_format', 'Vision cannot read this image format.');
         }
-        $source = $this->orientation->apply($source, $path);
-        $ratio = min(1, 1536 / max(imagesx($source), imagesy($source)));
-        $preview = imagecreatetruecolor(max(1, (int) round(imagesx($source) * $ratio)), max(1, (int) round(imagesy($source) * $ratio)));
+        $preview = imagecreatetruecolor($width, $height);
         imagefill($preview, 0, 0, imagecolorallocate($preview, 255, 255, 255));
         imagecopyresampled($preview, $source, 0, 0, 0, 0, imagesx($preview), imagesy($preview), imagesx($source), imagesy($source));
+        unset($source);
+        $preview = $this->orientation->apply($preview, $path);
         ob_start();
         imagejpeg($preview, null, 85);
         $bytes = ob_get_clean();

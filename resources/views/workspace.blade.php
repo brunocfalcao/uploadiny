@@ -143,7 +143,7 @@
                                 <button type="button" class="color-swatch" data-color="#3b82f6" style="--swatch: #3b82f6" title="Blue" aria-label="Blue ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#182337" style="--swatch: #182337" title="Dark ink" aria-label="Dark ink" aria-pressed="false"></button>
                                 <button type="button" class="color-swatch" data-color="#ffffff" style="--swatch: #ffffff" title="White" aria-label="White ink" aria-pressed="false"></button>
-                                <div class="color-gradient" id="color-gradient" role="slider" tabindex="0" aria-label="Colour gradient" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0" aria-valuetext="No colour picked from the gradient" title="Click or drag to pick a colour. Arrow keys fine-tune it."><span class="color-gradient-thumb" id="color-gradient-thumb" hidden></span></div>
+                                <div class="color-gradient" id="color-gradient" role="slider" tabindex="0" aria-label="Colour gradient" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0" aria-valuetext="No colour picked from the gradient" aria-description="Left and Right change hue. Up and Down change lightness." title="Click or drag to pick a colour. Left/Right change hue; Up/Down change lightness."><span class="color-gradient-thumb" id="color-gradient-thumb" hidden></span></div>
                                 <label class="custom-color" style="--custom: #ef4444" title="Pick any colour"><input type="color" id="drawing-color" value="#ef4444" aria-label="Custom ink color"></label>
                                 <input type="text" id="drawing-color-hex" class="color-hex" value="#ef4444" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Custom colour code" placeholder="#RRGGBB">
                             </div>
@@ -197,7 +197,7 @@
         </section>
     </main>
 </div>
-<dialog id="project-dialog" class="project-dialog">
+<dialog aria-labelledby="project-dialog-title" id="project-dialog" class="project-dialog">
     <form id="project-form" method="POST" action="{{ route('projects.store') }}" class="stack">
         @csrf<input id="project-method" name="_method" value="POST" type="hidden">
         <div class="dialog-heading"><h2 id="project-dialog-title">Create project</h2><button type="button" class="tool" data-close-project aria-label="Close project form">Close</button></div>

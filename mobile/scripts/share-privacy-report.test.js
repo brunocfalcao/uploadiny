@@ -9,7 +9,7 @@ const plist = require('@expo/plist').default;
 const mobileRoot = path.join(__dirname, '..');
 const extensionPlist = plist.parse(fs.readFileSync(path.join(mobileRoot, 'native/ShareExtensionInfo.plist'), 'utf8'));
 const manifest = JSON.parse(fs.readFileSync(path.join(mobileRoot, 'app.json'), 'utf8')).expo;
-const swift = fs.readFileSync(path.join(mobileRoot, 'native/ShareIntoViewController.swift'), 'utf8');
+const swift = fs.readFileSync(process.env.UPLOADINY_NATIVE_SOURCE || path.join(mobileRoot, 'native/ShareIntoViewController.swift'), 'utf8');
 const rule = extensionPlist.NSExtension.NSExtensionAttributes.NSExtensionActivationRule;
 
 function probeHostUTIs() {
@@ -114,23 +114,31 @@ test('reports load after movies and images, keep their .ndjson name and upload a
   assert.match(prepare, /ShareMediaSupport\.preferredRepresentations\(from: registered\)/);
   assert.match(prepare, /guard !identifiers\.isEmpty else \{\s*showError\("Uploadiny accepts JPG, PNG, GIF, WEBP, BMP, MP4, MOV, M4V and App Privacy Reports\.[^"]*", allowRetry: false\)\s*return/);
   const load = swift.slice(swift.indexOf('  private func loadRepresentation('), swift.indexOf('  private func uploadChunk()'));
-  assert.match(load, /let report = Self\.isPrivacyReportType\(identifier\)/);
+  assert.match(load, /let report = SharePrivacyReport\.isType\(identifier\)/);
   assert.match(load, /if report, URL\(fileURLWithPath: fileName\)\.pathExtension\.lowercased\(\) != SharePrivacyReport\.fileExtension \{ fileName \+= /);
   assert.ok(load.indexOf('let report = ') < load.indexOf('let copyURL'), 'The name is corrected before the owned copy is created');
   assert.match(load, /let mime = report \? SharePrivacyReport\.mime :/);
   assert.match(swift, /static let typeIdentifier = "public\.ndjson"/);
   assert.match(swift, /static let mime = "application\/x-ndjson"/);
-  assert.match(swift, /if let ndjson = UTType\(SharePrivacyReport\.typeIdentifier\), type\.conforms\(to: ndjson\) \{ return true \}/);
+  assert.match(swift, /if let ndjson = UTType\((?:SharePrivacyReport\.)?typeIdentifier\), type\.conforms\(to: ndjson\) \{ return true \}/);
 });
 
-test('unsupported provider representations are rejected before a draft while supported alternatives win', { skip: process.platform !== 'darwin' }, () => {
+test('unsupported provider representations are rejected before a draft while supported alternatives win', { skip: process.platform !== 'darwin' }, (t) => {
+  const host = probeHostUTIs();
+  if (host.status === 2) {
+    t.skip(`${host.stderr.trim()}; iOS target validation remains required`);
+    return;
+  }
+  assert.equal(host.status, 0, host.stderr || host.error?.message);
   const start = swift.indexOf('private enum ShareMediaSupport {');
-  const end = swift.indexOf('private enum SharePrivacyReport {');
-  assert.ok(start >= 0 && end > start, 'Media support policy must be isolated for Foundation tests');
+  const privacyStart = swift.indexOf('private enum SharePrivacyReport {');
+  const privacyEnd = swift.indexOf('\nprivate struct ShareReview', privacyStart);
+  const end = privacyStart;
+  assert.ok(start >= 0 && privacyStart > start && privacyEnd > privacyStart, 'Media support policy must be isolated for Foundation tests');
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-media-support-'));
   try {
     const fixture = path.join(directory, 'main.swift');
-    fs.writeFileSync(fixture, 'import Foundation\nimport UniformTypeIdentifiers\n' + swift.slice(start, end) + String.raw`
+    fs.writeFileSync(fixture, 'import Foundation\nimport UniformTypeIdentifiers\n' + swift.slice(start, end) + swift.slice(privacyStart, privacyEnd) + String.raw`
 precondition(ShareMediaSupport.preferredRepresentations(from: ["public.avif"]).isEmpty)
 precondition(ShareMediaSupport.preferredRepresentations(from: ["public.avif", "public.png"]) == ["public.png"])
 precondition(ShareMediaSupport.preferredRepresentations(from: ["public.movie", "public.mpeg-4"]) == ["public.mpeg-4"])
@@ -146,6 +154,13 @@ precondition(ShareMediaSupport.preferredRepresentations(from: ["public.ndjson"])
   } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });
 
+test('generic movie resolution never trusts an image filename', () => {
+  const start = swift.indexOf('  private func resolvePreparedType(');
+  const end = swift.indexOf('\n  private func imagePreview(', start);
+  const resolve = swift.slice(start, end);
+  assert.match(resolve, /if registered\?\.conforms\(to: \.movie\) == true \{[\s\S]*extensionType\.flatMap \{ type in[\s\S]*guard type\.conforms\(to: \.movie\) else/);
+});
+
 test('report review shows a document preview with size and entries, never the recording or image paths', () => {
   const preview = swift.slice(swift.indexOf('  private func loadAssetPreview('), swift.indexOf('  private func saveCurrentFeedback()'));
   assert.ok(preview.indexOf('if file.isPrivacyReport {') < preview.indexOf('} else if file.isRecording {'));
@@ -156,4 +171,39 @@ test('report review shows a document preview with size and entries, never the re
   assert.match(swift, /playButton\.isHidden = !file\.isRecording/);
   assert.match(swift, /if file\.isStillImage \{\s*DispatchQueue\.global/);
   assert.match(swift, /\$0\.isPrivacyReport \? nil : self\.imagePreview\(\$0\.url\)/);
+});
+
+
+test('generic movie filenames retain movie metadata and reject image extensions in the native resolver', { skip: process.platform !== 'darwin' }, t => {
+  const host = probeHostUTIs();
+  if (host.status === 2) { t.skip(host.stderr.trim()); return; }
+  assert.equal(host.status, 0, host.stderr || host.error?.message);
+  const method = swift.slice(swift.indexOf('  private func resolvePreparedType('), swift.indexOf('  private func imagePreview(')).replace('private func', 'func');
+  const support = swift.slice(swift.indexOf('private enum ShareMediaSupport {'), swift.indexOf('private enum SharePrivacyReport {'));
+  const reportStart = swift.indexOf('private enum SharePrivacyReport {');
+  const reports = swift.slice(reportStart, swift.indexOf('\nprivate struct ShareReview', reportStart));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'uploadiny-movie-family-'));
+  try {
+    const fixture = path.join(directory, 'main.swift');
+    fs.writeFileSync(fixture, 'import Foundation\nimport UniformTypeIdentifiers\nimport ImageIO\n' + support + reports + '\nstruct Resolver { enum UploadError: Error { case unsupportedRepresentation }\n' + method + '\n}\n' + String.raw`
+let resolver = Resolver()
+let url = URL(fileURLWithPath: "/unused-provider-movie")
+for original in ["clip.mov", "clip.mp4", "clip.m4v"] {
+  var name = original
+  let result = try resolver.resolvePreparedType(identifier: "public.movie", fileURL: url, fileName: &name)
+  precondition(result?.conforms(to: .movie) == true)
+}
+var misleading = "clip.jpg"
+do {
+  _ = try resolver.resolvePreparedType(identifier: "public.movie", fileURL: url, fileName: &misleading)
+  fatalError("A movie must never acquire image metadata")
+} catch Resolver.UploadError.unsupportedRepresentation { }
+precondition(misleading == "clip.jpg")
+`);
+    const executable = path.join(directory, 'verify');
+    const compile = spawnSync('xcrun', ['swiftc', '-module-cache-path', path.join(directory, 'cache'), fixture, '-o', executable], { encoding: 'utf8', timeout: 60000 });
+    assert.equal(compile.status, 0, compile.stderr || compile.error?.message);
+    const run = spawnSync(executable, [], { encoding: 'utf8', timeout: 10000 });
+    assert.equal(run.status, 0, run.stderr || run.error?.message);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
 });

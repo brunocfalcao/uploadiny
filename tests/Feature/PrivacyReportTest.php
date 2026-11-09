@@ -16,15 +16,57 @@ use App\UploadinyTokenAbility;
 use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Process\Process;
 use Tests\TestCase;
 
 class PrivacyReportTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_repeated_reads_preserve_exact_results_without_rescanning_the_original(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'report-io-');
+        file_put_contents($path, str_repeat(str_repeat('x', 1000)."\n", 95000));
+        try {
+            $process = new Process([PHP_BINARY, base_path('tests/Fixtures/report-read-io.php'), $path]);
+            $process->mustRun();
+            $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+            foreach (['agentText', 'page'] as $method) {
+                $this->assertTrue($result[$method]['same']);
+                $this->assertGreaterThan(95000000, $result[$method]['cold']);
+                $this->assertLessThan(300000, $result[$method]['warm']);
+            }
+            $this->assertSame("replacement\n", $result['replaced']['text']);
+            $this->assertSame(12, $result['replaced']['total_bytes']);
+            $this->assertSame(1, $result['replaced_entries']);
+            $this->assertTrue($result['deleted']);
+        } finally {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+    }
+
+    public function test_report_reads_keep_working_when_the_derived_count_cache_is_unavailable(): void
+    {
+        Storage::fake('local');
+        $image = UploadImage::factory()->create(['mime_type' => UploadImage::PRIVACY_REPORT_MIME_TYPE]);
+        Storage::disk('local')->put($image->path, "first\n\nsecond\n");
+        Cache::shouldReceive('get')->andThrow(new \RuntimeException('cache unavailable'));
+        Cache::shouldReceive('put')->andThrow(new \RuntimeException('cache unavailable'));
+
+        $text = app(PrivacyReport::class)->agentText($image, 100);
+        $page = app(PrivacyReport::class)->page($image, 1);
+
+        $this->assertSame(["first\n\nsecond\n", 14, 3, false], [$text['text'], $text['total_bytes'], $text['total_lines'], $text['truncated']]);
+        $this->assertSame(2, $page['total_entries']);
+        $this->assertSame([1, 3], array_column($page['entries'], 'line'));
+    }
 
     private function access(string $app, string $category, string $kind = 'intervalBegin', string $time = '2026-10-20T09:12:01.123+01:00'): string
     {

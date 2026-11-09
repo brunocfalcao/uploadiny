@@ -194,7 +194,7 @@ class WorkspaceDeletion
         $disk = Storage::disk('local');
         foreach ($disk->directories('deleting') as $directory) {
             $journal = $directory.'/journal.json';
-            if (! $disk->exists($journal) && ! $disk->exists($directory.'/.lock')) {
+            if (! $disk->exists($journal)) {
                 continue;
             }
             $lock = $this->journalLock($journal);
@@ -312,55 +312,13 @@ class WorkspaceDeletion
     /** @return array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} */
     private function recoveryProgress(string $journal): array
     {
-        $disk = Storage::disk('local');
-        $path = dirname($journal).'/recovery.json';
-        $saved = [];
-        if ($disk->exists($path)) {
-            try {
-                $candidate = json_decode($disk->get($path) ?? '', true, flags: JSON_THROW_ON_ERROR);
-                $saved = is_array($candidate) ? $candidate : [];
-            } catch (Throwable) {
-                $saved = [];
-            }
-        }
-        $createdAt = $this->recoveryTimestamp($saved['created_at'] ?? null);
-        if ($createdAt === null) {
-            $modified = $disk->lastModified($journal);
-            if (! is_int($modified) && ! is_numeric($modified)) {
-                throw new RuntimeException('Deletion recovery journal metadata is unavailable.');
-            }
-            $createdAt = Carbon::createFromTimestamp((int) $modified)->toIso8601String();
-        }
-
-        return [
-            'created_at' => $createdAt,
-            'attempts' => is_numeric($saved['attempts'] ?? null) ? max(0, (int) $saved['attempts']) : 0,
-            'last_attempt_at' => $this->recoveryTimestamp($saved['last_attempt_at'] ?? null),
-            'last_error' => is_string($saved['last_error'] ?? null) && $saved['last_error'] !== '' ? $saved['last_error'] : null,
-        ];
-    }
-
-    private function recoveryTimestamp(mixed $value): ?string
-    {
-        if (! is_string($value) || trim($value) === '') {
-            return null;
-        }
-
-        try {
-            return Carbon::parse($value)->toIso8601String();
-        } catch (Throwable) {
-            return null;
-        }
+        return app(RecoveryJournal::class)->progress($journal, false, 'Deletion recovery journal metadata is unavailable.');
     }
 
     /** @param array{created_at: string, attempts: int, last_attempt_at: ?string, last_error: ?string} $progress */
     private function saveRecoveryProgress(string $journal, array $progress): void
     {
-        $disk = Storage::disk('local');
-        $temporary = dirname($journal).'/recovery.next';
-        if (! $disk->put($temporary, json_encode($progress, JSON_THROW_ON_ERROR)) || ! $disk->move($temporary, dirname($journal).'/recovery.json')) {
-            throw new RuntimeException('Deletion recovery progress could not be saved.');
-        }
+        app(RecoveryJournal::class)->saveProgress($journal, $progress, 'Deletion recovery progress could not be saved.');
     }
 
     /** @return array{pending: int, oldest_pending_seconds: ?int, attempts: int, deferred: int, last_attempt_at: ?string} */
@@ -400,45 +358,12 @@ class WorkspaceDeletion
     /** @return resource|null */
     private function journalLock(string $journal)
     {
-        $path = Storage::disk('local')->path(dirname($journal).'/.lock');
-        if (! is_dir(dirname($path))) {
-            return null;
-        }
-        $lock = fopen($path, 'c');
-        if ($lock === false) {
-            throw new RuntimeException('Deletion recovery lock could not be opened.');
-        }
-        if (! flock($lock, LOCK_EX | LOCK_NB)) {
-            fclose($lock);
-
-            return null;
-        }
-        clearstatcache(true, $path);
-        $current = @stat($path);
-        if ($current === false || fstat($lock)['ino'] !== $current['ino']) {
-            flock($lock, LOCK_UN);
-            fclose($lock);
-
-            return null;
-        }
-
-        return $lock;
+        return app(RecoveryJournal::class)->acquire(dirname($journal), 'Deletion recovery lock could not be opened.');
     }
 
     /** @param resource|null $lock */
     private function releaseJournal($lock): void
     {
-        if ($lock !== null) {
-            $path = stream_get_meta_data($lock)['uri'];
-            $inode = fstat($lock)['ino'];
-            flock($lock, LOCK_UN);
-            fclose($lock);
-            clearstatcache(true, $path);
-            $current = @stat($path);
-            if ($current !== false && $current['ino'] === $inode && ! is_file(dirname($path).'/journal.json') && ! is_file(dirname($path).'/recovery.json') && ! is_file(dirname($path).'/recovery.next')) {
-                @unlink($path);
-                @rmdir(dirname($path));
-            }
-        }
+        app(RecoveryJournal::class)->release($lock, ['journal.json', 'recovery.json', 'recovery.next']);
     }
 }

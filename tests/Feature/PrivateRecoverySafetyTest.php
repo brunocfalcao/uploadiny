@@ -15,6 +15,7 @@ use App\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\PersonalAccessToken;
 use Mockery;
@@ -106,6 +107,8 @@ class PrivateRecoverySafetyTest extends TestCase
 
     public function test_reconciliation_skips_an_active_private_write_until_its_reference_commits(): void
     {
+        Process::preventStrayProcesses();
+        Process::fake(['*' => Process::result(output: json_encode(['description' => 'Recovery fixture.', 'model' => config('services.uploadiny.vision_model')]))]);
         Storage::fake('local');
         $disk = Storage::disk('local');
         $project = Project::factory()->create(['slug' => 'active-private-write']);
@@ -123,6 +126,8 @@ class PrivateRecoverySafetyTest extends TestCase
 
         $disk->assertExists($chunk->images->sole()->path);
         $this->assertSame('active-write.png', $chunk->images->sole()->original_name);
+        $this->assertSame('ready', $chunk->images->sole()->description_status, $chunk->images->sole()->description_error ?? '');
+        Process::assertRanTimes(fn ($process) => $process->command[4] === 'olloma-agent', 1);
     }
 
     public function test_a_sibling_arriving_after_empty_directory_inspection_survives_cleanup(): void

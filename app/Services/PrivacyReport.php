@@ -8,9 +8,11 @@ use App\UploadImage;
 use DateTimeImmutable;
 use Exception;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use JsonException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Reads iPhone App Privacy Reports: newline-delimited JSON exported from
@@ -75,6 +77,9 @@ final class PrivacyReport
         $page = max(1, $page);
         $first = ($page - 1) * self::PAGE_SIZE;
         $handle = $this->open($image);
+        $key = $this->countsKey($handle, $image, 'entries');
+        $cached = $this->cachedCounts($key);
+        $knownTotal = is_int($cached['total'] ?? null) ? $cached['total'] : null;
         $entries = [];
         $total = 0;
         $lineNumber = 0;
@@ -88,6 +93,14 @@ final class PrivacyReport
                     $entries[] = $this->entry($lineNumber, $line, $bytes, $truncated);
                 }
                 $total++;
+                if ($knownTotal !== null && $total >= $first + self::PAGE_SIZE) {
+                    break;
+                }
+            }
+            if ($knownTotal === null) {
+                $this->saveCounts($key, ['total' => $total]);
+            } else {
+                $total = $knownTotal;
             }
         } finally {
             fclose($handle);
@@ -121,6 +134,9 @@ final class PrivacyReport
             throw new RuntimeException('This report exceeds the safe inline memory budget. Its original is preserved. Download using the authenticated URL: '.route('api.images.download', $image));
         }
         $handle = $this->open($image);
+        $key = $this->countsKey($handle, $image, 'physical');
+        $cached = $this->cachedCounts($key);
+        $known = is_int($cached['bytes'] ?? null) && is_int($cached['lines'] ?? null);
         try {
             $read = $limitBytes > 0 ? (string) fread($handle, $limitBytes + 1) : '';
             $truncated = strlen($read) > $limitBytes;
@@ -132,7 +148,7 @@ final class PrivacyReport
             $totalBytes = strlen($read);
             $newlines = substr_count($read, "\n");
             $last = substr($read, -1);
-            while (! feof($handle)) {
+            while (! $known && ! feof($handle)) {
                 $chunk = fread($handle, self::READ_BYTES);
                 if ($chunk === false) {
                     throw new RuntimeException('The original asset file is unavailable.');
@@ -144,6 +160,13 @@ final class PrivacyReport
                 $newlines += substr_count($chunk, "\n");
                 $last = substr($chunk, -1);
             }
+            $totalLines = $newlines + ($totalBytes > 0 && $last !== "\n" ? 1 : 0);
+            if ($known) {
+                $totalBytes = $cached['bytes'];
+                $totalLines = $cached['lines'];
+            } else {
+                $this->saveCounts($key, ['bytes' => $totalBytes, 'lines' => $totalLines]);
+            }
         } finally {
             fclose($handle);
         }
@@ -153,9 +176,45 @@ final class PrivacyReport
             'truncated' => $truncated,
             'total_bytes' => $totalBytes,
             'included_bytes' => strlen($included),
-            'total_lines' => $newlines + ($totalBytes > 0 && $last !== "\n" ? 1 : 0),
+            'total_lines' => $totalLines,
             'included_lines' => substr_count($included, "\n") + ($included !== '' && ! str_ends_with($included, "\n") ? 1 : 0),
         ];
+    }
+
+    /** Immutable originals get a new inode on replacement; open first so deletion never serves cached content. */
+    private function countsKey(mixed $handle, UploadImage $image, string $kind): ?string
+    {
+        $stat = fstat($handle);
+        if ($stat === false) {
+            return null;
+        }
+
+        return 'privacy-report-counts:'.$kind.':'.hash('sha256', json_encode([
+            Storage::disk('local')->path($image->path), $stat['dev'], $stat['ino'], $stat['size'], $stat['mtime'], $stat['ctime'],
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function cachedCounts(?string $key): array
+    {
+        try {
+            $value = $key === null ? null : Cache::get($key);
+
+            return is_array($value) ? $value : [];
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function saveCounts(?string $key, array $counts): void
+    {
+        if ($key === null) {
+            return;
+        }
+        try {
+            Cache::put($key, $counts, 3600);
+        } catch (Throwable) {
+            // Derived counts are optional; cache failures retain the streaming path.
+        }
     }
 
     /** @return resource */

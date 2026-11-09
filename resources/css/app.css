@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './fonts.css';
 @source '../**/*.blade.php';
 @source '../**/*.js';
 @theme { --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif; }
@@ -126,7 +127,7 @@ progress { accent-color: var(--accent); flex: 1; }
 .icon-tool { width: 44px; min-height: 44px; padding: 8px; }
 .zoom-controls output { min-width: 44px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; color: #44536d; }
 .fit-tool { min-height: 40px; margin-left: 4px; }
-.canvas-stage { height: clamp(420px, 72dvh, 820px); overflow: auto; border-top: 1px solid #dbe2ed; position: relative; }
+.canvas-stage { height: clamp(420px, 72dvh, 820px); overflow: auto; position: relative; }
 .canvas-bed { display: flex; align-items: center; justify-content: center; min-width: 100%; min-height: 100%; width: max-content; padding: 36px; }
 #annotation-canvas { display: block; flex-shrink: 0; max-width: none; max-height: none; height: auto; touch-action: none; background: #fff; cursor: crosshair; }
 #annotation-canvas[data-tool="eraser"] { cursor: cell; }
@@ -166,7 +167,7 @@ progress { accent-color: var(--accent); flex: 1; }
 .login-footnote { margin-top: 28px; color: var(--muted); font-size: 12px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { border-radius: 4px; }
-@media(max-width:1100px) { .editor-body { grid-template-columns: minmax(0,1fr); } .feedback-panel { display: grid; gap: 10px; } .vision-section { margin: 18px 0; } }
+@media(max-width:1100px) { .feedback-panel { display: grid; gap: 10px; } }
 @media(max-width:760px) { .workspace { grid-template-columns: minmax(0,1fr); } .sidebar { position: static; height: auto; padding: 18px; gap: 18px; } .sidebar-heading { display: none; } .sidebar-footer { display: flex; flex-wrap: wrap; gap: 12px; } .project-nav { display: flex; overflow-x: auto; } .project-link { flex-shrink: 0; } .main-content { padding: 24px 16px; } .workspace-header { align-items: flex-start; flex-direction: column; gap: 18px; } .chunk-heading { flex-direction: column; gap: 5px; } .image-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; } .thumbnail { height: 180px; padding: 10px; } .image-caption { display: grid; } .dropzone { padding: 18px; } .canvas-stage { height: 60dvh; min-height: 320px; } .editor-header h2 { order: -1; flex-basis: 100%; } .login-panel { padding: 28px; } }
 @media(prefers-reduced-motion:reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
 

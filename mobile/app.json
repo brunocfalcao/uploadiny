@@ -2,14 +2,14 @@
   "expo": {
     "name": "Uploadiny",
     "slug": "uploadiny",
-    "version": "0.16.3",
+    "version": "0.16.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "scheme": "uploadiny",
     "ios": {
       "supportsTablet": false,
-      "buildNumber": "43",
+      "buildNumber": "44",
       "bundleIdentifier": "test.uploadiny.app",
       "infoPlist": {
         "UTImportedTypeDeclarations": [

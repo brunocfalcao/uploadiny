@@ -11,6 +11,11 @@ async function requestBody(url, options = {}, token = '', type = 'json') {
             signal: controller.signal,
             headers: { Accept: type === 'json' ? 'application/json' : 'text/html', 'X-CSRF-TOKEN': token, ...(type === 'json' && !(settings.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}), ...settings.headers },
         });
+        if (type === 'text' && !response.ok) {
+            const error = new Error('The request failed. Try again.');
+            error.status = response.status;
+            throw error;
+        }
         let payload;
         try { payload = await response[type](); }
         catch (error) {

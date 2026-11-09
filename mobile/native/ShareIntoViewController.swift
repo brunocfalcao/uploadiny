@@ -62,6 +62,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private var previewGenerator: AVAssetImageGenerator?
   private var previewGeneration = 0
   private var isPreparing = false
+  private var retryPreparation = false
   private let uploads = ShareUploadCoordinator()
   private var appendLookup = ShareAppendDecision()
   private var temporaryURLs: [URL] = []
@@ -1081,12 +1082,19 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       showReview()
       return
     }
+    prepareRemainingFiles()
+  }
+
+  private func prepareRemainingFiles() {
+    guard !didClose, !isPreparing, review.files.count < providers.count else { return }
+    retryPreparation = false
     isPreparing = true
+    uploadButton.isHidden = true
     titleLabel.text = "Preparing your files…"
     detailLabel.text = "Then add feedback to each screenshot, recording or privacy report."
     spinner.isHidden = false
     spinner.startAnimating()
-    prepareProvider(at: 0)
+    prepareProvider(at: review.files.count)
   }
 
   @objc private func primaryButtonTapped() {
@@ -1094,11 +1102,15 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       loadProjects()
       return
     }
+    if retryPreparation {
+      prepareRemainingFiles()
+      return
+    }
     beginUpload()
   }
 
   @objc private func beginUpload() {
-    guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, !isPreparing else { return }
+    guard selectedProject != nil, serverURL != nil, !token.isEmpty, !review.files.isEmpty, review.files.count == providers.count, !isPreparing else { return }
     if appendToLastUpload && !appendLookup.canUpload {
       if appendLookup.failed, let project = selectedProject { fetchLastUpload(for: project) }
       return
@@ -1165,7 +1177,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       if fileName.isEmpty { fileName = fileURL.lastPathComponent }
       if URL(fileURLWithPath: fileName).pathExtension.isEmpty, let ext = UTType(identifier)?.preferredFilenameExtension { fileName += ".\(ext)" }
       // The server recognises a report by its .ndjson name and its text content.
-      let report = Self.isPrivacyReportType(identifier)
+      let report = SharePrivacyReport.isType(identifier)
       if report, URL(fileURLWithPath: fileName).pathExtension.lowercased() != SharePrivacyReport.fileExtension { fileName += ".\(SharePrivacyReport.fileExtension)" }
       let copyURL = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).\(URL(fileURLWithPath: fileName).pathExtension)")
       do {
@@ -1385,13 +1397,6 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
     }.resume()
   }
 
-  /// App Privacy Reports are newline-delimited JSON, system-declared as public.ndjson.
-  nonisolated private static func isPrivacyReportType(_ identifier: String) -> Bool {
-    guard let type = UTType(identifier) else { return false }
-    if let ndjson = UTType(SharePrivacyReport.typeIdentifier), type.conforms(to: ndjson) { return true }
-    return type.tags[.filenameExtension]?.contains { $0.lowercased() == SharePrivacyReport.fileExtension } == true
-  }
-
   private func jpegRepresentation(_ sourceURL: URL) throws -> URL {
     let targetURL = FileManager.default.temporaryDirectory.appendingPathComponent("uploadiny-\(UUID().uuidString).jpg")
     guard let source = CGImageSourceCreateWithURL(sourceURL as CFURL, nil),
@@ -1412,7 +1417,12 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       ? nil
       : UTType(filenameExtension: URL(fileURLWithPath: fileName).pathExtension)
     var resolved: UTType?
-    if registered?.conforms(to: .image) == true {
+    if registered?.conforms(to: .movie) == true {
+      resolved = extensionType.flatMap { type in
+        guard type.conforms(to: .movie) else { return nil }
+        return ShareMediaSupport.acceptsPreparedType(type) ? type : nil
+      }
+    } else if registered?.conforms(to: .image) == true {
       guard let source = CGImageSourceCreateWithURL(fileURL as CFURL, nil),
             let sourceIdentifier = CGImageSourceGetType(source) as String?,
             let sourceType = UTType(sourceIdentifier),
@@ -1474,6 +1484,7 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
   private func showError(_ text: String, allowRetry: Bool = true) {
     DispatchQueue.main.async {
       guard !self.didClose else { return }
+      self.retryPreparation = allowRetry && self.isPreparing && self.review.files.count < self.providers.count
       self.isPreparing = false
       self.previewGeneration += 1
       self.previewGenerator?.cancelAllCGImageGeneration()
@@ -1488,6 +1499,14 @@ final class ShareIntoViewController: UIViewController, UITableViewDataSource, UI
       self.detailLabel.isHidden = false
       self.titleLabel.text = "Upload could not finish"
       self.detailLabel.text = text
+      if self.retryPreparation {
+        self.titleLabel.text = "Files could not be prepared"
+        self.uploadButton.configuration = self.primaryButtonConfiguration(title: "Try preparing again", symbol: "arrow.clockwise")
+        self.uploadButton.isEnabled = true
+        self.uploadButton.alpha = 1
+        self.uploadButton.isHidden = false
+        return
+      }
       self.cancelDraft {
         guard !self.didClose, self.review.files.count == self.providers.count, !self.review.files.isEmpty else { return }
         self.reviewPanel.isHidden = false
@@ -1850,7 +1869,7 @@ private enum ShareMediaSupport {
     let genericImages = identifiers.filter { isGenericImage($0) }
     if !genericImages.isEmpty { return genericImages }
 
-    return identifiers.filter(isPrivacyReportType)
+    return identifiers.filter(SharePrivacyReport.isType)
   }
 
   static func needsPreparedAssetValidation(_ identifier: String) -> Bool {
@@ -1884,11 +1903,6 @@ private enum ShareMediaSupport {
     UTType(identifier)?.identifier == UTType.image.identifier
   }
 
-  private static func isPrivacyReportType(_ identifier: String) -> Bool {
-    guard let type = UTType(identifier) else { return false }
-    if let ndjson = UTType("public.ndjson"), type.conforms(to: ndjson) { return true }
-    return type.tags[.filenameExtension]?.contains { $0.lowercased() == "ndjson" } == true
-  }
 }
 
 /// iPhone App Privacy Report exported from Settings > Privacy & Security > App Privacy Report.
@@ -1896,6 +1910,13 @@ private enum SharePrivacyReport {
   static let mime = "application/x-ndjson"
   static let fileExtension = "ndjson"
   static let typeIdentifier = "public.ndjson"
+
+  /// App Privacy Reports are newline-delimited JSON, system-declared as public.ndjson.
+  static func isType(_ identifier: String) -> Bool {
+    guard let type = UTType(identifier) else { return false }
+    if let ndjson = UTType(typeIdentifier), type.conforms(to: ndjson) { return true }
+    return type.tags[.filenameExtension]?.contains { $0.lowercased() == fileExtension } == true
+  }
 
   /// Counts non-blank lines, one entry each, without loading the whole report.
   static func entryCount(at url: URL) -> Int? {

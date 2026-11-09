@@ -1,5 +1,88 @@
 # Where Are We — Uploadiny
 
+## 2026-11-09 — v0.16.4 candidate, not deployed
+
+- Baseline: completed v0.16.3 (`1120428af7`), plus all eligible staged,
+  unstaged and untracked source. Local agent/tool configuration is excluded
+  and preserved; generated assets and private runtime data are not published.
+- iPhone version 0.16.4 build 44. Preparation failures now retry in place,
+  retaining prepared attachments and notes; generic movie providers cannot
+  become screenshot metadata through their suggested filename. No partial
+  upload starts, and unsupported formats stay non-retryable.
+- Description previews resize before EXIF rotation with memory checks. Late
+  failures/results match their persisted attempt identity and cannot overwrite
+  newer retries. Recovery waits for published journals; absent upload counters
+  recover surviving issued filenames. Deleted history still needs a trusted
+  saved counter.
+- Private JSON uses no-store. Reports cache only exact derived counts with
+  streaming fallback. Empty stale chunks leave clean editors for the gallery
+  while dirty feedback survives. Dialog names and gradient announcements are
+  explicit. Fonts and their OFL notices ship locally; unused Axios is removed.
+- One additive nullable `description_attempt` column must be migrated before
+  new job code activates. Old code tolerates the additional column and shipped
+  migrations remain byte-identical. No new environment keys or
+  `--migrations-reviewed` flag. FAST recommended: existing persistent SQLite
+  location and compatible additive schema; shipping preflight verifies it.
+- Passed: 275 PHP tests / 3026 assertions, eight Python bridge tests,
+  136 web tests, 36 native checks (zero skips), Pint, PHP syntax (141 files),
+  TypeScript, Expo Doctor 21/21, locked Composer/root/mobile npm installs,
+  Composer validation, Vite build and regenerated unsigned iPhoneOS Release
+  compilation. Built app/extension metadata and native source match the
+  candidate. The legacy-job migration test preserves existing feedback.
+  PHPUnit 11.5 has no Pest TIA. Browser/VoiceOver, physical Share Sheet and
+  real Keychain acceptance remain unverified.
+- Fresh complete-scope refactor found no further runtime changes necessary;
+  it strengthened the gradient regression and added legacy migration coverage.
+  Official version guidance checked; newer major frameworks were not adopted.
+  All seven canonical docs reviewed and updated locally; README, PROJECT,
+  mobile PROJECT and current status reconciled. Historical records retained.
+- Dependencies: Axios 1.20.0 and its 26 exclusive root npm transitive entries
+  removed (formerly bundled browser client/build dependencies); other root,
+  Composer and mobile package versions unchanged. Mobile lock changes only
+  release metadata. The exact removed-package list follows below.
+- No deployment, device installation, PHP quality gate, overnight-triage run,
+  backup or CI/CD. Manual shipping owns website/API and signed physical-iPhone
+  delivery. Neither FAST nor LIGHT takes a backup or runs CI/CD.
+
+### Removed root npm dependencies
+
+- `agent-base: 6.0.2` → removed
+- `asynckit: 0.4.0` → removed
+- `axios: 1.20.0` → removed
+- `call-bind-apply-helpers: 1.0.2` → removed
+- `combined-stream: 1.0.8` → removed
+- `debug: 4.4.3` → removed
+- `delayed-stream: 1.0.0` → removed
+- `dunder-proto: 1.0.1` → removed
+- `es-define-property: 1.0.1` → removed
+- `es-errors: 1.3.0` → removed
+- `es-object-atoms: 1.1.2` → removed
+- `es-set-tostringtag: 2.1.0` → removed
+- `follow-redirects: 1.16.0` → removed
+- `form-data: 4.0.6` → removed
+- `function-bind: 1.1.2` → removed
+- `get-intrinsic: 1.3.0` → removed
+- `get-proto: 1.0.1` → removed
+- `gopd: 1.2.0` → removed
+- `has-symbols: 1.1.0` → removed
+- `has-tostringtag: 1.0.2` → removed
+- `hasown: 2.0.4` → removed
+- `https-proxy-agent: 5.0.1` → removed
+- `math-intrinsics: 1.1.0` → removed
+- `mime-db: 1.52.0` → removed
+- `mime-types: 2.1.35` → removed
+- `ms: 2.1.3` → removed
+- `proxy-from-env: 2.1.0` → removed
+
+## 2026-11-09 — Previous v0.16.3 deployment receipt reconciled
+
+Matching completed `deployed.json` and `current.json` run
+`3b645f80bb0d4f88832c79bdb36a3ff0` records v0.16.3 (`1120428af7`)
+completed FAST shipping on 6 November 2026 at 21:07:47 UTC in 120 seconds,
+with website/API and signed physical iPhone 0.16.3 build 43 installation,
+launch and process proof. This preparation made no fresh production connection.
+The earlier candidate entries below remain historical preparation records.
+
 ## 2026-11-06 — v0.16.3 candidate, not deployed
 
 - Baseline: completed v0.16.0 (`46b8e74d72`). Includes the unshipped v0.16.1

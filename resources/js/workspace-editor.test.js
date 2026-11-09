@@ -400,7 +400,9 @@ test('hex field applies a valid colour to the next stroke and the selected note,
 
 test('gradient strip applies the colour under the pointer, syncs the hex field and keeps arrows away from shortcuts', async t => {
     const ui = workspace(t); await ui.open();
-    const strip = ui.node('color-gradient'); strip.emit('pointerdown', { button: 0, clientX: 320, clientY: 120, pointerId: 5 });
+    const strip = ui.node('color-gradient');
+    strip.emit('pointerdown', { button: 0, clientX: 320, clientY: 120, pointerId: 5 });
+    assert.equal(strip.getAttribute('aria-valuetext'), 'Hue 180 degrees, lightness 75 percent, #80ffff');
     assert.equal(ui.node('drawing-color').value, '#80ffff'); assert.equal(ui.node('drawing-color-hex').value, '#80ffff');
     strip.emit('pointermove', { clientX: 0, clientY: 240, pointerId: 5 });
     assert.equal(ui.node('drawing-color').value, '#ff0000');
@@ -1081,6 +1083,21 @@ test('a stale gallery file with no surviving neighbour removes its empty card', 
     assert.equal(ui.remote.fileRequests, 1);
     assert.equal(ui.node('chunk-list').children.includes(ui.card), false);
     assert.equal(ui.node('gallery').hidden, false);
+});
+
+test('manual navigation with no surviving files leaves the editor cleanly', async t => {
+    const ui = workspace(t); await ui.open();
+    ui.remote.missingImages = ['one', 'two'];
+    ui.remote.fileResponse = async () => ({ ok: false, status: 404, json: async () => ({ message: 'File not found' }) });
+    ui.remote.page = { cards: [], dataset: { latest: '', latestCompleted: '', latestCount: '' } };
+
+    ui.node('next-file').click();
+    await ui.settle(); await ui.settle();
+
+    assert.equal(ui.node('editor').hidden, true);
+    assert.equal(ui.node('gallery').hidden, false);
+    assert.equal(ui.where.search, '');
+    assert.equal(ui.remote.pageRequests, 1);
 });
 
 test('a late description retry error cannot notify a different editor view', async t => {
