@@ -82,7 +82,7 @@ class ChunkController extends Controller
     {
         abort_unless($chunk->status === 'uploading' && $chunk->upload_project_id, 409);
         $project = Project::findOrFail($chunk->upload_project_id);
-        $stored = $storage->store($project, [$request->file('file')], $chunk, [$request->validated('comments') ?? '']);
+        $stored = $storage->store($project, [$request->file('file')], $chunk, [$request->validated('comments') ?? ''], $request->routeIs('api.chunks.append'));
 
         return response()->json([
             'received_images' => $stored->images->count(),

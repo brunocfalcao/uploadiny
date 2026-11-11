@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Project;
@@ -35,7 +36,7 @@ class OvernightRecoveryTest extends TestCase
     public function test_completion_uses_publication_time_and_does_not_rejoin_a_departed_project(): void
     {
         Storage::fake('local');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
         $this->travelTo('2026-10-08 08:00:00');
         $project = Project::factory()->create(['slug' => 'overnight-completion']);
         $other = Project::factory()->create(['slug' => 'overnight-other']);

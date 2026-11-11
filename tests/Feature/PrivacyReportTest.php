@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Mcp\Tools\GetFeedback;
@@ -116,7 +117,7 @@ class PrivacyReportTest extends TestCase
     private function prepare(string $slug): Project
     {
         Storage::fake('local');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
 
         return Project::factory()->create(['slug' => $slug]);
     }

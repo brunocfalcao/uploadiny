@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Project;
 use App\UploadChunk;
@@ -18,11 +19,12 @@ class ChunkStorage
     /**
      * @param  array<int, UploadedFile>  $files
      * @param  array<int, string>  $comments
+     * @param  bool  $correctComments  Queue dictation clean-up for phone-entered feedback.
      */
-    public function store(Project $project, array $files, ?UploadChunk $draft = null, array $comments = []): UploadChunk
+    public function store(Project $project, array $files, ?UploadChunk $draft = null, array $comments = [], bool $correctComments = false): UploadChunk
     {
-        return Cache::lock('uploadiny:upload-sequence', 600)->block(30, function () use ($project, $files, $draft, $comments): UploadChunk {
-            return app(PrivateFileWrites::class)->transaction(function (PrivateFileWrites $writes) use ($project, $files, $draft, $comments): UploadChunk {
+        return Cache::lock('uploadiny:upload-sequence', 600)->block(30, function () use ($project, $files, $draft, $comments, $correctComments): UploadChunk {
+            return app(PrivateFileWrites::class)->transaction(function (PrivateFileWrites $writes) use ($project, $files, $draft, $comments, $correctComments): UploadChunk {
                 // Serialize project deletion and group creation around the same project record.
                 $project = Project::query()->lockForUpdate()->findOrFail($project->id);
                 $sequence = app(UploadSequence::class)->current();
@@ -45,13 +47,16 @@ class ChunkStorage
                     }
                     $report = $reports->accepts($file);
                     $mimeType = $report ? UploadImage::PRIVACY_REPORT_MIME_TYPE : ($file->getMimeType() ?? 'application/octet-stream');
-                    $chunk->images()->create([
+                    $image = $chunk->images()->create([
                         'uuid' => $uuid, 'project_id' => $project->id, 'name' => $name,
                         'original_name' => $file->getClientOriginalName(), 'path' => $path,
                         'mime_type' => $mimeType, 'size' => $file->getSize(),
                         'annotations' => [], 'comments' => $comments[$index] ?? '',
                         'description_status' => $report || str_starts_with($mimeType, 'video/') ? 'not_applicable' : 'pending',
                     ]);
+                    if ($correctComments && trim($image->comments ?? '') !== '') {
+                        CorrectUploadComments::schedule($image);
+                    }
                 }
                 app(UploadSequence::class)->publish($sequence);
 

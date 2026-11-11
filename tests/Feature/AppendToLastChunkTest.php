@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Project;
@@ -26,7 +27,7 @@ class AppendToLastChunkTest extends TestCase
     private function prepare(): array
     {
         Storage::fake('local');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
         $project = Project::factory()->create(['slug' => 'append-project']);
         $token = User::factory()->create()->createToken('phone', UploadinyTokenAbility::phone())->plainTextToken;
 
@@ -100,7 +101,7 @@ class AppendToLastChunkTest extends TestCase
         [$project, $token] = $this->prepare();
         $older = $this->share($project, $token, 1);
         $olderImageId = UploadChunk::query()->where('uuid', $older['id'])->firstOrFail()->images()->value('id');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
 
         $joined = $this->share($project, $token, 2, $older['id']);
 

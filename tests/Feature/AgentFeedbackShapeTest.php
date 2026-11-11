@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Project;
@@ -28,7 +29,7 @@ class AgentFeedbackShapeTest extends TestCase
     {
         parent::setUp();
         Storage::fake('local');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
         $this->owner = User::factory()->create(['email' => 'agent-shape@example.test']);
     }
 

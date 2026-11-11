@@ -42,6 +42,9 @@ return [
         'vision_binary' => env('UPLOADINY_VISION_BINARY', '/usr/local/libexec/uploadiny-vision.py'),
         'vision_model' => 'gpt-6-luna',
         'vision_timeout' => (int) env('UPLOADINY_VISION_TIMEOUT', 80),
+        'comment_correction_binary' => env('UPLOADINY_COMMENT_CORRECTION_BINARY', '/usr/local/libexec/uploadiny-correct.py'),
+        'comment_correction_model' => 'gpt-6-luna',
+        'comment_correction_timeout' => (int) env('UPLOADINY_COMMENT_CORRECTION_TIMEOUT', 80),
     ],
 
 ];

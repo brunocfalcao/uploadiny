@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Jobs\CorrectUploadComments;
 use App\Jobs\DescribeUploadImage;
 use App\Jobs\DiscardIncompleteUpload;
 use App\Project;
@@ -28,7 +29,7 @@ class WorkspaceTest extends TestCase
     private function prepare(): User
     {
         Storage::fake('local');
-        Queue::fake([DescribeUploadImage::class, DiscardIncompleteUpload::class]);
+        Queue::fake([CorrectUploadComments::class, DescribeUploadImage::class, DiscardIncompleteUpload::class]);
         $user = User::factory()->create(['email' => 'workspace-owner@example.test']);
         $this->actingAs($user);
 

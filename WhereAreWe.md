@@ -1,5 +1,32 @@
 # Where Are We — Uploadiny
 
+## 2026-11-12 — v0.17.0 candidate, not deployed
+
+- Baseline: completed v0.16.3 (`1120428af7`). Includes the tagged but unshipped
+  v0.16.4 and all eligible uncommitted source. Local agent/tool configuration
+  (`.agents/`, `.ai/`, `.claude/`, `.codex/`, `.mcp.json`, root and mobile
+  `AGENTS.md`/`CLAUDE.md`) is excluded and preserved.
+- iPhone version 0.17.0 build 45 (no native source change since 0.16.4).
+- New: dictated iPhone feedback (`api.chunks.append`, non-blank comments) is
+  corrected for spelling, grammar and speech-recognition mishearings by the
+  OpenClaw `uploadiny` agent (GPT-6 Luna, low effort) through the new root-owned
+  `bin/uploadiny-correct.py` text bridge, then replaced without confirmation.
+  The original is not kept (Bruno, 11 November 2026). Website feedback is never
+  corrected; a website edit made first wins; failures keep the dictated text.
+- Activation outside shipping: install `bin/uploadiny-correct.py` at
+  `/usr/local/libexec/uploadiny-correct.py` (root-owned, 0755) and add an
+  exact-command sudoers grant for the web user to run it as `olloma-agent`
+  with no arguments. Until then every correction fails closed and logs a
+  sanitized warning.
+- No new migration beyond v0.16.4's additive `description_attempt`; no new
+  required environment keys (optional `UPLOADINY_COMMENT_CORRECTION_BINARY`,
+  `UPLOADINY_COMMENT_CORRECTION_TIMEOUT`). No dependency changes.
+- Passed: full PHP suite 290 tests / 3058 assertions, Pint, 12 Python bridge
+  tests (4 new for the correction bridge). Live correction against the real
+  gateway is unverified.
+- No deployment, device installation, PHP quality gate, overnight triage,
+  backup or CI/CD.
+
 ## 2026-11-09 — v0.16.4 candidate, not deployed
 
 - Baseline: completed v0.16.3 (`1120428af7`), plus all eligible staged,

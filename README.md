@@ -200,7 +200,7 @@ an LRU cache; expired posters can be regenerated from the private original.
 
 ```sh
 php artisan test --compact
-python3 -B -m unittest discover -s tests/Unit -p 'test_openclaw_vision_bridge.py'
+python3 -B -m unittest discover -s tests/Unit -p 'test_openclaw_*_bridge.py'
 npm test
 npm run build
 composer run quality
@@ -265,8 +265,10 @@ verification and signed physical iPhone 0.15.2 build 39 installation, launch,
 and running-process proof. It shipped the recovery, queue-handoff, editor,
 orientation, canonical-recovery and Share Extension reliability repairs.
 
-The release candidate is **v0.16.4, candidate, not deployed**, with iPhone
-version **0.16.4 build 44**. It restores in-place retry when the Share Extension
+The release candidate is **v0.17.0, candidate, not deployed**, with iPhone
+version **0.17.0 build 45**. Since v0.17.0, non-blank feedback dictated on the iPhone (`api.chunks.append`) is corrected for spelling, grammar and speech-recognition mishearings by the same OpenClaw `uploadiny` agent through a separate root-owned text bridge (`bin/uploadiny-correct.py`). The corrected text replaces the original without confirmation and the original is not kept (Bruno's decision, 11 November 2026). Website-entered feedback is never corrected; a website edit made before the correction lands wins. Any failure leaves the dictated text unchanged. Until the bridge is installed with its exact sudoers grant on the host, every correction fails closed.
+
+v0.17.0 also carries the unshipped v0.16.4 repairs. v0.16.4 restores in-place retry when the Share Extension
 cannot prepare a shared attachment, retaining prepared files and notes. No
 upload begins until all attachments are ready; unsupported formats stay rejected.
 Generic movie providers cannot acquire screenshot metadata from a misleading name.
@@ -287,7 +289,7 @@ are removed. Other locked package versions are unchanged.
 One additive migration adds nullable `upload_images.description_attempt` before
 new job code is activated. Previously shipped migration files are unchanged;
 previous code tolerates the new column. No `--migrations-reviewed` flag or new
-environment key is required. No production or device deployment has occurred.
+environment key is required. No production or device deployment of v0.16.4 or v0.17.0 has occurred.
 
 v0.16.3 (`1120428af7`) completed FAST shipping on 6 November 2026 at
 21:07:47 UTC in 120 seconds. Matching completed receipts record website/API
